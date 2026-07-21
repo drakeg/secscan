@@ -1,37 +1,52 @@
 # secscan
 
-`secscan` is an open-source, container-first security scanner intended to provide a practical subset of Amazon Inspector-style capabilities using open-source scanning engines and a project-owned normalization, policy, and reporting layer.
+`secscan` is an open-source, container-first security scanner that wraps Trivy, normalizes vulnerability findings into a stable secscan schema, writes machine-readable reports, and returns CI-friendly policy exit codes.
 
-## Product vision
+Development is delivered incrementally using Agile sprints. See [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), and [`docs/AGILE.md`](docs/AGILE.md).
 
-Start with a portable Docker image that can scan a container image or mounted filesystem and produce:
+## Sprint 1 usage
 
-- CycloneDX SBOM output
-- normalized JSON vulnerability findings
-- a readable HTML report
-- CI-compatible exit codes based on policy
-
-The project will then grow incrementally toward registry integration, scan history, AWS asset discovery, continuous rescanning, exposure context, and risk prioritization.
-
-## Current status
-
-The project is in **Sprint 0 — Foundation and Planning**. No production scanner has been released yet.
-
-## Planned command experience
+Build the scanner:
 
 ```bash
-# Scan a container image
-secscan scan image nginx:latest --output /reports
-
-# Scan a mounted filesystem
-secscan scan filesystem /scan --output /reports
-
-# Generate an SBOM without vulnerability evaluation
-secscan sbom image nginx:latest --format cyclonedx
-
-# Fail CI when findings violate policy
-secscan scan image nginx:latest --fail-on critical
+docker build -t secscan:dev .
 ```
+
+Scan a public image and save the normalized report in `./reports`:
+
+```bash
+mkdir -p reports cache
+docker run --rm \
+  -v "$PWD/reports:/reports" \
+  -v "$PWD/cache:/cache" \
+  secscan:dev scan image alpine:3.20 --fail-on CRITICAL
+```
+
+Exit codes:
+
+- `0`: scan completed and policy passed
+- `1`: scanner or input error
+- `2`: scan completed but findings met or exceeded `--fail-on`
+
+The default report path is `/reports/secscan.json`. The vulnerability database cache is stored under `/cache` so it can be persisted with a volume mount.
+
+## Local development
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+pytest
+secscan --help
+```
+
+## Sprint 1 boundaries
+
+This increment scans public container images and emits normalized JSON. HTML reports, filesystem scanning, YAML policy loading, suppressions, private registry authentication, scan history, service mode, AWS discovery, and contextual risk scoring are planned for later sprints.
+
+## Security note
+
+Sprint 1 scans image references directly and does not require mounting the Docker socket. Persisted report and cache directories should be writable by container UID `10001`.
 
 ## Documentation
 
@@ -40,17 +55,6 @@ secscan scan image nginx:latest --fail-on critical
 - [Initial architecture](docs/ARCHITECTURE.md)
 - [Definition of done](docs/DEFINITION_OF_DONE.md)
 
-## Initial technical direction
-
-The first implementation will use Trivy as the scanning engine while translating its output into a stable, project-owned finding model. This keeps the first release small while preserving the option to add or replace engines such as Syft and Grype later.
-
-## Repository workflow
-
-- `main` remains releasable.
-- Work is performed on focused feature branches.
-- Changes are merged through pull requests.
-- Each sprint ends with demonstrable, documented functionality.
-
 ## License
 
-A project license has not yet been selected. License selection is an explicit Sprint 0 decision and must be completed before the first public release.
+A project license has not yet been selected. Until one is added, normal copyright restrictions apply.
