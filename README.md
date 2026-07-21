@@ -12,7 +12,9 @@ Build the scanner:
 docker build -t secscan:dev .
 ```
 
-Scan a public image and save the normalized report in `./reports`:
+### Rootful Docker
+
+For a normal rootful Docker daemon, bind-mount host directories and run with the current host UID and GID:
 
 ```bash
 mkdir -p reports cache
@@ -23,17 +25,41 @@ docker run --rm \
   secscan:dev scan image alpine:3.20 --fail-on CRITICAL
 ```
 
-Running with your host UID and GID keeps bind-mounted `reports` and `cache` directories writable without making them world-writable or changing their ownership to the image's built-in UID.
+This keeps generated files owned by the current host user.
 
-For a persistent Trivy cache that does not need a host bind mount, use a Docker-managed named volume:
+### Rootless Docker
+
+Rootless Docker remaps container UIDs into a subordinate host-ID range. Passing the host UID with `--user` therefore does not make a bind mount writable inside the container.
+
+The supported rootless workflow uses Docker-managed named volumes:
 
 ```bash
+docker volume create secscan-reports
 docker volume create secscan-cache
+
 docker run --rm \
-  --user "$(id -u):$(id -g)" \
-  -v "$PWD/reports:/reports" \
+  -v secscan-reports:/reports \
   -v secscan-cache:/cache \
   secscan:dev scan image alpine:3.20 --fail-on CRITICAL
+```
+
+Copy the report to the current directory when needed:
+
+```bash
+mkdir -p reports
+docker run --rm \
+  -v secscan-reports:/source:ro \
+  -v "$PWD/reports:/destination" \
+  alpine:3.20 \
+  cp /source/secscan.json /destination/secscan.json
+```
+
+For a one-off rootless scan, an explicitly writable host directory also works, but named volumes are preferred over setting project directories to mode `0777`.
+
+Detect rootless mode with:
+
+```bash
+docker info | grep -i rootless
 ```
 
 Exit codes:
@@ -60,7 +86,11 @@ This increment scans public container images and emits normalized JSON. HTML rep
 
 ## Security note
 
-Sprint 1 scans image references directly and does not require mounting the Docker socket. The image defaults to non-root UID `10001`. For host bind mounts, run with `--user "$(id -u):$(id -g)"` so the process can write to directories owned by the current host user.
+Sprint 1 scans image references directly and does not require mounting the Docker socket. The image defaults to non-root UID `10001`.
+
+- Rootful Docker: use `--user "$(id -u):$(id -g)"` for writable host bind mounts.
+- Rootless Docker: use Docker-managed named volumes because container UIDs are remapped.
+- Do not use `--privileged` or disable SELinux to make secscan work.
 
 ## Documentation
 
