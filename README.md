@@ -17,8 +17,22 @@ Scan a public image and save the normalized report in `./reports`:
 ```bash
 mkdir -p reports cache
 docker run --rm \
+  --user "$(id -u):$(id -g)" \
   -v "$PWD/reports:/reports" \
   -v "$PWD/cache:/cache" \
+  secscan:dev scan image alpine:3.20 --fail-on CRITICAL
+```
+
+Running with your host UID and GID keeps bind-mounted `reports` and `cache` directories writable without making them world-writable or changing their ownership to the image's built-in UID.
+
+For a persistent Trivy cache that does not need a host bind mount, use a Docker-managed named volume:
+
+```bash
+docker volume create secscan-cache
+docker run --rm \
+  --user "$(id -u):$(id -g)" \
+  -v "$PWD/reports:/reports" \
+  -v secscan-cache:/cache \
   secscan:dev scan image alpine:3.20 --fail-on CRITICAL
 ```
 
@@ -46,7 +60,7 @@ This increment scans public container images and emits normalized JSON. HTML rep
 
 ## Security note
 
-Sprint 1 scans image references directly and does not require mounting the Docker socket. Persisted report and cache directories should be writable by container UID `10001`.
+Sprint 1 scans image references directly and does not require mounting the Docker socket. The image defaults to non-root UID `10001`. For host bind mounts, run with `--user "$(id -u):$(id -g)"` so the process can write to directories owned by the current host user.
 
 ## Documentation
 

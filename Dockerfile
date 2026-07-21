@@ -16,7 +16,8 @@ RUN pip install --no-cache-dir . \
     && mkdir -p /reports /cache \
     && chown -R secscan:secscan /reports /cache
 
-ENV TRIVY_CACHE_DIR=/cache
+ENV TRIVY_CACHE_DIR=/cache \
+    HOME=/tmp
 USER secscan
 VOLUME ["/reports", "/cache"]
 ENTRYPOINT ["secscan"]
