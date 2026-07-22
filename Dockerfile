@@ -3,9 +3,17 @@ FROM aquasec/trivy:0.65.0 AS trivy
 FROM python:3.12.11-slim-bookworm AS builder
 WORKDIR /build
 COPY pyproject.toml README.md ./
-COPY secscan ./secscan
+RUN mkdir -p secscan scripts
+COPY secscan/__init__.py ./secscan/__init__.py
+COPY secscan/cli.py ./secscan/cli.py
+COPY secscan/models.py ./secscan/models.py
+COPY secscan/normalize.py ./secscan/normalize.py
+COPY secscan/policy.py ./secscan/policy.py
+COPY secscan/report.py ./secscan/report.py
+COPY secscan/trivy.py ./secscan/trivy.py
 COPY scripts/verify_wheel.py ./scripts/verify_wheel.py
-RUN pip wheel --no-deps --wheel-dir /wheels . \
+RUN python -c "from pathlib import Path; required={'__init__.py','cli.py','models.py','normalize.py','policy.py','report.py','trivy.py'}; present={p.name for p in Path('secscan').glob('*.py')}; missing=required-present; assert not missing, f'missing source modules: {sorted(missing)}'; print('verified source tree:', ', '.join(sorted(present)))" \
+    && pip wheel --no-deps --wheel-dir /wheels . \
     && python scripts/verify_wheel.py /wheels/secscan-*.whl
 
 FROM python:3.12.11-slim-bookworm
