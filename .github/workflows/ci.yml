@@ -69,7 +69,7 @@ jobs:
           docker run --rm \
             -v /tmp/secscan-ci.tar:/scan/secscan-ci.tar:ro \
             -v /tmp/trivy-cache:/root/.cache/ \
-            aquasec/trivy:0.65.0 image \
+            aquasec/trivy:0.70.0 image \
             --input /scan/secscan-ci.tar \
             --exit-code 1 \
             --ignore-unfixed \
