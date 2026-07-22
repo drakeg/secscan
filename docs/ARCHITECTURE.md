@@ -1,219 +1,223 @@
-# Initial Architecture
+# secscan Architecture
+
+## Purpose
+
+This document is the living technical blueprint for secscan. It records current boundaries, data flow, module ownership, validation expectations, and the intended evolution from a standalone container scanner into a portable vulnerability-management platform.
 
 ## Architectural objectives
 
-- Run as a self-contained Docker image.
-- Avoid requiring privileged host access for the primary registry-image workflow.
-- Keep scanner-engine details behind an adapter.
-- Own a stable secscan finding model so engines can change later.
-- Produce deterministic artifacts suitable for humans, CI systems, and future APIs.
+- Run as a self-contained, non-root Docker image.
+- Support rootful and rootless Docker without requiring privileged mode.
+- Avoid the Docker socket for the primary registry-image workflow.
+- Keep scanner-engine details behind an adapter boundary.
+- Own a stable normalized finding model so engines can change later.
+- Produce deterministic artifacts for humans, CI systems, and future APIs.
 - Preserve local, no-cloud operation as the baseline.
+- Fail packaging and container validation before code is merged.
 
-## MVP data flow
+## Current data flow
 
 ```text
 CLI / container entrypoint
         |
         v
-Input validation and target resolver
+Input validation
         |
         v
-Scanner adapter (initially Trivy)
-        |
-        +----> raw engine JSON
-        |
+Trivy adapter
+        |--------------------> raw Trivy JSON
+        |--------------------> CycloneDX JSON SBOM
         v
 Normalizer
         |
         v
 secscan finding model
-        |
-        +----> normalized JSON
-        |
+        |--------------------> normalized secscan JSON
+        |--------------------> standalone HTML report
         v
 Policy evaluator
         |
-        +----> summary and exit code
-        |
-        v
-Report writers (added incrementally)
+        +--------------------> summary and exit code
 ```
 
-## Proposed repository layout
+The scanner engine discovers packages and matches vulnerabilities. secscan owns orchestration, normalization, reporting, and policy behavior.
+
+## Current repository layout
 
 ```text
 secscan/
 ├── Dockerfile
 ├── pyproject.toml
 ├── README.md
+├── secscan/
+│   ├── __init__.py
+│   ├── cli.py
+│   ├── models.py
+│   ├── normalize.py
+│   ├── policy.py
+│   ├── report.py
+│   └── trivy.py
+├── scripts/
+│   └── verify_wheel.py
+├── tests/
 ├── docs/
 │   ├── AGILE.md
 │   ├── ARCHITECTURE.md
 │   ├── DEFINITION_OF_DONE.md
 │   └── ROADMAP.md
-├── src/secscan/
-│   ├── cli.py
-│   ├── models.py
-│   ├── policies.py
-│   ├── errors.py
-│   ├── adapters/
-│   │   ├── base.py
-│   │   └── trivy.py
-│   └── reports/
-│       ├── json_report.py
-│       └── html_report.py
-├── tests/
-│   ├── fixtures/
-│   ├── unit/
-│   └── integration/
-└── examples/
-    └── policies/
+└── .github/
+    ├── workflows/
+    └── dependabot.yml
 ```
 
-This is a proposed structure and may be refined during Sprint 1. Changes should preserve the boundaries described below.
+The structure may become more deeply layered as adapters and report types grow, but module boundaries must remain explicit.
 
-## Component responsibilities
+## Module responsibilities
 
-### CLI and entrypoint
+### `cli.py`
 
 - parse commands and options
 - validate user input
-- create output directories
-- invoke application services
-- render concise status and errors
-- translate result categories into documented process exit codes
+- create output locations
+- orchestrate adapters, normalization, reports, and policy evaluation
+- translate result categories into documented exit codes
+- print concise status and actionable errors
 
-The CLI must not contain scanner-specific parsing logic.
+The CLI must not implement engine-specific parsing.
 
-### Target resolver
+### `trivy.py`
 
-- identify target type
-- normalize image references
-- preserve tag and resolved digest
-- reject unsupported or ambiguous targets
-
-### Scanner adapter
-
-- invoke the external engine safely
-- pin and report engine version
-- capture raw output
-- distinguish engine failures from discovered vulnerabilities
+- invoke Trivy safely
+- capture raw JSON
+- generate CycloneDX output
+- enforce subprocess timeouts
+- distinguish scanner failures from vulnerability findings
 - avoid exposing credentials in commands, logs, or artifacts
 
-### Normalizer
+Future engines must implement equivalent adapter behavior without changing the normalized schema contract.
 
-Convert engine-specific results into a secscan-owned model. Initial fields should include:
+### `normalize.py`
 
-- schema version
-- scan ID
-- scan timestamp
-- target type
-- supplied target reference
-- resolved digest when available
-- scanner name and version
-- vulnerability database metadata when available
-- vulnerability ID
-- package name and type
-- installed version
-- fixed version or versions
-- severity
-- title and description
-- advisory/source references
-- fix availability
-- suppression state and reason
+- convert engine-specific output to `Finding` objects
+- normalize unsupported or missing severity values
+- preserve package, target, version, fix, and advisory information
+- calculate severity summaries
 
-### Policy evaluator
+### `models.py`
 
-- evaluate normalized findings, not raw engine data
-- support deterministic severity thresholds
-- return a policy result separately from scan success
-- eventually support fix availability, package scope, suppressions, and expiration
+Own the stable project-level data types. Schema changes must be deliberate, backward-aware, and reflected in artifact versioning.
 
-### Report writers
+### `policy.py`
 
-Consume the normalized model. Report generation must not rerun or reinterpret the scanner engine.
+Evaluate normalized findings rather than raw engine output. Policy failure is distinct from scanner or internal failure.
+
+### `report.py`
+
+Write artifacts from normalized data. Reporting must not rerun the scanner or reinterpret engine results independently.
+
+### `scripts/verify_wheel.py`
+
+Validate that release and container wheels contain every required runtime module. This is a build-integrity control, not an optional developer convenience.
+
+## Artifact contract
+
+A successful image scan currently produces:
+
+- `trivy.json` — raw engine findings for traceability
+- `secscan.json` — normalized project-owned findings
+- `secscan.cdx.json` — CycloneDX SBOM
+- `secscan.html` — self-contained human-readable report
+
+Future changes should add artifacts rather than silently changing existing semantics. Breaking schema changes require a schema-version increment and migration guidance.
 
 ## Exit-code contract
 
-The exact numeric values will be finalized in Sprint 1, but categories must remain distinct:
+- `0` — scan completed and policy passed
+- `1` — input, scanner, artifact, or internal operational failure
+- `2` — scan completed successfully but violated policy
 
-- success with no policy violation
-- successful scan with policy violation
-- invalid user input or policy
-- scanner/target failure
-- internal secscan failure
+A discovered vulnerability is not the same as a broken scan.
 
-This prevents CI from confusing a discovered critical vulnerability with a broken scan.
+## Packaging and CI contract
+
+Every pull request should validate the complete delivery chain:
+
+```text
+source modules
+    -> Python tests and static checks
+    -> wheel build
+    -> wheel manifest verification
+    -> clean wheel installation
+    -> runtime module imports
+    -> Docker image build
+    -> CLI startup smoke test
+    -> self-scan security check
+```
+
+The Docker runtime stage should install a built wheel rather than execute beside an unpackaged source tree. Required imports must be tested both after wheel installation and inside the image.
 
 ## Security boundaries
 
 ### Docker socket
 
-The primary image-scanning workflow should pull from a registry and must not require mounting `/var/run/docker.sock`. Docker-socket access is effectively privileged and may be offered only as an explicitly documented optional workflow later.
+Registry-image scanning must not require `/var/run/docker.sock`. Socket access may only be added later as an explicit high-privilege option.
 
-### Filesystem scanning
+### Rootless Docker
 
-Mounted targets should be read-only. secscan writes only to its designated output and cache locations.
+Docker-managed named volumes are the supported rootless path for report and cache persistence. The project must not require `0777`, `--privileged`, or disabling SELinux.
+
+### Filesystem targets
+
+Future mounted targets should be read-only. secscan writes only to designated output, cache, and history locations.
 
 ### Credentials
 
 - credentials are never copied into reports
-- command output must redact secrets
-- temporary AWS credentials are preferred for ECR
-- scanner subprocesses should receive the minimum required environment
+- logs and errors must redact secrets
+- temporary credentials are preferred for private registries and AWS
+- subprocesses receive the minimum required environment
 
 ### Supply chain
 
 - base images and scanner versions are pinned
-- dependencies are locked
+- Python packages are built and inspected as wheels
+- CI actions should be version-pinned
 - release images are scanned
-- later release sprints add signatures, provenance, and immutable digests
+- future release work adds signatures, provenance, and immutable digests
 
-## Technology decisions
+## Coding and design standards
 
-### Initial scanner: Trivy
+- Python 3.12 is the current runtime baseline.
+- Public functions should use type annotations.
+- New scanner integrations use adapters rather than conditionals spread through the CLI.
+- New output formats consume normalized models.
+- Tests accompany bug fixes and observable behavior changes.
+- Security and cost implications are documented in every sprint and PR.
+- Unrelated files are not changed as part of a focused sprint increment.
 
-Rationale:
-
-- supports OCI images and filesystems
-- produces vulnerability and SBOM output
-- reduces the number of initial binaries
-- has established CI and container workflows
-
-Tradeoff:
-
-- secscan initially depends on Trivy's detection behavior and database coverage
-- the adapter and normalization layers are therefore mandatory, not optional abstraction
-
-### Application language
-
-Python is the initial recommendation for orchestration, normalization, policy, and report generation because it supports rapid development and readable data transformation. The external scanner remains responsible for package discovery and vulnerability matching.
-
-This decision should be confirmed in Sprint 0 before implementation begins.
-
-## Future architecture evolution
-
-Later service mode may add:
+## Future service architecture
 
 ```text
 API -> job queue -> scanner workers -> normalized findings store
-                          |                  |
-                          v                  v
-                     artifact store      risk engine
-                                               |
-                                               v
-                                        dashboard/alerts
+                           |                  |
+                           v                  v
+                      artifact store      comparison/risk engine
+                                                |
+                                                v
+                                         dashboard/alerts
 ```
 
-Cloud components must remain optional. Storage, queue, and notification integrations should use interfaces that retain a local implementation for development and small deployments.
+Cloud components remain optional. Storage, queue, discovery, and notification integrations must retain local interfaces for development and small deployments.
 
 ## Architecture decision records
 
-Material decisions should be captured under `docs/adr/`, beginning with:
+Material decisions should be captured under `docs/adr/`, including:
 
-1. initial scanner engine
-2. implementation language
+1. scanner-engine selection
+2. normalized artifact schema and versioning
 3. license
-4. artifact schema/versioning
-5. release registry
-6. future persistence technology
+4. release registry
+5. persistence technology
+6. finding fingerprint strategy
+7. API authentication
+8. AWS discovery and contextual-risk boundaries

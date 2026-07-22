@@ -35,6 +35,7 @@ def _cell(value: object) -> str:
     return html.escape("" if value is None else str(value))
 
 
+# fmt: off
 def write_html(report: dict[str, Any], output: Path) -> None:
     summary = report.get("summary", {})
     findings = report.get("findings", [])
@@ -43,7 +44,8 @@ def write_html(report: dict[str, Any], output: Path) -> None:
         url = finding.get("primary_url")
         vulnerability = _cell(finding.get("vulnerability_id"))
         vulnerability_html = (
-            f'<a href="{html.escape(str(url), quote=True)}" rel="noreferrer">{vulnerability}</a>'
+            f'<a href="{html.escape(str(url), quote=True)}" rel="noreferrer">'
+            f"{vulnerability}</a>"
             if url
             else vulnerability
         )
@@ -60,10 +62,18 @@ def write_html(report: dict[str, Any], output: Path) -> None:
         )
 
     summary_cards = "".join(
-        f'<div class="card"><strong>{_cell(level)}</strong><span>{_cell(summary.get(level, 0))}</span></div>'
+        (
+            '<div class="card">'
+            f"<strong>{_cell(level)}</strong>"
+            f"<span>{_cell(summary.get(level, 0))}</span>"
+            "</div>"
+        )
         for level in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN", "total")
     )
     table_body = "".join(rows) or '<tr><td colspan="6">No vulnerabilities found.</td></tr>'
+    target_name = _cell(report.get("target", {}).get("name"))
+    generated_at = _cell(report.get("generated_at"))
+    scanner_version = _cell(report.get("scanner", {}).get("version"))
     document = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -71,15 +81,50 @@ def write_html(report: dict[str, Any], output: Path) -> None:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>secscan report</title>
 <style>
-body{{font-family:system-ui,sans-serif;margin:2rem;color:#1f2937}}h1{{margin-bottom:.25rem}}.muted{{color:#6b7280}}.cards{{display:flex;flex-wrap:wrap;gap:.75rem;margin:1.5rem 0}}.card{{border:1px solid #d1d5db;border-radius:.5rem;padding:.75rem 1rem;min-width:7rem;display:flex;justify-content:space-between;gap:1rem}}table{{border-collapse:collapse;width:100%;font-size:.92rem}}th,td{{border:1px solid #d1d5db;padding:.55rem;text-align:left;vertical-align:top}}th{{background:#f3f4f6}}a{{color:#1d4ed8}}code{{background:#f3f4f6;padding:.1rem .25rem;border-radius:.2rem}}
+body {{ font-family: system-ui, sans-serif; margin: 2rem; color: #1f2937; }}
+h1 {{ margin-bottom: .25rem; }}
+.muted {{ color: #6b7280; }}
+.cards {{ display: flex; flex-wrap: wrap; gap: .75rem; margin: 1.5rem 0; }}
+.card {{
+  border: 1px solid #d1d5db;
+  border-radius: .5rem;
+  padding: .75rem 1rem;
+  min-width: 7rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}}
+table {{ border-collapse: collapse; width: 100%; font-size: .92rem; }}
+th, td {{
+  border: 1px solid #d1d5db;
+  padding: .55rem;
+  text-align: left;
+  vertical-align: top;
+}}
+th {{ background: #f3f4f6; }}
+a {{ color: #1d4ed8; }}
+code {{ background: #f3f4f6; padding: .1rem .25rem; border-radius: .2rem; }}
 </style>
 </head>
 <body>
 <h1>secscan vulnerability report</h1>
-<p class="muted">Target: <code>{_cell(report.get('target', {}).get('name'))}</code><br>Generated: {_cell(report.get('generated_at'))}<br>Scanner: {_cell(report.get('scanner', {}).get('version'))}</p>
+<p class="muted">
+  Target: <code>{target_name}</code><br>
+  Generated: {generated_at}<br>
+  Scanner: {scanner_version}
+</p>
 <div class="cards">{summary_cards}</div>
 <table>
-<thead><tr><th>Severity</th><th>Vulnerability</th><th>Package</th><th>Installed</th><th>Fixed</th><th>Title</th></tr></thead>
+<thead>
+<tr>
+  <th>Severity</th>
+  <th>Vulnerability</th>
+  <th>Package</th>
+  <th>Installed</th>
+  <th>Fixed</th>
+  <th>Title</th>
+</tr>
+</thead>
 <tbody>{table_body}</tbody>
 </table>
 </body>
@@ -87,3 +132,4 @@ body{{font-family:system-ui,sans-serif;margin:2rem;color:#1f2937}}h1{{margin-bot
 """
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(document, encoding="utf-8")
+# fmt: on
