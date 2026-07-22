@@ -4,13 +4,20 @@ import argparse
 import json
 import subprocess
 import sys
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from secscan import __version__
 from secscan.normalize import normalize_trivy
 from secscan.policy import policy_failed
 from secscan.report import build_report, write_html, write_json, write_raw_json
 from secscan.trivy import TrivyError, generate_cyclonedx, scan_image
+
+
+def _secscan_version() -> str:
+    try:
+        return version("secscan")
+    except PackageNotFoundError:
+        return "unknown"
 
 
 def _trivy_version() -> str:
@@ -27,7 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="secscan", description="Scan container images with normalized output"
     )
-    parser.add_argument("--version", action="version", version=f"secscan {__version__}")
+    parser.add_argument("--version", action="version", version=f"secscan {_secscan_version()}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     scan = subparsers.add_parser("scan", help="scan a target")
@@ -58,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "name": "trivy",
                     "version": _trivy_version(),
-                    "secscan_version": __version__,
+                    "secscan_version": _secscan_version(),
                 },
             )
             write_raw_json(raw, args.output_dir / "trivy.json")
