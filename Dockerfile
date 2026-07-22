@@ -4,7 +4,9 @@ FROM python:3.12.11-slim-bookworm AS builder
 WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY secscan ./secscan
-RUN pip wheel --no-deps --wheel-dir /wheels .
+COPY scripts/verify_wheel.py ./scripts/verify_wheel.py
+RUN pip wheel --no-deps --wheel-dir /wheels . \
+    && python scripts/verify_wheel.py /wheels/secscan-*.whl
 
 FROM python:3.12.11-slim-bookworm
 
