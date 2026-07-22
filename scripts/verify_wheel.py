@@ -28,6 +28,11 @@ def main() -> int:
     with zipfile.ZipFile(wheel) as archive:
         names = set(archive.namelist())
 
+    package_files = sorted(name for name in names if name.startswith("secscan/"))
+    print(f"wheel package contents for {wheel.name}:")
+    for name in package_files:
+        print(f"- {name}")
+
     missing = sorted(REQUIRED_FILES - names)
     if missing:
         print("wheel is missing required secscan modules:", file=sys.stderr)
