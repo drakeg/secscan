@@ -14,16 +14,19 @@ A story is done only when all applicable criteria below are satisfied.
 - implementation follows documented component boundaries
 - public interfaces and non-obvious decisions are documented
 - configuration is externalized where appropriate
-- scanner-specific behavior remains isolated in its adapter
+- scanner-specific behavior remains isolated in its scanner plugin and engine adapter
+- scanner plugins do not import CLI parsing or report-writing concerns
+- scanners return normalized project-owned models
 - temporary debugging code and unused dependencies are removed
 
 ## Testing
 
-- unit tests cover new normalization, policy, and error-handling logic
+- unit tests cover new normalization, policy, registry, and error-handling logic
 - integration or smoke tests cover the user-visible path
 - tests include at least one expected success and one expected failure
+- scanner plugins have contract and registration coverage
 - test fixtures do not contain live credentials or confidential data
-- relevant checks pass before merge
+- Ruff, mypy, pytest, wheel verification, clean installation, container smoke tests, Trivy self-scan, and CodeQL pass before merge
 
 ## Security
 
@@ -32,6 +35,7 @@ A story is done only when all applicable criteria below are satisfied.
 - inputs, paths, subprocess arguments, and output locations are validated
 - privileged access is avoided or explicitly documented and justified
 - new external dependencies have a compatible license and pinned version
+- plugin registration rejects ambiguous or duplicate scanner names
 
 ## Documentation
 
@@ -39,6 +43,7 @@ A story is done only when all applicable criteria below are satisfied.
 - commands can be copied and run as documented
 - exit codes, artifact formats, and configuration changes are documented
 - architecture or ADR documentation is updated for material decisions
+- scanner capabilities, boundaries, and deferred behavior are explicit
 - known limitations are explicit
 
 ## Operations and cost
@@ -53,6 +58,7 @@ A story is done only when all applicable criteria below are satisfied.
 - work is committed on a focused branch
 - pull request explains what changed, why, and how it was validated
 - review feedback is resolved or explicitly deferred
+- all required GitHub checks pass before merge
 - merged code leaves `main` in a releasable state
 
 ## Sprint acceptance
