@@ -63,14 +63,17 @@ jobs:
       - name: Verify CLI startup
         run: docker run --rm secscan:ci --version
 
+      - name: Export image for scanning
+        run: docker save secscan:ci --output /tmp/secscan-ci.tar
+
       - name: Scan secscan image
         run: |
-          mkdir -p trivy-cache
+          mkdir -p /tmp/trivy-cache
           docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$PWD/trivy-cache:/root/.cache/" \
+            -v /tmp/secscan-ci.tar:/scan/secscan-ci.tar:ro \
+            -v /tmp/trivy-cache:/root/.cache/ \
             aquasec/trivy:0.65.0 image \
+            --input /scan/secscan-ci.tar \
             --exit-code 1 \
             --ignore-unfixed \
-            --severity CRITICAL \
-            secscan:ci
+            --severity CRITICAL
