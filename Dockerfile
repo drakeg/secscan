@@ -1,6 +1,6 @@
 FROM aquasec/trivy:0.65.0 AS trivy
 
-FROM python:3.12.11-slim-bookworm AS builder
+FROM python:3.12.13-slim-bookworm AS builder
 WORKDIR /build
 COPY pyproject.toml README.md ./
 RUN mkdir -p secscan scripts
@@ -16,7 +16,7 @@ RUN python -c "from pathlib import Path; required={'__init__.py','cli.py','model
     && pip wheel --no-deps --wheel-dir /wheels . \
     && python scripts/verify_wheel.py /wheels/secscan-*.whl
 
-FROM python:3.12.11-slim-bookworm
+FROM python:3.12.13-slim-bookworm
 
 ARG SECSCAN_VERSION=0.1.0
 LABEL org.opencontainers.image.title="secscan" \
