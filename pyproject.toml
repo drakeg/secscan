@@ -17,6 +17,10 @@ secscan = "secscan.cli:main"
 
 [tool.setuptools]
 packages = ["secscan"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+secscan = ["*.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
