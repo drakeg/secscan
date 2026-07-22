@@ -15,12 +15,10 @@ dev = ["pytest>=8.3,<9"]
 [project.scripts]
 secscan = "secscan.cli:main"
 
-[tool.setuptools]
-packages = ["secscan"]
-include-package-data = true
-
-[tool.setuptools.package-data]
-secscan = ["*.py"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["secscan"]
+namespaces = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
