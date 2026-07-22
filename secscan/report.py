@@ -35,6 +35,7 @@ def _cell(value: object) -> str:
     return html.escape("" if value is None else str(value))
 
 
+# fmt: off
 def write_html(report: dict[str, Any], output: Path) -> None:
     summary = report.get("summary", {})
     findings = report.get("findings", [])
@@ -131,3 +132,4 @@ code {{ background: #f3f4f6; padding: .1rem .25rem; border-radius: .2rem; }}
 """
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(document, encoding="utf-8")
+# fmt: on
