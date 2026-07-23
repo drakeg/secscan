@@ -6,6 +6,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
+from secscan.compare import compare_findings, load_baseline
 from secscan.policy import Policy, evaluate_policy, load_policy, policy_failed
 from secscan.report import build_report, write_html, write_json, write_raw_json
 from secscan.scanners.base import ScanRequest
@@ -46,6 +47,11 @@ def build_parser() -> argparse.ArgumentParser:
             "--policy",
             type=Path,
             help="YAML policy file containing a threshold and suppressions",
+        )
+        target_parser.add_argument(
+            "--baseline",
+            type=Path,
+            help="previous secscan.json report used to classify findings",
         )
         target_parser.add_argument(
             "--timeout", type=int, default=600, help="scan timeout in seconds"
@@ -100,6 +106,12 @@ def main(argv: list[str] | None = None) -> int:
         write_json(report, args.output_dir / "secscan.json")
         write_html(report, args.output_dir / "secscan.html")
         scanner.generate_sbom(request, args.output_dir / "secscan.cdx.json")
+
+        if args.baseline:
+            comparison = compare_findings(list(result.findings), load_baseline(args.baseline))
+            write_json(comparison, args.output_dir / "secscan.diff.json")
+            print(f"Comparison: {json.dumps(comparison['summary'], sort_keys=True)}")
+
         print(json.dumps(report["summary"], sort_keys=True))
         print(
             f"Policy: fail_on={fail_on}, "
