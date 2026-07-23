@@ -2,20 +2,20 @@
 
 ## Purpose
 
-This document is the living technical blueprint for secscan. It records current boundaries, data flow, module ownership, validation expectations, and the intended evolution from a standalone container scanner into a portable vulnerability-management platform.
+This document is the living technical blueprint for secscan. It records current boundaries, data flow, module ownership, validation expectations, and the intended evolution from a standalone scanner into a portable vulnerability-management platform.
 
 ## Architectural objectives
 
 - Run as a self-contained, non-root Docker image.
 - Support rootful and rootless Docker without requiring privileged mode.
-- Avoid the Docker socket for the primary registry-image workflow.
+- Avoid the Docker socket for normal image and filesystem workflows.
 - Keep target behavior in scanner plugins and engine behavior behind adapters.
 - Own stable request, result, and finding models so callers are independent of engines.
 - Produce deterministic artifacts for humans, CI systems, and future APIs.
 - Preserve local, no-cloud operation as the baseline.
 - Fail packaging and container validation before code is merged.
 
-## Sprint 4A data flow
+## Current data flow
 
 ```text
 CLI / future API / scheduled job
@@ -25,11 +25,11 @@ CLI / future API / scheduled job
               |
               v
        ScannerRegistry
-              |
-              v
-       ImageScanner plugin
-              |
-              v
+          /       \
+         v         v
+ ImageScanner   FilesystemScanner
+         \         /
+          v       v
          Trivy adapter
               |--------------------> raw Trivy JSON
               |--------------------> CycloneDX JSON SBOM
@@ -46,7 +46,7 @@ CLI / future API / scheduled job
               +--------------------> summary and exit code
 ```
 
-The CLI owns argument parsing and presentation. Scanner plugins own target orchestration. Engine adapters own subprocess details. Normalization, reporting, and policy remain project-level concerns.
+The CLI owns argument parsing and presentation. Scanner plugins own target validation and orchestration. Engine adapters own subprocess details. Normalization, reporting, and policy remain project-level concerns.
 
 ## Repository layout
 
@@ -56,7 +56,6 @@ secscan/
 ├── pyproject.toml
 ├── README.md
 ├── secscan/
-│   ├── __init__.py
 │   ├── cli.py
 │   ├── models.py
 │   ├── normalize.py
@@ -64,159 +63,112 @@ secscan/
 │   ├── report.py
 │   ├── trivy.py
 │   └── scanners/
-│       ├── __init__.py
 │       ├── base.py
 │       ├── registry.py
-│       └── image.py
+│       ├── image.py
+│       └── filesystem.py
 ├── scripts/
 │   └── verify_wheel.py
 ├── tests/
 ├── docs/
-│   ├── AGILE.md
-│   ├── ARCHITECTURE.md
-│   ├── DEFINITION_OF_DONE.md
-│   └── ROADMAP.md
 └── .github/
-    ├── workflows/
-    └── dependabot.yml
 ```
 
 ## Architectural rules
 
 ### Plugins never depend on the CLI
 
-Scanner plugins accept `ScanRequest` values and return `ScanResult` values. They must not import argparse, inspect command-line arguments, print user-facing output, or translate exit codes.
+Scanner plugins accept `ScanRequest` values and return `ScanResult` values. They do not import argparse, print user-facing output, choose exit codes, or know whether the caller is a CLI, API, scheduler, or test.
 
-### Plugins never generate reports
+### Plugins never generate project reports
 
-A scanner returns raw traceability data, normalized findings, and scanner metadata. The report layer decides how to emit normalized JSON, HTML, SARIF, SPDX, or future formats.
-
-CycloneDX generation is treated as a scanner capability because it is produced by the underlying discovery engine, but the plugin receives an explicit destination from the caller and does not choose report names or layouts.
+A scanner returns raw traceability data, normalized findings, and scanner metadata. The report layer writes normalized JSON and HTML. CycloneDX generation is treated as an engine-native scanner capability, but the caller chooses the destination and artifact name.
 
 ### Normalization is mandatory
 
-Every scanner returns secscan-owned `Finding` objects. Policy and report code must not branch on Trivy, Grype, target type, or another engine-specific result shape.
+Every scanner returns secscan-owned `Finding` objects. Policy and report code must not branch on Trivy, target type, or another engine-specific result shape.
 
 ### Tools are adapters
 
-`ImageScanner` is a target plugin. Trivy is the initial engine adapter used by that plugin. A future engine may replace or complement Trivy without changing the registry, CLI request model, policy layer, or report layer.
+`ImageScanner` and `FilesystemScanner` are target plugins. Trivy is the initial engine adapter used beneath both plugins. A future engine may replace or complement Trivy without changing the registry, CLI request model, policy layer, or report layer.
 
 ### Registration is explicit
 
-Sprint 4A uses an explicit default registry. Dynamic Python entry points, remote plugins, and untrusted plugin loading are deferred until their security and compatibility model is defined.
+Built-in scanners are registered explicitly. Dynamic entry points, remote plugins, and untrusted plugin loading remain deferred until a trust, compatibility, and signing model is defined.
 
 ## Core contracts
 
 ### `ScanRequest`
 
-An immutable request containing:
-
-- scanner or target type
-- target reference or path
-- timeout
-- optional output location needed for engine-native artifacts
-
-The model is independent of argparse and can later be created by an API, scheduler, or test.
+An immutable request containing the scanner name, target reference or path, timeout, and optional output location.
 
 ### `ScanResult`
 
-An immutable result containing:
-
-- the original request
-- normalized findings
-- raw engine payload for traceability
-- scanner and engine metadata
-
-Report and policy layers consume this result.
+An immutable result containing the original request, normalized findings, raw engine payload, and scanner metadata.
 
 ### `Scanner`
 
-Every scanner provides:
-
-- unique stable name
-- human-readable description
-- capability metadata
-- `scan(request)`
-- optional engine-native SBOM generation
+Every scanner provides a stable capability name, description, target help, `scan(request)`, and engine-native SBOM generation.
 
 ### `ScannerRegistry`
 
-The registry:
-
-- registers scanner instances explicitly
-- rejects duplicate names
-- resolves a scanner by stable name
-- lists registered capabilities deterministically
-- raises an actionable error for unknown scanners
+The registry registers scanner instances, rejects duplicate names, resolves scanners, lists capabilities deterministically, and raises actionable errors for unknown scanners.
 
 ## Module responsibilities
 
 ### `cli.py`
 
 - parse commands and options
-- validate user input
 - create `ScanRequest`
 - resolve scanners through the registry
-- invoke report and policy layers using `ScanResult`
-- translate result categories into documented exit codes
-- print concise status and actionable errors
+- invoke reporting and policy using `ScanResult`
+- translate results into documented exit codes
 
-The CLI must not implement engine-specific parsing or subprocess behavior.
-
-### `scanners/base.py`
-
-Own scanner-neutral contracts: `Scanner`, `ScannerCapability`, `ScanRequest`, and `ScanResult`.
-
-### `scanners/registry.py`
-
-Own registration, lookup, duplicate detection, and the default built-in scanner registry.
+The CLI must not implement target-specific validation or engine subprocess behavior.
 
 ### `scanners/image.py`
 
-Own container-image scan orchestration. It delegates package discovery, vulnerability matching, and CycloneDX generation to the Trivy adapter, then normalizes results before returning `ScanResult`.
+Own container-image orchestration and delegate image vulnerability and SBOM operations to the Trivy adapter.
+
+### `scanners/filesystem.py`
+
+- expand and resolve the requested path
+- reject nonexistent or unreadable targets
+- delegate filesystem vulnerability and SBOM operations to the Trivy adapter
+- normalize engine output into `ScanResult`
+
+The plugin does not modify the target. Container usage must mount filesystem targets read-only.
 
 ### `trivy.py`
 
-- invoke Trivy safely
+- invoke Trivy image and filesystem modes safely
 - capture raw JSON
 - generate CycloneDX output
 - enforce subprocess timeouts
-- distinguish scanner failures from vulnerability findings
-- avoid exposing credentials in commands, logs, or artifacts
+- distinguish scanner failure from vulnerability findings
 
 ### `normalize.py`
 
-- convert engine-specific output to `Finding` objects
-- normalize unsupported or missing severity values
-- preserve package, target, version, fix, and advisory information
-- calculate severity summaries
-
-### `models.py`
-
-Own stable project-level finding data. Finding schema changes must be deliberate, backward-aware, and reflected in artifact versioning.
+Convert engine-specific output into stable `Finding` values and calculate severity summaries.
 
 ### `policy.py`
 
-Evaluate normalized findings rather than raw engine output. Policy failure is distinct from scanner or internal failure.
+Evaluate normalized findings. Policy failure is distinct from scanner or internal failure.
 
 ### `report.py`
 
-Write artifacts from normalized project-owned data. Reporting must not rerun the scanner or reinterpret engine results independently.
-
-### `scripts/verify_wheel.py`
-
-Validate that release and container wheels contain every required runtime module, including scanner subpackages. This is a build-integrity control.
+Write project artifacts from normalized data without rerunning or reinterpreting the scanner.
 
 ## Artifact contract
 
-A successful image scan currently produces:
+A successful image or filesystem scan produces:
 
-- `trivy.json` — raw engine findings for traceability
+- `trivy.json` — raw engine findings
 - `secscan.json` — normalized project-owned findings
 - `secscan.cdx.json` — CycloneDX SBOM
 - `secscan.html` — self-contained human-readable report
 
-Sprint 4A preserves these names and semantics.
+Target type is reflected in the scan request and raw engine data. Artifact names and exit semantics remain stable.
 
 ## Exit-code contract
 
@@ -228,52 +180,46 @@ A discovered vulnerability is not the same as a broken scan.
 
 ## Packaging and CI contract
 
-Every pull request validates the complete delivery chain:
+Every pull request validates:
 
 ```text
 source modules and scanner subpackages
     -> Ruff, mypy, and pytest
-    -> wheel build
-    -> wheel manifest verification
-    -> clean wheel installation
-    -> runtime module imports
-    -> Docker image build
-    -> CLI startup smoke test
+    -> wheel build and manifest verification
+    -> clean wheel installation and imports
+    -> Docker image build and CLI startup
     -> fixable-critical self-scan
     -> CodeQL
 ```
 
-The Docker runtime stage installs a built wheel rather than executing beside an unpackaged source tree. Required scanner modules are tested after wheel installation and inside the image.
+Required scanner modules must be verified in the source tree, built wheel, clean installation, and runtime image.
 
 ## Security boundaries
 
-### Plugin loading
+### Filesystem targets
 
-Only trusted, built-in plugins are registered in Sprint 4A. Dynamic discovery is deferred because arbitrary plugin loading is code execution and requires an explicit trust, versioning, and signing model.
+- container targets are mounted read-only with `:ro`
+- secscan writes only to designated report and cache locations
+- secscan does not attempt privilege escalation or bypass host permissions
+- unreadable or nonexistent targets fail as operational errors
+- sensitive target contents are not copied into normalized reports by design, although raw scanner output must still be handled as security-sensitive data
 
 ### Docker socket
 
-Registry-image scanning must not require `/var/run/docker.sock`. Socket access may only be added later as an explicit high-privilege option.
+Normal image and filesystem scanning do not require `/var/run/docker.sock`.
 
 ### Rootless Docker
 
-Docker-managed named volumes are the supported rootless path for report and cache persistence. The project must not require `0777`, `--privileged`, or disabling SELinux.
+Docker-managed named volumes are the supported path for report and cache persistence. The project must not require `0777`, `--privileged`, or disabling SELinux.
 
-### Filesystem targets
+### Plugin loading
 
-Future mounted targets should be read-only. secscan writes only to designated output, cache, and history locations.
-
-### Credentials
-
-- credentials are never copied into reports
-- logs and errors must redact secrets
-- temporary credentials are preferred for private registries and AWS
-- subprocesses receive the minimum required environment
+Only trusted built-in plugins are registered. Arbitrary plugin loading is code execution and remains out of scope.
 
 ### Supply chain
 
 - base images and scanner versions are pinned
-- Python packages are built and inspected as wheels
+- Python wheels are built and inspected
 - CI actions are version-pinned
 - release images are scanned
 - future release work adds signatures, provenance, and immutable digests
@@ -284,10 +230,10 @@ Future mounted targets should be read-only. secscan writes only to designated ou
 - Public functions and plugin contracts use type annotations.
 - New target integrations implement `Scanner` rather than adding target conditionals to the CLI.
 - New engines remain adapters beneath scanner plugins.
-- New output formats consume project-owned normalized models.
-- Tests accompany bug fixes and observable behavior changes.
+- New output formats consume normalized project-owned models.
+- Tests accompany new behavior and failure paths.
 - Security and cost implications are documented in every sprint and PR.
-- Unrelated files are not changed as part of a focused sprint increment.
+- Unrelated files are not changed as part of a focused increment.
 
 ## Future service architecture
 
@@ -302,17 +248,3 @@ API -> job queue -> scanner registry/workers -> normalized findings store
 ```
 
 Cloud components remain optional. Storage, queue, discovery, and notification integrations must retain local interfaces for development and small deployments.
-
-## Architecture decision records
-
-Material decisions should be captured under `docs/adr/`, including:
-
-1. scanner-engine selection
-2. scanner plugin trust and discovery model
-3. normalized artifact schema and versioning
-4. license
-5. release registry
-6. persistence technology
-7. finding fingerprint strategy
-8. API authentication
-9. AWS discovery and contextual-risk boundaries
