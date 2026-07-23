@@ -30,15 +30,16 @@ class StubRegistry:
 
 def test_baseline_is_loaded_before_current_report_is_written(tmp_path: Path, monkeypatch) -> None:
     baseline_path = tmp_path / "secscan.json"
-    baseline_path.write_text(json.dumps({"findings": []}), encoding="utf-8")
+    baseline_report = {"findings": []}
+    baseline_path.write_text(json.dumps(baseline_report), encoding="utf-8")
     baseline_loaded = False
 
-    def load_existing_baseline(path: Path):
+    def load_existing_baseline(path: Path) -> dict[str, object]:
         nonlocal baseline_loaded
         assert path == baseline_path
-        assert json.loads(path.read_text(encoding="utf-8")) == {"findings": []}
+        assert json.loads(path.read_text(encoding="utf-8")) == baseline_report
         baseline_loaded = True
-        return []
+        return baseline_report
 
     monkeypatch.setattr(cli, "build_default_registry", lambda: StubRegistry())
     monkeypatch.setattr(cli, "load_baseline", load_existing_baseline)
