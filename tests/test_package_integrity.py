@@ -11,6 +11,10 @@ MODULES = [
     "secscan.policy",
     "secscan.report",
     "secscan.trivy",
+    "secscan.scanners",
+    "secscan.scanners.base",
+    "secscan.scanners.registry",
+    "secscan.scanners.image",
 ]
 
 
