@@ -38,71 +38,62 @@ Delivered scanner-neutral request and result contracts, an explicit registry, th
 
 Delivered the filesystem scanner plugin, read-only mount guidance, Trivy filesystem and CycloneDX adapters, path validation, target-aware reports, and packaging coverage.
 
+### Sprint 4C — Policy Configuration and Suppressions
+
+Delivered safe YAML policies, threshold precedence, expiring auditable suppressions, policy metadata, and strict validation.
+
 ## Current sprint
 
-### Sprint 4C — Policy Configuration and Suppressions
+### Sprint 5 — Finding Comparison and Baselines
 
 #### Goal
 
-Add reusable YAML policies and temporary, auditable suppressions without hiding findings or changing the operational exit-code contract.
+Compare current findings with a prior normalized report and classify findings as new, resolved, or unchanged using stable secscan-owned fingerprints.
 
 #### User stories
 
-1. As a CI user, I can store the severity threshold in a version-controlled policy file.
-2. As a security owner, I can temporarily suppress a specific vulnerability with a documented reason and expiration date.
-3. As an auditor, I can see which findings were suppressed and why in the normalized report.
-4. As an operator, I can override the policy threshold explicitly from the command line.
+1. As a CI user, I can identify vulnerabilities introduced since the last successful scan.
+2. As a security owner, I can see which previously observed findings are resolved.
+3. As an auditor, I can reproduce the comparison from two normalized secscan reports.
+4. As an operator, I can use comparison without changing existing policy and exit-code behavior.
 
 #### Planned implementation
 
-- `--policy <path>` support for image and filesystem scans
-- safe YAML loading and strict policy-shape validation
-- policy-level `fail_on` threshold
-- exact vulnerability suppressions with optional package matching
-- mandatory suppression reason and ISO expiration date
-- expired-suppression enforcement
-- deterministic threshold precedence
-- policy evaluation metadata in `secscan.json`
-- unit tests for parsing, matching, expiration, and validation
-- README, architecture, and policy-guide updates
-
-#### Precedence
-
-1. explicit CLI `--fail-on`
-2. YAML `policy.fail_on`
-3. built-in `CRITICAL` default
-
-Suppressions are evaluated before severity-policy failure. Expired suppressions never affect results.
+- `--baseline <secscan.json>` for image and filesystem scans
+- stable SHA-256 finding fingerprints
+- fingerprint identity based on vulnerability, package, target, and package type
+- `secscan.diff.json` with `new`, `resolved`, and `unchanged` collections
+- strict baseline JSON and schema validation
+- tests for fingerprints, classification, and invalid baselines
+- package, wheel, clean-install, and container checks for the comparison module
+- CI validation on Python 3.12 and Python 3.14
+- README, architecture, and baseline-guide updates
 
 #### Acceptance criteria
 
-- valid YAML policies load for both scanner types
-- invalid YAML or schema errors produce exit code `1`
-- suppressions require vulnerability, reason, and expiration
-- package-scoped suppressions match only the named package
-- suppressed findings remain visible in report policy metadata
-- only active findings determine exit code `2`
-- CLI `--fail-on` overrides the file threshold
+- current-only findings are classified as `new`
+- baseline-only findings are classified as `resolved`
+- findings present in both reports are classified as `unchanged`
+- changes to severity, title, installed version, fixed version, or URL do not create false new findings
+- missing or malformed baselines fail with exit code `1`
+- comparison does not alter policy evaluation or exit code `2`
+- wheel and container validation include the comparison module
 - CI and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- fix-availability, age, exploitability, and package-deny rules
-- wildcard or regular-expression matching
-- remote or signed policy bundles
-- suppression approval workflows
-- centralized policy distribution
+- automatic baseline storage or selection
+- historical trend databases
+- policy rules that fail only on new findings
+- comparison across unrelated targets
+- semantic package renaming or vulnerability alias resolution
 
 #### Cost outlook
 
-Current and projected recurring infrastructure cost remains **$0**. Policy evaluation is local and introduces only a small Python YAML dependency.
+Current and projected recurring infrastructure cost remains **$0**. Comparison is local and uses existing report files.
 
 ## Planned feature sprints
-
-### Sprint 5 — Finding Comparison and Baselines
-
-Compare current and previous results and classify findings as new, resolved, or unchanged using stable finding fingerprints.
 
 ### Sprint 6 — Local Scan History
 

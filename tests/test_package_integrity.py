@@ -6,6 +6,7 @@ import importlib
 MODULES = [
     "secscan",
     "secscan.cli",
+    "secscan.compare",
     "secscan.models",
     "secscan.normalize",
     "secscan.policy",

@@ -10,8 +10,12 @@ permissions:
 
 jobs:
   python:
-    name: Python quality and package integrity
+    name: Python ${{ matrix.python-version }} quality and package integrity
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.14"]
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -19,7 +23,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: pip
 
       - name: Install development dependencies
@@ -44,7 +48,7 @@ jobs:
         run: |
           python -m venv /tmp/secscan-wheel-test
           /tmp/secscan-wheel-test/bin/pip install dist/secscan-*.whl
-          /tmp/secscan-wheel-test/bin/python -c "import secscan, secscan.cli, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem"
+          /tmp/secscan-wheel-test/bin/python -c "import secscan, secscan.cli, secscan.compare, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem"
           /tmp/secscan-wheel-test/bin/secscan --version
 
   container:
@@ -69,7 +73,7 @@ jobs:
           docker run --rm \
             -v /tmp/secscan-ci.tar:/scan/secscan-ci.tar:ro \
             -v /tmp/trivy-cache:/root/.cache/ \
-            aquasec/trivy:0.70.0 image \
+            aquasec/trivy:0.72.0 image \
             --input /scan/secscan-ci.tar \
             --exit-code 1 \
             --ignore-unfixed \
