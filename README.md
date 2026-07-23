@@ -17,6 +17,8 @@ A successful scan creates four artifacts:
 - `secscan.cdx.json` — CycloneDX JSON SBOM
 - `secscan.html` — self-contained browser report
 
+A scan using `--baseline` also creates `secscan.diff.json`.
+
 ## Image scanning
 
 ```bash
@@ -75,6 +77,18 @@ secscan scan filesystem . --policy policy.yaml
 
 An explicitly supplied `--fail-on` overrides the policy threshold. Active suppressions are applied before exit-code evaluation, expired suppressions are ignored, and suppression details remain visible in `secscan.json`. See [Policy Configuration](docs/POLICIES.md).
 
+## Baseline comparison
+
+Compare a current scan against a previous normalized report:
+
+```bash
+secscan scan image alpine:3.20 \
+  --baseline previous/secscan.json \
+  --output-dir reports
+```
+
+`secscan.diff.json` classifies findings as `new`, `resolved`, or `unchanged` using a stable fingerprint based on vulnerability ID, package, target, and package type. Comparison is informational and does not change the existing policy exit code. See [Finding Baselines](docs/BASELINES.md).
+
 ## Copy reports from a rootless Docker volume
 
 ```bash
@@ -92,10 +106,16 @@ Open `reports/secscan.html` in a browser to review the vulnerability report.
 ## Exit codes
 
 - `0`: scan completed and policy passed
-- `1`: scanner, policy, target, input, registry, or output error
+- `1`: scanner, policy, baseline, target, input, registry, or output error
 - `2`: scan completed but active findings met or exceeded the effective threshold
 
 The vulnerability database cache is stored under `/cache` and should be persisted between scans.
+
+## Python support
+
+- Minimum supported Python: 3.12
+- Container runtime: Python 3.14
+- CI validates both Python 3.12 and 3.14
 
 ## Local development
 
@@ -111,13 +131,14 @@ secscan --help
 
 ## Current boundaries
 
-The built-in scanners support public container images and local filesystem paths. YAML policies support severity thresholds and expiring vulnerability suppressions. Private registry authentication, scan history, service mode, AWS discovery, and contextual risk scoring remain later increments.
+The built-in scanners support public container images and local filesystem paths. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Private registry authentication, persistent scan history, service mode, AWS discovery, and contextual risk scoring remain later increments.
 
 ## Security notes
 
 - Container image scanning does not require mounting the Docker socket.
-- Filesystem targets and policy files should be mounted read-only.
+- Filesystem targets, policy files, and baseline files should be mounted read-only.
 - Suppressions require a reason and expiration date.
+- Baseline and comparison artifacts should be treated as security-sensitive inventory.
 - The secscan image defaults to non-root UID `10001`.
 - Rootless Docker users should use Docker-managed named volumes for `/reports` and `/cache`.
 - Do not use `--privileged`, disable SELinux, or make project directories permanently world-writable.
@@ -128,6 +149,7 @@ The built-in scanners support public container images and local filesystem paths
 - [Product roadmap and sprint plans](docs/ROADMAP.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Policy configuration](docs/POLICIES.md)
+- [Finding baselines](docs/BASELINES.md)
 - [Definition of done](docs/DEFINITION_OF_DONE.md)
 
 ## License
