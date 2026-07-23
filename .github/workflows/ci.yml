@@ -44,7 +44,7 @@ jobs:
         run: |
           python -m venv /tmp/secscan-wheel-test
           /tmp/secscan-wheel-test/bin/pip install dist/secscan-*.whl
-          /tmp/secscan-wheel-test/bin/python -c "import secscan, secscan.cli, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image"
+          /tmp/secscan-wheel-test/bin/python -c "import secscan, secscan.cli, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem"
           /tmp/secscan-wheel-test/bin/secscan --version
 
   container:
