@@ -30,69 +30,62 @@ Delivered raw Trivy JSON, normalized secscan JSON, CycloneDX JSON, and a standal
 
 Delivered pull-request CI for linting, mypy, pytest, wheel construction and inspection, clean installation, container startup, CodeQL, Dependabot, and fixable-critical container vulnerability enforcement.
 
+### Sprint 4A — Scanner Plugin Architecture
+
+Delivered scanner-neutral request and result contracts, an explicit registry, the image scanner as the first plugin, registry-driven CLI dispatch, and nested-module packaging controls.
+
 ## Current sprint
 
-### Sprint 4A — Scanner Plugin Architecture
+### Sprint 4B — Filesystem Scanning
 
 #### Goal
 
-Introduce a stable scanner contract and registry so new target types can be added without coupling scanner implementations to the CLI, reporting, or policy layers.
+Add a built-in filesystem scanner plugin that scans a local or mounted path while preserving the existing normalized findings, artifact names, policy behavior, and exit-code contract.
 
 #### User stories
 
-1. As a maintainer, I can add a scanner by implementing one documented interface and registering it.
-2. As a caller, I can submit a target-neutral `ScanRequest` and receive a normalized `ScanResult`.
-3. As an existing user, `secscan scan image alpine:3.20` behaves exactly as before.
+1. As a developer, I can scan the current project directory for vulnerable operating-system and language packages.
+2. As an operator, I can mount an extracted root filesystem read-only and scan it without granting Docker-socket or privileged access.
+3. As a CI user, I receive the same JSON, CycloneDX, HTML, summary, and policy exit behavior as an image scan.
 
 #### Planned implementation
 
-- `Scanner` abstract base contract
-- immutable `ScanRequest`, `ScanResult`, and scanner capability metadata
-- explicit scanner registry with duplicate and unknown-scanner validation
-- image scanner as the first registered plugin
-- Trivy retained as an adapter beneath the image scanner
-- CLI dispatch through the registry
-- tests for registration, lookup, duplicate registration, unknown targets, and image scanner behavior
-- package and wheel verification updated for scanner submodules
-- architecture and Definition of Done updated with plugin boundaries
-
-#### Architectural rules
-
-- scanner plugins do not import or parse argparse
-- scanner plugins do not write HTML or normalized JSON reports
-- scanners return normalized findings rather than exposing engine-specific models
-- scanner engines remain adapters and may be replaced without changing callers
-- policy and report layers consume `ScanResult`, not engine output
-- registration is explicit in Sprint 4A; dynamic third-party discovery is deferred
+- `FilesystemScanner` plugin registered in the default scanner registry
+- path expansion, resolution, existence validation, and readability validation
+- Trivy filesystem adapter functions for vulnerability JSON and CycloneDX output
+- unchanged report and policy pipeline
+- read-only Docker mount examples
+- tests for registration, missing paths, and normalized scanner output
+- wheel, Docker, clean-install, and module-import verification for the new plugin
 
 #### Acceptance criteria
 
-- existing image-scan CLI syntax and artifacts remain compatible
-- the registry contains the image scanner by default
-- unknown scanner names produce an actionable operational error
-- duplicate scanner names are rejected
-- image scanning returns a normalized `ScanResult`
-- all runtime scanner modules are present in the wheel and Docker image
+- `secscan scan filesystem <path>` is available from the CLI
+- missing targets fail with exit code `1` and an actionable message
+- a valid target returns normalized `ScanResult` findings
+- successful scans create `trivy.json`, `secscan.json`, `secscan.cdx.json`, and `secscan.html`
+- policy violations continue to return exit code `2`
+- documented Docker examples mount the target read-only
 - CI and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- filesystem, repository, SBOM, Kubernetes, or cloud scanners
-- dynamic entry-point discovery
-- remote plugins
-- asynchronous execution
-- running multiple scanners for one request
+- YAML policy files and suppression workflows
+- Git repository, SBOM, Kubernetes, and cloud scanners
+- host-agent installation
+- automatic privilege escalation or protected-file bypass
+- Docker-socket access
 
 #### Cost outlook
 
-Current and projected recurring infrastructure cost remains **$0**. This sprint is a local code-architecture change and introduces no cloud services.
+Current and projected recurring infrastructure cost remains **$0**. Filesystem scans run locally or in existing GitHub Actions allowances and introduce no cloud services.
 
 ## Planned feature sprints
 
-### Sprint 4B — Filesystem Scanning and Policy Configuration
+### Sprint 4C — Policy Configuration and Suppressions
 
-Add a filesystem scanner plugin, read-only target mounts, reusable YAML policies, fix-availability gates, suppression reasons, and suppression expiration.
+Add reusable YAML policies, fix-availability gates, suppression reasons, suppression expiration, schema validation, and policy tests.
 
 ### Sprint 5 — Finding Comparison and Baselines
 
