@@ -20,6 +20,9 @@ class StubScanner(Scanner):
 
 
 class StubRegistry:
+    def capabilities(self) -> tuple[ScannerCapability, ...]:
+        return (StubScanner().capability,)
+
     def get(self, name: str) -> Scanner:
         assert name == "image"
         return StubScanner()
