@@ -20,11 +20,15 @@ class StubScanner(Scanner):
         output_path.write_text("{}", encoding="utf-8")
 
 
-def test_default_registry_contains_image_scanner() -> None:
+def test_default_registry_contains_builtin_scanners() -> None:
     registry = build_default_registry()
 
     assert registry.get("image").capability.name == "image"
-    assert [capability.name for capability in registry.capabilities()] == ["image"]
+    assert registry.get("filesystem").capability.name == "filesystem"
+    assert [capability.name for capability in registry.capabilities()] == [
+        "filesystem",
+        "image",
+    ]
 
 
 def test_registry_rejects_duplicate_scanner_names() -> None:
