@@ -12,6 +12,10 @@ REQUIRED_FILES = {
     "secscan/policy.py",
     "secscan/report.py",
     "secscan/trivy.py",
+    "secscan/scanners/__init__.py",
+    "secscan/scanners/base.py",
+    "secscan/scanners/registry.py",
+    "secscan/scanners/image.py",
 }
 
 
