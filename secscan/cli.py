@@ -68,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         registry = build_default_registry()
         scanner = registry.get(args.target_type)
         args.output_dir.mkdir(parents=True, exist_ok=True)
+        baseline_findings = load_baseline(args.baseline) if args.baseline else None
         request = ScanRequest(
             scanner_name=args.target_type,
             target=args.target,
@@ -107,8 +108,8 @@ def main(argv: list[str] | None = None) -> int:
         write_html(report, args.output_dir / "secscan.html")
         scanner.generate_sbom(request, args.output_dir / "secscan.cdx.json")
 
-        if args.baseline:
-            comparison = compare_findings(list(result.findings), load_baseline(args.baseline))
+        if baseline_findings is not None:
+            comparison = compare_findings(list(result.findings), baseline_findings)
             write_json(comparison, args.output_dir / "secscan.diff.json")
             print(f"Comparison: {json.dumps(comparison['summary'], sort_keys=True)}")
 
