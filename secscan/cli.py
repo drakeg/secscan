@@ -6,7 +6,7 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from secscan.policy import policy_failed
+from secscan.policy import Policy, evaluate_policy, load_policy, policy_failed
 from secscan.report import build_report, write_html, write_json, write_raw_json
 from secscan.scanners.base import ScanRequest
 from secscan.scanners.registry import build_default_registry
@@ -38,9 +38,14 @@ def build_parser() -> argparse.ArgumentParser:
         target_parser.add_argument("--output-dir", type=Path, default=Path("/reports"))
         target_parser.add_argument(
             "--fail-on",
-            default="CRITICAL",
+            default=None,
             choices=["NONE", "UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
-            help="return exit code 2 when findings meet or exceed this severity",
+            help="override the policy severity threshold",
+        )
+        target_parser.add_argument(
+            "--policy",
+            type=Path,
+            help="YAML policy file containing a threshold and suppressions",
         )
         target_parser.add_argument(
             "--timeout", type=int, default=600, help="scan timeout in seconds"
@@ -73,13 +78,36 @@ def main(argv: list[str] | None = None) -> int:
             scanner_metadata,
             target_type=report_target_type,
         )
+
+        policy = load_policy(args.policy) if args.policy else Policy()
+        fail_on = args.fail_on or policy.fail_on
+        evaluation = evaluate_policy(list(result.findings), policy)
+        report["policy"] = {
+            "fail_on": fail_on,
+            "active_findings": len(evaluation.active_findings),
+            "suppressed_findings": [
+                {
+                    "vulnerability_id": suppressed.finding.vulnerability_id,
+                    "package_name": suppressed.finding.package_name,
+                    "reason": suppressed.reason,
+                    "expires": suppressed.expires.isoformat(),
+                }
+                for suppressed in evaluation.suppressed_findings
+            ],
+        }
+
         write_raw_json(result.raw, args.output_dir / "trivy.json")
         write_json(report, args.output_dir / "secscan.json")
         write_html(report, args.output_dir / "secscan.html")
         scanner.generate_sbom(request, args.output_dir / "secscan.cdx.json")
         print(json.dumps(report["summary"], sort_keys=True))
+        print(
+            f"Policy: fail_on={fail_on}, "
+            f"active={len(evaluation.active_findings)}, "
+            f"suppressed={len(evaluation.suppressed_findings)}"
+        )
         print(f"Artifacts written to {args.output_dir}")
-        return 2 if policy_failed(list(result.findings), args.fail_on) else 0
+        return 2 if policy_failed(list(evaluation.active_findings), fail_on) else 0
     except (TrivyError, OSError, ValueError) as exc:
         print(f"secscan error: {exc}", file=sys.stderr)
         return 1
