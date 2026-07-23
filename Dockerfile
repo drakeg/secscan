@@ -3,16 +3,9 @@ FROM aquasec/trivy:0.70.0 AS trivy
 FROM python:3.12.13-slim-bookworm AS builder
 WORKDIR /build
 COPY pyproject.toml README.md ./
-RUN mkdir -p secscan scripts
-COPY secscan/__init__.py ./secscan/__init__.py
-COPY secscan/cli.py ./secscan/cli.py
-COPY secscan/models.py ./secscan/models.py
-COPY secscan/normalize.py ./secscan/normalize.py
-COPY secscan/policy.py ./secscan/policy.py
-COPY secscan/report.py ./secscan/report.py
-COPY secscan/trivy.py ./secscan/trivy.py
+COPY secscan ./secscan
 COPY scripts/verify_wheel.py ./scripts/verify_wheel.py
-RUN python -c "from pathlib import Path; required={'__init__.py','cli.py','models.py','normalize.py','policy.py','report.py','trivy.py'}; present={p.name for p in Path('secscan').glob('*.py')}; missing=required-present; assert not missing, f'missing source modules: {sorted(missing)}'; print('verified source tree:', ', '.join(sorted(present)))" \
+RUN python -c "from pathlib import Path; required={'secscan/__init__.py','secscan/cli.py','secscan/models.py','secscan/normalize.py','secscan/policy.py','secscan/report.py','secscan/trivy.py','secscan/scanners/__init__.py','secscan/scanners/base.py','secscan/scanners/registry.py','secscan/scanners/image.py'}; missing={path for path in required if not Path(path).is_file()}; assert not missing, f'missing source modules: {sorted(missing)}'; print('verified source tree:', ', '.join(sorted(required)))" \
     && pip wheel --no-deps --wheel-dir /wheels . \
     && python scripts/verify_wheel.py /wheels/secscan-*.whl
 
@@ -26,7 +19,7 @@ LABEL org.opencontainers.image.title="secscan" \
 COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 COPY --from=builder /wheels /wheels
 RUN pip install --no-cache-dir /wheels/secscan-*.whl \
-    && python -c "import secscan, secscan.cli, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.trivy" \
+    && python -c "import secscan, secscan.cli, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image" \
     && rm -rf /wheels \
     && useradd --create-home --uid 10001 secscan \
     && mkdir -p /reports /cache \
