@@ -7,7 +7,9 @@ name = "secscan"
 version = "0.1.0"
 description = "Container-first security scanner orchestration and normalization"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+  "PyYAML>=6.0,<7",
+]
 
 [project.optional-dependencies]
 dev = [
