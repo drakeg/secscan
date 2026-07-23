@@ -32,6 +32,13 @@ def _run_trivy(command: list[str], output_path: Path, timeout_seconds: int) -> N
         raise TrivyError("Trivy did not create the expected output artifact")
 
 
+def _read_json_output(output_path: Path) -> dict[str, Any]:
+    try:
+        return json.loads(output_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise TrivyError("Trivy did not produce valid JSON output") from exc
+
+
 def scan_image(image: str, timeout_seconds: int = 600) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="secscan-") as temp_dir:
         output_path = Path(temp_dir) / "trivy.json"
@@ -49,10 +56,27 @@ def scan_image(image: str, timeout_seconds: int = 600) -> dict[str, Any]:
             output_path,
             timeout_seconds,
         )
-        try:
-            return json.loads(output_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise TrivyError("Trivy did not produce valid JSON output") from exc
+        return _read_json_output(output_path)
+
+
+def scan_filesystem(target: Path, timeout_seconds: int = 600) -> dict[str, Any]:
+    with tempfile.TemporaryDirectory(prefix="secscan-") as temp_dir:
+        output_path = Path(temp_dir) / "trivy.json"
+        _run_trivy(
+            [
+                "trivy",
+                "filesystem",
+                "--format",
+                "json",
+                "--output",
+                str(output_path),
+                "--quiet",
+                str(target),
+            ],
+            output_path,
+            timeout_seconds,
+        )
+        return _read_json_output(output_path)
 
 
 def generate_cyclonedx(image: str, output_path: Path, timeout_seconds: int = 600) -> None:
@@ -67,6 +91,26 @@ def generate_cyclonedx(image: str, output_path: Path, timeout_seconds: int = 600
             str(output_path),
             "--quiet",
             image,
+        ],
+        output_path,
+        timeout_seconds,
+    )
+
+
+def generate_filesystem_cyclonedx(
+    target: Path, output_path: Path, timeout_seconds: int = 600
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    _run_trivy(
+        [
+            "trivy",
+            "filesystem",
+            "--format",
+            "cyclonedx",
+            "--output",
+            str(output_path),
+            "--quiet",
+            str(target),
         ],
         output_path,
         timeout_seconds,
