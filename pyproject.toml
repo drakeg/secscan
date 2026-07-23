@@ -22,7 +22,7 @@ secscan = "secscan.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["secscan"]
+include = ["secscan*"]
 namespaces = false
 
 [tool.pytest.ini_options]
