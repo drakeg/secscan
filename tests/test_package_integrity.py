@@ -15,6 +15,7 @@ MODULES = [
     "secscan.scanners.base",
     "secscan.scanners.registry",
     "secscan.scanners.image",
+    "secscan.scanners.filesystem",
 ]
 
 

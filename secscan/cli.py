@@ -66,7 +66,13 @@ def main(argv: list[str] | None = None) -> int:
         result = scanner.scan(request)
         scanner_metadata = dict(result.scanner)
         scanner_metadata["secscan_version"] = _secscan_version()
-        report = build_report(args.target, list(result.findings), scanner_metadata)
+        report_target_type = "container_image" if args.target_type == "image" else args.target_type
+        report = build_report(
+            args.target,
+            list(result.findings),
+            scanner_metadata,
+            target_type=report_target_type,
+        )
         write_raw_json(result.raw, args.output_dir / "trivy.json")
         write_json(report, args.output_dir / "secscan.json")
         write_html(report, args.output_dir / "secscan.html")

@@ -10,11 +10,16 @@ from secscan.models import Finding
 from secscan.normalize import summarize
 
 
-def build_report(image: str, findings: list[Finding], scanner: dict[str, Any]) -> dict[str, Any]:
+def build_report(
+    target: str,
+    findings: list[Finding],
+    scanner: dict[str, Any],
+    target_type: str = "container_image",
+) -> dict[str, Any]:
     return {
         "schema_version": "1.0",
         "generated_at": datetime.now(UTC).isoformat(),
-        "target": {"type": "container_image", "name": image},
+        "target": {"type": target_type, "name": target},
         "scanner": scanner,
         "summary": summarize(findings),
         "findings": [finding.to_dict() for finding in findings],
@@ -72,6 +77,7 @@ def write_html(report: dict[str, Any], output: Path) -> None:
     )
     table_body = "".join(rows) or '<tr><td colspan="6">No vulnerabilities found.</td></tr>'
     target_name = _cell(report.get("target", {}).get("name"))
+    target_type = _cell(report.get("target", {}).get("type"))
     generated_at = _cell(report.get("generated_at"))
     scanner_version = _cell(report.get("scanner", {}).get("version"))
     document = f"""<!doctype html>
@@ -109,6 +115,7 @@ code {{ background: #f3f4f6; padding: .1rem .25rem; border-radius: .2rem; }}
 <body>
 <h1>secscan vulnerability report</h1>
 <p class="muted">
+  Target type: {target_type}<br>
   Target: <code>{target_name}</code><br>
   Generated: {generated_at}<br>
   Scanner: {scanner_version}
