@@ -34,58 +34,71 @@ Delivered pull-request CI for linting, mypy, pytest, wheel construction and insp
 
 Delivered scanner-neutral request and result contracts, an explicit registry, the image scanner as the first plugin, registry-driven CLI dispatch, and nested-module packaging controls.
 
+### Sprint 4B — Filesystem Scanning
+
+Delivered the filesystem scanner plugin, read-only mount guidance, Trivy filesystem and CycloneDX adapters, path validation, target-aware reports, and packaging coverage.
+
 ## Current sprint
 
-### Sprint 4B — Filesystem Scanning
+### Sprint 4C — Policy Configuration and Suppressions
 
 #### Goal
 
-Add a built-in filesystem scanner plugin that scans a local or mounted path while preserving the existing normalized findings, artifact names, policy behavior, and exit-code contract.
+Add reusable YAML policies and temporary, auditable suppressions without hiding findings or changing the operational exit-code contract.
 
 #### User stories
 
-1. As a developer, I can scan the current project directory for vulnerable operating-system and language packages.
-2. As an operator, I can mount an extracted root filesystem read-only and scan it without granting Docker-socket or privileged access.
-3. As a CI user, I receive the same JSON, CycloneDX, HTML, summary, and policy exit behavior as an image scan.
+1. As a CI user, I can store the severity threshold in a version-controlled policy file.
+2. As a security owner, I can temporarily suppress a specific vulnerability with a documented reason and expiration date.
+3. As an auditor, I can see which findings were suppressed and why in the normalized report.
+4. As an operator, I can override the policy threshold explicitly from the command line.
 
 #### Planned implementation
 
-- `FilesystemScanner` plugin registered in the default scanner registry
-- path expansion, resolution, existence validation, and readability validation
-- Trivy filesystem adapter functions for vulnerability JSON and CycloneDX output
-- unchanged report and policy pipeline
-- read-only Docker mount examples
-- tests for registration, missing paths, and normalized scanner output
-- wheel, Docker, clean-install, and module-import verification for the new plugin
+- `--policy <path>` support for image and filesystem scans
+- safe YAML loading and strict policy-shape validation
+- policy-level `fail_on` threshold
+- exact vulnerability suppressions with optional package matching
+- mandatory suppression reason and ISO expiration date
+- expired-suppression enforcement
+- deterministic threshold precedence
+- policy evaluation metadata in `secscan.json`
+- unit tests for parsing, matching, expiration, and validation
+- README, architecture, and policy-guide updates
+
+#### Precedence
+
+1. explicit CLI `--fail-on`
+2. YAML `policy.fail_on`
+3. built-in `CRITICAL` default
+
+Suppressions are evaluated before severity-policy failure. Expired suppressions never affect results.
 
 #### Acceptance criteria
 
-- `secscan scan filesystem <path>` is available from the CLI
-- missing targets fail with exit code `1` and an actionable message
-- a valid target returns normalized `ScanResult` findings
-- successful scans create `trivy.json`, `secscan.json`, `secscan.cdx.json`, and `secscan.html`
-- policy violations continue to return exit code `2`
-- documented Docker examples mount the target read-only
+- valid YAML policies load for both scanner types
+- invalid YAML or schema errors produce exit code `1`
+- suppressions require vulnerability, reason, and expiration
+- package-scoped suppressions match only the named package
+- suppressed findings remain visible in report policy metadata
+- only active findings determine exit code `2`
+- CLI `--fail-on` overrides the file threshold
 - CI and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- YAML policy files and suppression workflows
-- Git repository, SBOM, Kubernetes, and cloud scanners
-- host-agent installation
-- automatic privilege escalation or protected-file bypass
-- Docker-socket access
+- fix-availability, age, exploitability, and package-deny rules
+- wildcard or regular-expression matching
+- remote or signed policy bundles
+- suppression approval workflows
+- centralized policy distribution
 
 #### Cost outlook
 
-Current and projected recurring infrastructure cost remains **$0**. Filesystem scans run locally or in existing GitHub Actions allowances and introduce no cloud services.
+Current and projected recurring infrastructure cost remains **$0**. Policy evaluation is local and introduces only a small Python YAML dependency.
 
 ## Planned feature sprints
-
-### Sprint 4C — Policy Configuration and Suppressions
-
-Add reusable YAML policies, fix-availability gates, suppression reasons, suppression expiration, schema validation, and policy tests.
 
 ### Sprint 5 — Finding Comparison and Baselines
 
@@ -121,13 +134,13 @@ Add explainable AWS exposure evidence and contextual scoring without hiding raw 
 
 ## Future epics
 
+- richer policy rules for fix availability, age, package, and exploit intelligence
 - additional scanner adapters such as Syft and Grype
 - Git repository and SBOM target scanning
 - EC2 inventory or snapshot-based scanning
 - ECS and EKS workload association
 - web dashboard and multi-user access
 - organization-wide delegated administration
-- exploit-intelligence enrichment
 - Jira, Slack, ServiceNow, SIEM, and GitHub integrations
 - signed policy bundles and enterprise governance
 
