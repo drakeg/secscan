@@ -107,6 +107,10 @@ def scan_repository(target: Path, timeout_seconds: int = 600) -> dict[str, Any]:
     return _scan_path("repository", target, timeout_seconds)
 
 
+def scan_sbom(target: Path, timeout_seconds: int = 600) -> dict[str, Any]:
+    return _scan_path("sbom", target, timeout_seconds)
+
+
 def generate_cyclonedx(image: str, output_path: Path, timeout_seconds: int = 600) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     _run_trivy(
