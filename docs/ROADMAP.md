@@ -11,6 +11,7 @@ Deliver a portable, open-source vulnerability-management platform that begins as
 - Normalize all findings into a secscan-owned schema.
 - Require automated packaging, test, and container validation before feature growth.
 - Model current and projected operating costs before introducing paid infrastructure.
+- Capture new ideas in the backlog instead of expanding an active sprint.
 
 ## Completed work
 
@@ -46,67 +47,67 @@ Delivered safe YAML policies, threshold precedence, expiring auditable suppressi
 
 Delivered stable finding fingerprints, `--baseline`, new/resolved/unchanged classification, `secscan.diff.json`, strict baseline validation, and same-output-path baseline safety.
 
+### Sprint 5.5 — Local Scan History
+
+Delivered a versioned SQLite history store, automatic scan metadata recording, `secscan history`, `secscan show`, migration tests, and local-only operation.
+
+### Sprint 6 — Repository Scanning
+
+Delivered a repository scanner plugin for checked-out source trees using the existing normalization, policy, baseline, reporting, history, and exit-code pipelines.
+
 ## Current sprint
 
-### Sprint 5.5 — Local Scan History
+### Sprint 7 — SBOM Ingestion
 
 #### Goal
 
-Persist successfully completed scan metadata in a local, versioned SQLite database and expose terminal-friendly history inspection without adding cloud infrastructure.
+Allow secscan to ingest an existing CycloneDX JSON SBOM and process its vulnerability results through the same scanner-neutral pipeline used by image, filesystem, and repository scans.
 
 #### User stories
 
-1. As an operator, I can automatically retain a record of completed scans.
-2. As a security owner, I can list recent targets and severity totals without opening JSON files.
-3. As an auditor, I can inspect one scan's versions, policy threshold, duration, and artifact paths.
-4. As a maintainer, I can evolve the database through deterministic schema migrations.
+1. As an operator, I can scan an existing CycloneDX SBOM without access to the original image or filesystem.
+2. As a CI user, I can apply existing policy thresholds and suppressions to SBOM-derived findings.
+3. As a security owner, I can compare SBOM scans against baselines and retain them in local history.
+4. As an auditor, I receive the same normalized JSON, HTML, raw result, and CycloneDX artifact contract.
 
 #### Planned implementation
 
-- SQLite-backed `HistoryStore`
-- internal `schema_migrations` table and migration version 1
-- automatic recording after successful artifact generation
-- `secscan history` with configurable limit
-- `secscan show <id>`
-- `--history-db` and per-scan `--no-history`
-- scan metadata, severity totals, versions, duration, and artifact paths
-- unit tests for migration, persistence, listing, lookup, and validation
+- built-in `SBOMScanner` plugin
+- `secscan scan sbom <file>`
+- CycloneDX JSON validation
+- Trivy SBOM vulnerability adapter
+- normalized findings through the existing model
+- preservation of the validated input as `secscan.cdx.json`
+- policy, baseline, history, reporting, and exit-code integration
+- missing, malformed, invalid-format, empty-component, and successful-input tests
 - wheel and container package-integrity coverage
-- README, architecture, history guide, and Definition of Done updates
+- README, architecture, and SBOM scanning documentation
 
 #### Acceptance criteria
 
-- first use creates and migrates an empty database safely
-- repeated use does not reapply migrations
-- failed or incomplete scans are not recorded
-- successful image and filesystem scans are recordable
-- history is ordered newest-first
-- unknown scan IDs fail clearly with exit code `1`
-- `--no-history` leaves the database unchanged
+- valid CycloneDX JSON is accepted
+- missing files, malformed JSON, and non-CycloneDX documents fail clearly with exit code `1`
+- Trivy SBOM results normalize through the existing finding model
+- policy exit code `2` behavior remains unchanged
+- baseline comparison and SQLite history work without scanner-specific changes
+- the input SBOM is preserved as the standard CycloneDX artifact
 - CI and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- storing individual findings in SQLite
-- automatic retention or deletion
-- trend charts and remediation-time calculations
-- multi-user access or remote databases
-- PostgreSQL and service mode
+- SPDX input
+- license inventory or compliance analysis
+- package additions, removals, upgrades, or downgrade intelligence
+- SBOM-to-SBOM package diffing
+- signed attestations or signature verification
+- cross-source correlation
 
 #### Cost outlook
 
-Current and projected recurring infrastructure cost remains **$0**. SQLite is embedded in Python and the database remains local.
+Current and projected recurring infrastructure cost remains **$0**. SBOM ingestion is local and uses the bundled Trivy engine.
 
 ## Planned feature sprints
-
-### Sprint 6 — Repository Scanning
-
-Add a repository scanner plugin and reuse normalization, policy, baseline, reporting, and history pipelines.
-
-### Sprint 7 — SBOM Ingestion
-
-Scan existing CycloneDX and supported SBOM artifacts without requiring the original image or filesystem.
 
 ### Sprint 8 — Policy v2
 
@@ -120,12 +121,16 @@ Add a long-running API, background jobs, bounded concurrency, health endpoints, 
 
 Discover approved ECR assets across configured accounts and regions using documented least-privilege IAM permissions and an explicit cost model.
 
-## Future epics
+## Future epics and backlog
 
+- SPDX and additional SBOM formats
+- SBOM package and license intelligence
+- cross-source correlation
 - private registry and ECR authentication
 - release automation, immutable images, provenance, and checksums
 - historical trends and mean time to remediation
 - additional scanner adapters such as Syft and Grype
+- risk scoring, KEV, and EPSS enrichment
 - EC2 inventory or snapshot-based scanning
 - ECS and EKS workload association
 - web dashboard and multi-user access
@@ -134,4 +139,4 @@ Discover approved ECR assets across configured accounts and regions using docume
 
 ## Backlog rules
 
-The roadmap is directional. A future sprint becomes committed only after planning confirms its stories, acceptance criteria, dependencies, security implications, validation strategy, and projected operating costs.
+The roadmap is directional. A future sprint becomes committed only after planning confirms its stories, acceptance criteria, dependencies, security implications, validation strategy, and projected operating costs. Ideas discovered during a sprint are added to the backlog rather than changing the active sprint scope.
