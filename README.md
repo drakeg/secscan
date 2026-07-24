@@ -75,6 +75,30 @@ docker run --rm \
 
 Remote cloning and repository credentials are not handled in this increment. See [Repository Scanning](docs/REPOSITORY_SCANNING.md).
 
+## SBOM scanning
+
+Scan an existing CycloneDX JSON SBOM:
+
+```bash
+secscan scan sbom build.cdx.json \
+  --output-dir ./reports \
+  --fail-on HIGH
+```
+
+With Docker, mount the SBOM read-only:
+
+```bash
+docker run --rm \
+  -v "$PWD/build.cdx.json:/input/build.cdx.json:ro" \
+  -v secscan-reports:/reports \
+  -v secscan-cache:/cache \
+  secscan:dev scan sbom /input/build.cdx.json \
+    --output-dir /reports \
+    --fail-on HIGH
+```
+
+The input must be CycloneDX JSON. The original validated SBOM is copied to `secscan.cdx.json`. See [SBOM Scanning](docs/SBOM_SCANNING.md).
+
 ## YAML policies
 
 A policy can define the default threshold and temporary, auditable suppressions:
@@ -96,6 +120,7 @@ Run it with any scanner:
 secscan scan image alpine:3.20 --policy policy.yaml
 secscan scan filesystem . --policy policy.yaml
 secscan scan repository . --policy policy.yaml
+secscan scan sbom build.cdx.json --policy policy.yaml
 ```
 
 An explicitly supplied `--fail-on` overrides the policy threshold. Active suppressions are applied before exit-code evaluation, expired suppressions are ignored, and suppression details remain visible in `secscan.json`. See [Policy Configuration](docs/POLICIES.md).
@@ -173,14 +198,14 @@ secscan --help
 
 ## Current boundaries
 
-The built-in scanners support public container images, local filesystem paths, and checked-out source repositories. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite history stores scan metadata but not individual findings. Private registry authentication, remote repository cloning, service mode, AWS discovery, and contextual risk scoring remain later increments.
+The built-in scanners support public container images, local filesystem paths, checked-out source repositories, and CycloneDX JSON SBOM files. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite history stores scan metadata but not individual findings. Private registry authentication, remote repository cloning, SPDX input, service mode, AWS discovery, and contextual risk scoring remain later increments.
 
 ## Security notes
 
 - Container image scanning does not require mounting the Docker socket.
-- Filesystem and repository targets, policy files, and baseline files should be mounted read-only.
+- Filesystem, repository, and SBOM targets, policy files, and baseline files should be mounted read-only.
 - Suppressions require a reason and expiration date.
-- Baseline, comparison, history, and report artifacts should be treated as security-sensitive inventory.
+- Baseline, comparison, history, SBOM, and report artifacts should be treated as security-sensitive inventory.
 - The secscan image defaults to non-root UID `10001`.
 - Rootless Docker users should use Docker-managed named volumes for `/reports` and `/cache`.
 - Do not use `--privileged`, disable SELinux, or make project directories permanently world-writable.
@@ -194,6 +219,7 @@ The built-in scanners support public container images, local filesystem paths, a
 - [Finding baselines](docs/BASELINES.md)
 - [Local scan history](docs/HISTORY.md)
 - [Repository scanning](docs/REPOSITORY_SCANNING.md)
+- [SBOM scanning](docs/SBOM_SCANNING.md)
 - [Definition of done](docs/DEFINITION_OF_DONE.md)
 
 ## License
