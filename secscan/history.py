@@ -116,7 +116,9 @@ class HistoryStore:
                     scanner_version,
                 ),
             )
-            return int(cursor.lastrowid)
+            if cursor.lastrowid is None:
+                raise RuntimeError("SQLite did not return a scan history ID")
+            return cursor.lastrowid
 
     def list_scans(self, limit: int = 20) -> list[ScanHistoryEntry]:
         if limit < 1:
