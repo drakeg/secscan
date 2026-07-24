@@ -25,9 +25,11 @@ def test_default_registry_contains_builtin_scanners() -> None:
 
     assert registry.get("image").capability.name == "image"
     assert registry.get("filesystem").capability.name == "filesystem"
+    assert registry.get("repository").capability.name == "repository"
     assert [capability.name for capability in registry.capabilities()] == [
         "filesystem",
         "image",
+        "repository",
     ]
 
 
