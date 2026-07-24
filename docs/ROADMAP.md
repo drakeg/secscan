@@ -16,7 +16,7 @@ Deliver a portable, open-source vulnerability-management platform that begins as
 
 ### Sprint 0 — Foundation and Planning
 
-Established the repository, Agile workflow, initial architecture, roadmap, Definition of Done, Trivy strategy, and $0 infrastructure baseline.
+Established the repository, Agile workflow, architecture, roadmap, Definition of Done, Trivy strategy, and $0 infrastructure baseline.
 
 ### Sprint 1 — Dockerized Scanner MVP
 
@@ -24,88 +24,93 @@ Delivered public image scanning, normalized JSON, severity policy enforcement, d
 
 ### Sprint 2 — SBOM and Human-Readable Reporting
 
-Delivered raw Trivy JSON, normalized secscan JSON, CycloneDX JSON, and a standalone HTML report from one image scan.
+Delivered raw Trivy JSON, normalized secscan JSON, CycloneDX JSON, and a standalone HTML report.
 
 ### Sprint 3 — Engineering Foundation and Continuous Integration
 
-Delivered pull-request CI for linting, mypy, pytest, wheel construction and inspection, clean installation, container startup, CodeQL, Dependabot, and fixable-critical container vulnerability enforcement.
+Delivered CI for Ruff, mypy, pytest, wheel integrity, clean installation, container startup, CodeQL, Dependabot, and fixable-critical container vulnerability enforcement.
 
 ### Sprint 4A — Scanner Plugin Architecture
 
-Delivered scanner-neutral request and result contracts, an explicit registry, the image scanner as the first plugin, registry-driven CLI dispatch, and nested-module packaging controls.
+Delivered scanner-neutral contracts, an explicit registry, the image scanner plugin, registry-driven CLI dispatch, and nested-module packaging controls.
 
 ### Sprint 4B — Filesystem Scanning
 
-Delivered the filesystem scanner plugin, read-only mount guidance, Trivy filesystem and CycloneDX adapters, path validation, target-aware reports, and packaging coverage.
+Delivered the filesystem scanner plugin, read-only mount guidance, Trivy filesystem and CycloneDX adapters, path validation, and target-aware reports.
 
 ### Sprint 4C — Policy Configuration and Suppressions
 
 Delivered safe YAML policies, threshold precedence, expiring auditable suppressions, policy metadata, and strict validation.
 
+### Sprint 5 — Finding Comparison and Baselines
+
+Delivered stable finding fingerprints, `--baseline`, new/resolved/unchanged classification, `secscan.diff.json`, strict baseline validation, and same-output-path baseline safety.
+
 ## Current sprint
 
-### Sprint 5 — Finding Comparison and Baselines
+### Sprint 5.5 — Local Scan History
 
 #### Goal
 
-Compare current findings with a prior normalized report and classify findings as new, resolved, or unchanged using stable secscan-owned fingerprints.
+Persist successfully completed scan metadata in a local, versioned SQLite database and expose terminal-friendly history inspection without adding cloud infrastructure.
 
 #### User stories
 
-1. As a CI user, I can identify vulnerabilities introduced since the last successful scan.
-2. As a security owner, I can see which previously observed findings are resolved.
-3. As an auditor, I can reproduce the comparison from two normalized secscan reports.
-4. As an operator, I can use comparison without changing existing policy and exit-code behavior.
+1. As an operator, I can automatically retain a record of completed scans.
+2. As a security owner, I can list recent targets and severity totals without opening JSON files.
+3. As an auditor, I can inspect one scan's versions, policy threshold, duration, and artifact paths.
+4. As a maintainer, I can evolve the database through deterministic schema migrations.
 
 #### Planned implementation
 
-- `--baseline <secscan.json>` for image and filesystem scans
-- stable SHA-256 finding fingerprints
-- fingerprint identity based on vulnerability, package, target, and package type
-- `secscan.diff.json` with `new`, `resolved`, and `unchanged` collections
-- strict baseline JSON and schema validation
-- tests for fingerprints, classification, and invalid baselines
-- package, wheel, clean-install, and container checks for the comparison module
-- CI validation on Python 3.12 and Python 3.14
-- README, architecture, and baseline-guide updates
+- SQLite-backed `HistoryStore`
+- internal `schema_migrations` table and migration version 1
+- automatic recording after successful artifact generation
+- `secscan history` with configurable limit
+- `secscan show <id>`
+- `--history-db` and per-scan `--no-history`
+- scan metadata, severity totals, versions, duration, and artifact paths
+- unit tests for migration, persistence, listing, lookup, and validation
+- wheel and container package-integrity coverage
+- README, architecture, history guide, and Definition of Done updates
 
 #### Acceptance criteria
 
-- current-only findings are classified as `new`
-- baseline-only findings are classified as `resolved`
-- findings present in both reports are classified as `unchanged`
-- changes to severity, title, installed version, fixed version, or URL do not create false new findings
-- missing or malformed baselines fail with exit code `1`
-- comparison does not alter policy evaluation or exit code `2`
-- wheel and container validation include the comparison module
+- first use creates and migrates an empty database safely
+- repeated use does not reapply migrations
+- failed or incomplete scans are not recorded
+- successful image and filesystem scans are recordable
+- history is ordered newest-first
+- unknown scan IDs fail clearly with exit code `1`
+- `--no-history` leaves the database unchanged
 - CI and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- automatic baseline storage or selection
-- historical trend databases
-- policy rules that fail only on new findings
-- comparison across unrelated targets
-- semantic package renaming or vulnerability alias resolution
+- storing individual findings in SQLite
+- automatic retention or deletion
+- trend charts and remediation-time calculations
+- multi-user access or remote databases
+- PostgreSQL and service mode
 
 #### Cost outlook
 
-Current and projected recurring infrastructure cost remains **$0**. Comparison is local and uses existing report files.
+Current and projected recurring infrastructure cost remains **$0**. SQLite is embedded in Python and the database remains local.
 
 ## Planned feature sprints
 
-### Sprint 6 — Local Scan History
+### Sprint 6 — Repository Scanning
 
-Add a storage abstraction and SQLite implementation for target history, scan metadata, retention, trends, and remediation timing.
+Add a repository scanner plugin and reuse normalization, policy, baseline, reporting, and history pipelines.
 
-### Sprint 7 — Private Registry and ECR Support
+### Sprint 7 — SBOM Ingestion
 
-Support temporary authentication, digest-first identity, credential redaction, retry behavior, and private ECR image scanning.
+Scan existing CycloneDX and supported SBOM artifacts without requiring the original image or filesystem.
 
-### Sprint 8 — Release Automation and Distribution
+### Sprint 8 — Policy v2
 
-Publish immutable versioned images, checksums, provenance, release notes, upgrade guidance, and reusable consumer workflows.
+Add fix-availability, age, package, and richer vulnerability rules with explainable evaluation.
 
 ### Sprint 9 — Service Mode and API
 
@@ -115,23 +120,15 @@ Add a long-running API, background jobs, bounded concurrency, health endpoints, 
 
 Discover approved ECR assets across configured accounts and regions using documented least-privilege IAM permissions and an explicit cost model.
 
-### Sprint 11 — Continuous Rescanning and Notifications
-
-Track vulnerability database freshness, rescan unchanged assets when intelligence changes, calculate meaningful deltas, and suppress duplicate notifications.
-
-### Sprint 12 — Exposure Context and Risk Prioritization
-
-Add explainable AWS exposure evidence and contextual scoring without hiding raw severity or treating unavailable context as safe.
-
 ## Future epics
 
-- richer policy rules for fix availability, age, package, and exploit intelligence
+- private registry and ECR authentication
+- release automation, immutable images, provenance, and checksums
+- historical trends and mean time to remediation
 - additional scanner adapters such as Syft and Grype
-- Git repository and SBOM target scanning
 - EC2 inventory or snapshot-based scanning
 - ECS and EKS workload association
 - web dashboard and multi-user access
-- organization-wide delegated administration
 - Jira, Slack, ServiceNow, SIEM, and GitHub integrations
 - signed policy bundles and enterprise governance
 
