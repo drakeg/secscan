@@ -23,11 +23,13 @@ def _secscan_version() -> str:
         return "unknown"
 
 
-def _add_history_db_argument(parser: argparse.ArgumentParser) -> None:
+def _add_history_db_argument(
+    parser: argparse.ArgumentParser, *, default: Path | None
+) -> None:
     parser.add_argument(
         "--history-db",
         type=Path,
-        default=Path("/reports/secscan.db"),
+        default=default,
         help="SQLite history database path",
     )
 
@@ -67,18 +69,18 @@ def build_parser() -> argparse.ArgumentParser:
         target_parser.add_argument(
             "--timeout", type=int, default=600, help="scan timeout in seconds"
         )
-        _add_history_db_argument(target_parser)
+        _add_history_db_argument(target_parser, default=None)
         target_parser.add_argument(
             "--no-history", action="store_true", help="do not record this completed scan"
         )
 
     history = subparsers.add_parser("history", help="list recorded scans")
-    _add_history_db_argument(history)
+    _add_history_db_argument(history, default=Path("/reports/secscan.db"))
     history.add_argument("--limit", type=int, default=20)
 
     show = subparsers.add_parser("show", help="show one recorded scan")
     show.add_argument("scan_id", type=int)
-    _add_history_db_argument(show)
+    _add_history_db_argument(show, default=Path("/reports/secscan.db"))
     return parser
 
 
@@ -179,8 +181,9 @@ def _run_scan(args: argparse.Namespace) -> int:
         print(f"Comparison: {json.dumps(comparison['summary'], sort_keys=True)}")
 
     if not args.no_history:
+        history_db = args.history_db or (args.output_dir / "secscan.db")
         duration_ms = round((perf_counter() - started) * 1000)
-        scan_id = HistoryStore(args.history_db).record_scan(
+        scan_id = HistoryStore(history_db).record_scan(
             scanner=args.target_type,
             target=args.target,
             duration_ms=duration_ms,
@@ -192,7 +195,7 @@ def _run_scan(args: argparse.Namespace) -> int:
             secscan_version=_secscan_version(),
             scanner_version=str(scanner_metadata.get("version", "unknown")),
         )
-        print(f"History: recorded scan {scan_id} in {args.history_db}")
+        print(f"History: recorded scan {scan_id} in {history_db}")
 
     print(json.dumps(report["summary"], sort_keys=True))
     print(
