@@ -32,5 +32,6 @@ def build_default_registry() -> ScannerRegistry:
     from secscan.scanners.filesystem import FilesystemScanner
     from secscan.scanners.image import ImageScanner
     from secscan.scanners.repository import RepositoryScanner
+    from secscan.scanners.sbom import SBOMScanner
 
-    return ScannerRegistry([ImageScanner(), FilesystemScanner(), RepositoryScanner()])
+    return ScannerRegistry([ImageScanner(), FilesystemScanner(), RepositoryScanner(), SBOMScanner()])
