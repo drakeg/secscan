@@ -17,14 +17,17 @@ A story is done only when all applicable criteria below are satisfied.
 - scanner-specific behavior remains isolated in its scanner plugin and engine adapter
 - scanner plugins do not import CLI parsing or report-writing concerns
 - scanners return normalized project-owned models
+- persistent storage remains behind a storage interface
 - temporary debugging code and unused dependencies are removed
 
 ## Testing
 
-- unit tests cover new normalization, policy, registry, and error-handling logic
+- unit tests cover new normalization, policy, registry, storage, and error-handling logic
 - integration or smoke tests cover the user-visible path
 - tests include at least one expected success and one expected failure
 - scanner plugins have contract and registration coverage
+- database changes include fresh-database and repeat-migration coverage
+- migration tests verify existing schema versions are not reapplied
 - test fixtures do not contain live credentials or confidential data
 - Ruff, mypy, pytest, wheel verification, clean installation, container smoke tests, Trivy self-scan, and CodeQL pass before merge
 
@@ -32,16 +35,17 @@ A story is done only when all applicable criteria below are satisfied.
 
 - dependencies and container image are scanned when tooling exists
 - secrets are not committed, logged, or written to artifacts
-- inputs, paths, subprocess arguments, and output locations are validated
+- inputs, paths, subprocess arguments, output locations, and database paths are validated
 - privileged access is avoided or explicitly documented and justified
 - new external dependencies have a compatible license and pinned version
 - plugin registration rejects ambiguous or duplicate scanner names
+- persisted security inventory has documented protection and backup expectations
 
 ## Documentation
 
 - README or task-specific documentation reflects user-visible changes
 - commands can be copied and run as documented
-- exit codes, artifact formats, and configuration changes are documented
+- exit codes, artifact formats, storage formats, and configuration changes are documented
 - architecture or ADR documentation is updated for material decisions
 - scanner capabilities, boundaries, and deferred behavior are explicit
 - known limitations are explicit
@@ -52,6 +56,7 @@ A story is done only when all applicable criteria below are satisfied.
 - current recurring cost is documented
 - likely future monthly costs are estimated before enabling paid cloud services
 - logs and errors provide enough context to diagnose failures without exposing secrets
+- storage migrations are deterministic, transactional where supported, and recoverable through backup
 
 ## Delivery
 
