@@ -53,6 +53,28 @@ For a local Python installation:
 secscan scan filesystem . --output-dir ./reports --fail-on HIGH
 ```
 
+## Repository scanning
+
+Scan a checked-out source repository with Trivy repository mode:
+
+```bash
+secscan scan repository . --output-dir ./reports --fail-on HIGH
+```
+
+With Docker, mount the repository read-only:
+
+```bash
+docker run --rm \
+  -v "$PWD:/repo:ro" \
+  -v secscan-reports:/reports \
+  -v secscan-cache:/cache \
+  secscan:dev scan repository /repo \
+    --output-dir /reports \
+    --fail-on HIGH
+```
+
+Remote cloning and repository credentials are not handled in this increment. See [Repository Scanning](docs/REPOSITORY_SCANNING.md).
+
 ## YAML policies
 
 A policy can define the default threshold and temporary, auditable suppressions:
@@ -68,11 +90,12 @@ suppressions:
     expires: 2026-09-30
 ```
 
-Run it with either scanner:
+Run it with any scanner:
 
 ```bash
 secscan scan image alpine:3.20 --policy policy.yaml
 secscan scan filesystem . --policy policy.yaml
+secscan scan repository . --policy policy.yaml
 ```
 
 An explicitly supplied `--fail-on` overrides the policy threshold. Active suppressions are applied before exit-code evaluation, expired suppressions are ignored, and suppression details remain visible in `secscan.json`. See [Policy Configuration](docs/POLICIES.md).
@@ -150,12 +173,12 @@ secscan --help
 
 ## Current boundaries
 
-The built-in scanners support public container images and local filesystem paths. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite history stores scan metadata but not individual findings. Private registry authentication, service mode, AWS discovery, and contextual risk scoring remain later increments.
+The built-in scanners support public container images, local filesystem paths, and checked-out source repositories. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite history stores scan metadata but not individual findings. Private registry authentication, remote repository cloning, service mode, AWS discovery, and contextual risk scoring remain later increments.
 
 ## Security notes
 
 - Container image scanning does not require mounting the Docker socket.
-- Filesystem targets, policy files, and baseline files should be mounted read-only.
+- Filesystem and repository targets, policy files, and baseline files should be mounted read-only.
 - Suppressions require a reason and expiration date.
 - Baseline, comparison, history, and report artifacts should be treated as security-sensitive inventory.
 - The secscan image defaults to non-root UID `10001`.
@@ -170,6 +193,7 @@ The built-in scanners support public container images and local filesystem paths
 - [Policy configuration](docs/POLICIES.md)
 - [Finding baselines](docs/BASELINES.md)
 - [Local scan history](docs/HISTORY.md)
+- [Repository scanning](docs/REPOSITORY_SCANNING.md)
 - [Definition of done](docs/DEFINITION_OF_DONE.md)
 
 ## License
