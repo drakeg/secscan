@@ -20,6 +20,7 @@ REQUIRED_FILES = {
     "secscan/scanners/image.py",
     "secscan/scanners/filesystem.py",
     "secscan/scanners/repository.py",
+    "secscan/scanners/sbom.py",
 }
 
 
