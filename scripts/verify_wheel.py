@@ -19,6 +19,7 @@ REQUIRED_FILES = {
     "secscan/scanners/registry.py",
     "secscan/scanners/image.py",
     "secscan/scanners/filesystem.py",
+    "secscan/scanners/repository.py",
 }
 
 
