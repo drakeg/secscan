@@ -89,7 +89,6 @@ class HistoryStore:
         scanner_version: str,
     ) -> int:
         self.migrate()
-        severity = summary.get("by_severity", {})
         with self._connect() as connection:
             cursor = connection.execute(
                 """
@@ -105,11 +104,11 @@ class HistoryStore:
                     target,
                     duration_ms,
                     fail_on,
-                    int(severity.get("CRITICAL", 0)),
-                    int(severity.get("HIGH", 0)),
-                    int(severity.get("MEDIUM", 0)),
-                    int(severity.get("LOW", 0)),
-                    int(severity.get("UNKNOWN", 0)),
+                    int(summary.get("CRITICAL", 0)),
+                    int(summary.get("HIGH", 0)),
+                    int(summary.get("MEDIUM", 0)),
+                    int(summary.get("LOW", 0)),
+                    int(summary.get("UNKNOWN", 0)),
                     str(report_path),
                     str(sbom_path),
                     str(diff_path) if diff_path else None,
@@ -120,6 +119,8 @@ class HistoryStore:
             return int(cursor.lastrowid)
 
     def list_scans(self, limit: int = 20) -> list[ScanHistoryEntry]:
+        if limit < 1:
+            raise ValueError("history limit must be at least 1")
         self.migrate()
         with self._connect() as connection:
             rows = connection.execute(
