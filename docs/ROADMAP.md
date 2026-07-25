@@ -55,63 +55,66 @@ Delivered a versioned SQLite history store, automatic scan metadata recording, `
 
 Delivered a repository scanner plugin for checked-out source trees using the existing normalization, policy, baseline, reporting, history, and exit-code pipelines.
 
+### Sprint 7 — SBOM Ingestion
+
+Delivered CycloneDX JSON validation, Trivy SBOM vulnerability scanning, normalized findings, standard artifact preservation, and scanner-neutral policy, baseline, history, and reporting integration.
+
 ## Current sprint
 
-### Sprint 7 — SBOM Ingestion
+### Sprint 8 — Policy v2
 
 #### Goal
 
-Allow secscan to ingest an existing CycloneDX JSON SBOM and process its vulnerability results through the same scanner-neutral pipeline used by image, filesystem, and repository scans.
+Add typed, explainable policy rules for fix availability, vulnerability age, package, vulnerability ID, and severity while preserving complete compatibility with existing threshold and suppression policy files.
 
 #### User stories
 
-1. As an operator, I can scan an existing CycloneDX SBOM without access to the original image or filesystem.
-2. As a CI user, I can apply existing policy thresholds and suppressions to SBOM-derived findings.
-3. As a security owner, I can compare SBOM scans against baselines and retain them in local history.
-4. As an auditor, I receive the same normalized JSON, HTML, raw result, and CycloneDX artifact contract.
+1. As a security owner, I can apply stricter thresholds to selected packages or vulnerabilities.
+2. As an operator, I can fail scans on findings that have a fix available.
+3. As a risk owner, I can enforce remediation expectations based on vulnerability age when publication data is available.
+4. As an auditor, I can see exactly which rule matched each finding and why.
+5. As an existing user, my current policy files continue to work unchanged.
 
 #### Planned implementation
 
-- built-in `SBOMScanner` plugin
-- `secscan scan sbom <file>`
-- CycloneDX JSON validation
-- Trivy SBOM vulnerability adapter
-- normalized findings through the existing model
-- preservation of the validated input as `secscan.cdx.json`
-- policy, baseline, history, reporting, and exit-code integration
-- missing, malformed, invalid-format, empty-component, and successful-input tests
-- wheel and container package-integrity coverage
-- README, architecture, and SBOM scanning documentation
+- typed `PolicyRule` model
+- exact package, vulnerability, and severity match conditions
+- `fix_available` condition derived from normalized fixed-version metadata
+- `max_age_days` condition using optional normalized publication dates
+- deterministic suppression-before-rule precedence
+- rule-specific `fail_on` thresholds and reasons
+- strict unknown-key and type validation
+- conflicting duplicate rule detection
+- explainable `rule_matches` metadata in `secscan.json`
+- backward-compatibility and failure-path tests
+- policy, roadmap, architecture, and README updates
 
 #### Acceptance criteria
 
-- valid CycloneDX JSON is accepted
-- missing files, malformed JSON, and non-CycloneDX documents fail clearly with exit code `1`
-- Trivy SBOM results normalize through the existing finding model
-- policy exit code `2` behavior remains unchanged
-- baseline comparison and SQLite history work without scanner-specific changes
-- the input SBOM is preserved as the standard CycloneDX artifact
-- CI and CodeQL pass before merge
+- existing `policy.fail_on` and `suppressions` files parse and behave unchanged
+- a rule requires at least one match condition
+- all configured rule conditions must match the same finding
+- active suppressions prevent rule matches for the suppressed finding
+- missing publication dates do not satisfy age rules
+- global threshold or any matching rule may produce exit code `2`
+- invalid or conflicting rules fail clearly with exit code `1`
+- report metadata explains every rule match
+- branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- SPDX input
-- license inventory or compliance analysis
-- package additions, removals, upgrades, or downgrade intelligence
-- SBOM-to-SBOM package diffing
-- signed attestations or signature verification
-- cross-source correlation
+- wildcard or regular-expression matching
+- KEV, EPSS, exploitability, or internet-exposure enrichment
+- centrally signed or remotely distributed policy bundles
+- approval workflows or multi-user policy governance
+- risk-score aggregation
 
 #### Cost outlook
 
-Current and projected recurring infrastructure cost remains **$0**. SBOM ingestion is local and uses the bundled Trivy engine.
+Current and projected recurring infrastructure cost remains **$0**. Policy evaluation remains local and introduces no external services.
 
 ## Planned feature sprints
-
-### Sprint 8 — Policy v2
-
-Add fix-availability, age, package, and richer vulnerability rules with explainable evaluation.
 
 ### Sprint 9 — Service Mode and API
 
