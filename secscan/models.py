@@ -20,6 +20,8 @@ class Finding:
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
-        if self.published_date is not None:
+        if self.published_date is None:
+            data.pop("published_date")
+        else:
             data["published_date"] = self.published_date.isoformat()
         return data
