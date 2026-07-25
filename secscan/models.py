@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import date
 from typing import Any
 
 
@@ -15,6 +16,10 @@ class Finding:
     target: str
     package_type: str | None
     primary_url: str | None
+    published_date: date | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        if self.published_date is not None:
+            data["published_date"] = self.published_date.isoformat()
+        return data
