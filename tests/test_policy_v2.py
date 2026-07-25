@@ -4,7 +4,14 @@ from pathlib import Path
 import pytest
 
 from secscan.models import Finding
-from secscan.policy import Policy, PolicyRule, evaluate_policy, load_policy, policy_failed
+from secscan.policy import (
+    Policy,
+    PolicyRule,
+    Suppression,
+    evaluate_policy,
+    load_policy,
+    policy_failed,
+)
 
 
 def finding(
@@ -92,18 +99,27 @@ def test_age_rule_skips_findings_without_publication_date() -> None:
 
 
 def test_suppression_precedes_policy_v2_rules() -> None:
-    path_policy = Policy(
+    policy = Policy(
+        suppressions=(
+            Suppression(
+                vulnerability_id="CVE-2026-1000",
+                reason="Temporary exception",
+                expires=date(2026, 8, 1),
+            ),
+        ),
         rules=(
             PolicyRule(
                 vulnerability_id="CVE-2026-1000",
                 fail_on="HIGH",
                 reason="Blocked CVE",
             ),
-        )
+        ),
     )
-    item = finding()
 
-    assert len(evaluate_policy([item], path_policy).rule_matches) == 1
+    evaluation = evaluate_policy([finding()], policy, today=date(2026, 7, 24))
+
+    assert len(evaluation.suppressed_findings) == 1
+    assert evaluation.rule_matches == ()
 
 
 def test_unknown_rule_keys_are_rejected(tmp_path: Path) -> None:
