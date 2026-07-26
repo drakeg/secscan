@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any
 
 from secscan.models import Finding
 
-
 SEVERITIES = ("UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL")
+
+
+def _published_date(value: object) -> date | None:
+    if not value:
+        return None
+    text = str(value).strip()
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    except ValueError:
+        try:
+            return date.fromisoformat(text[:10])
+        except ValueError:
+            return None
 
 
 def normalize_trivy(payload: dict[str, Any]) -> list[Finding]:
@@ -28,6 +41,7 @@ def normalize_trivy(payload: dict[str, Any]) -> list[Finding]:
                     target=target,
                     package_type=str(package_type) if package_type else None,
                     primary_url=item.get("PrimaryURL") or None,
+                    published_date=_published_date(item.get("PublishedDate")),
                 )
             )
     return findings

@@ -59,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
         target_parser.add_argument(
             "--policy",
             type=Path,
-            help="YAML policy file containing a threshold and suppressions",
+            help="YAML policy file containing thresholds, suppressions, and rules",
         )
         target_parser.add_argument(
             "--baseline",
@@ -161,6 +161,16 @@ def _run_scan(args: argparse.Namespace) -> int:
             }
             for suppressed in evaluation.suppressed_findings
         ],
+        "rule_matches": [
+            {
+                "rule": matched.rule_index,
+                "vulnerability_id": matched.finding.vulnerability_id,
+                "package_name": matched.finding.package_name,
+                "fail_on": matched.fail_on,
+                "reason": matched.reason,
+            }
+            for matched in evaluation.rule_matches
+        ],
     }
 
     raw_path = args.output_dir / "trivy.json"
@@ -201,10 +211,15 @@ def _run_scan(args: argparse.Namespace) -> int:
     print(
         f"Policy: fail_on={fail_on}, "
         f"active={len(evaluation.active_findings)}, "
-        f"suppressed={len(evaluation.suppressed_findings)}"
+        f"suppressed={len(evaluation.suppressed_findings)}, "
+        f"rules={len(evaluation.rule_matches)}"
     )
     print(f"Artifacts written to {args.output_dir}")
-    return 2 if policy_failed(list(evaluation.active_findings), fail_on) else 0
+    return (
+        2
+        if policy_failed(list(evaluation.active_findings), fail_on, policy=policy)
+        else 0
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
