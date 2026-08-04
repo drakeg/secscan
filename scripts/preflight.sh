@@ -19,12 +19,14 @@ python scripts/verify_wheel.py dist/secscan-*.whl
 
 python -m venv /tmp/secscan-wheel-test
 /tmp/secscan-wheel-test/bin/pip install dist/secscan-*.whl
-/tmp/secscan-wheel-test/bin/python -c "import secscan, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.sbom"
+/tmp/secscan-wheel-test/bin/python -c "import secscan, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.service, secscan.service_cli, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.sbom"
 /tmp/secscan-wheel-test/bin/secscan --version
+/tmp/secscan-wheel-test/bin/secscan-service --help >/dev/null
 
 if [[ "$run_container" == true ]]; then
   docker build --no-cache --progress=plain -t secscan:preflight .
   docker run --rm secscan:preflight --version
+  docker run --rm --entrypoint secscan-service secscan:preflight --help >/dev/null
   docker save secscan:preflight --output /tmp/secscan-preflight.tar
   mkdir -p /tmp/trivy-cache
   docker run --rm \
