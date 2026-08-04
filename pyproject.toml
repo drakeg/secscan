@@ -25,6 +25,7 @@ dev = [
 
 [project.scripts]
 secscan = "secscan.cli:main"
+secscan-service = "secscan.service_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
