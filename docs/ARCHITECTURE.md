@@ -280,3 +280,7 @@ API -> job queue -> scanner registry/workers -> normalized findings store
 ```
 
 Cloud components remain optional. Storage, queue, discovery, policy distribution, and notification integrations must retain local interfaces for development and small deployments.
+
+### Local service job state
+
+The service stores job metadata in SQLite and report artifacts in UUID-scoped directories. A submitted record is persisted before worker execution. Terminal records survive restarts; non-terminal records found at startup are failed explicitly instead of being replayed. The API can cancel queued work, but it does not terminate running scanners.

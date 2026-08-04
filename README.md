@@ -198,7 +198,7 @@ secscan --help
 
 ## Current boundaries
 
-The built-in scanners support public container images, local filesystem paths, checked-out source repositories, and CycloneDX JSON SBOM files. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite history stores scan metadata but not individual findings. Private registry authentication, remote repository cloning, SPDX input, service mode, AWS discovery, and contextual risk scoring remain later increments.
+The built-in scanners support public container images, local filesystem paths, checked-out source repositories, and CycloneDX JSON SBOM files. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history and persistent service job metadata. Private registry authentication, remote repository cloning, SPDX input, AWS discovery, and contextual risk scoring remain later increments.
 
 ## Security notes
 

@@ -4,15 +4,16 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+import sqlite3
 from threading import Lock
 from typing import Callable, Literal
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-JobStatus = Literal["queued", "running", "completed", "failed"]
+JobStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 ScanRunner = Callable[[list[str]], int]
 ARTIFACT_PATHS = {
     "trivy.json": Path("trivy.json"),
@@ -46,14 +47,144 @@ class JobRecord:
     error: str | None = None
 
 
+class JobStore:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.migrate()
+
+    def _connect(self) -> sqlite3.Connection:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(self.path)
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def migrate(self) -> None:
+        with self._connect() as connection:
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS service_jobs (
+                    id TEXT PRIMARY KEY,
+                    status TEXT NOT NULL,
+                    scanner TEXT NOT NULL,
+                    target TEXT NOT NULL,
+                    output_dir TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    started_at TEXT,
+                    completed_at TEXT,
+                    exit_code INTEGER,
+                    error TEXT
+                );
+                CREATE INDEX IF NOT EXISTS service_jobs_created_at_idx
+                    ON service_jobs(created_at DESC);
+                CREATE INDEX IF NOT EXISTS service_jobs_status_created_at_idx
+                    ON service_jobs(status, created_at DESC);
+                """
+            )
+
+    def save(self, record: JobRecord) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO service_jobs (
+                    id, status, scanner, target, output_dir, created_at,
+                    started_at, completed_at, exit_code, error
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    status = excluded.status,
+                    started_at = excluded.started_at,
+                    completed_at = excluded.completed_at,
+                    exit_code = excluded.exit_code,
+                    error = excluded.error
+                """,
+                (
+                    record.id,
+                    record.status,
+                    record.scanner,
+                    record.target,
+                    record.output_dir,
+                    record.created_at,
+                    record.started_at,
+                    record.completed_at,
+                    record.exit_code,
+                    record.error,
+                ),
+            )
+
+    def get(self, job_id: str) -> JobRecord | None:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM service_jobs WHERE id = ?", (job_id,)).fetchone()
+        return JobRecord(**dict(row)) if row else None
+
+    def list(
+        self,
+        *,
+        status: JobStatus | None = None,
+        scanner: str | None = None,
+        limit: int = 20,
+    ) -> list[JobRecord]:
+        with self._connect() as connection:
+            if status is not None and scanner is not None:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM service_jobs
+                    WHERE status = ? AND scanner = ?
+                    ORDER BY created_at DESC LIMIT ?
+                    """,
+                    (status, scanner, limit),
+                ).fetchall()
+            elif status is not None:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM service_jobs
+                    WHERE status = ? ORDER BY created_at DESC LIMIT ?
+                    """,
+                    (status, limit),
+                ).fetchall()
+            elif scanner is not None:
+                rows = connection.execute(
+                    """
+                    SELECT * FROM service_jobs
+                    WHERE scanner = ? ORDER BY created_at DESC LIMIT ?
+                    """,
+                    (scanner, limit),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT * FROM service_jobs ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        return [JobRecord(**dict(row)) for row in rows]
+
+    def fail_interrupted(self) -> None:
+        completed_at = _timestamp()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE service_jobs
+                SET status = 'failed', completed_at = ?,
+                    error = 'service restarted before the job completed'
+                WHERE status IN ('queued', 'running')
+                """,
+                (completed_at,),
+            )
+
+
 class JobManager:
-    def __init__(self, root: Path, runner: ScanRunner, max_workers: int = 2) -> None:
+    def __init__(
+        self,
+        root: Path,
+        runner: ScanRunner,
+        max_workers: int = 2,
+        database: Path | None = None,
+    ) -> None:
         if max_workers < 1:
             raise ValueError("max_workers must be at least 1")
         self.root = root.expanduser().resolve()
+        database_path = database or self.root / "jobs.db"
+        self.store = JobStore(database_path.expanduser().resolve())
+        self.store.fail_interrupted()
         self.runner = runner
         self.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="secscan")
-        self._jobs: dict[str, JobRecord] = {}
         self._lock = Lock()
 
     def submit(self, request: ScanSubmission) -> JobRecord:
@@ -70,13 +201,35 @@ class JobManager:
             created_at=_timestamp(),
         )
         with self._lock:
-            self._jobs[job_id] = record
+            self.store.save(record)
         self.executor.submit(self._run, job_id, request)
         return record
 
     def get(self, job_id: str) -> JobRecord | None:
         with self._lock:
-            return self._jobs.get(job_id)
+            return self.store.get(job_id)
+
+    def list(
+        self,
+        *,
+        status: JobStatus | None = None,
+        scanner: str | None = None,
+        limit: int = 20,
+    ) -> list[JobRecord]:
+        with self._lock:
+            return self.store.list(status=status, scanner=scanner, limit=limit)
+
+    def cancel(self, job_id: str) -> JobRecord | None:
+        with self._lock:
+            record = self.store.get(job_id)
+            if record is None:
+                return None
+            if record.status != "queued":
+                raise ValueError("only queued jobs can be cancelled")
+            record.status = "cancelled"
+            record.completed_at = _timestamp()
+            self.store.save(record)
+            return record
 
     def artifact_path(self, record: JobRecord, artifact_name: str) -> Path | None:
         relative_path = ARTIFACT_PATHS.get(artifact_name)
@@ -92,9 +245,13 @@ class JobManager:
         return artifact
 
     def _run(self, job_id: str, request: ScanSubmission) -> None:
-        record = self._require(job_id)
-        record.status = "running"
-        record.started_at = _timestamp()
+        with self._lock:
+            record = self.store.get(job_id)
+            if record is None or record.status != "queued":
+                return
+            record.status = "running"
+            record.started_at = _timestamp()
+            self.store.save(record)
         args = [
             "scan",
             request.scanner,
@@ -120,12 +277,8 @@ class JobManager:
             record.error = str(exc)
         finally:
             record.completed_at = _timestamp()
-
-    def _require(self, job_id: str) -> JobRecord:
-        record = self.get(job_id)
-        if record is None:
-            raise KeyError(job_id)
-        return record
+            with self._lock:
+                self.store.save(record)
 
 
 def _timestamp() -> str:
@@ -136,13 +289,28 @@ def create_app(
     *,
     job_root: Path = Path("/reports/jobs"),
     max_workers: int = 2,
+    job_database: Path | None = None,
     runner: ScanRunner | None = None,
 ) -> FastAPI:
     if runner is None:
         from secscan.cli import main
 
         runner = main
-    manager = JobManager(job_root, runner, max_workers=max_workers)
+    manager: JobManager | None = None
+    manager_lock = Lock()
+
+    def get_manager() -> JobManager:
+        nonlocal manager
+        with manager_lock:
+            if manager is None:
+                manager = JobManager(
+                    job_root,
+                    runner,
+                    max_workers=max_workers,
+                    database=job_database,
+                )
+            return manager
+
     app = FastAPI(title="secscan API", version="1.0.0")
 
     @app.get("/healthz")
@@ -151,17 +319,36 @@ def create_app(
 
     @app.post("/api/v1/jobs", status_code=202)
     def submit_job(request: ScanSubmission) -> dict[str, object]:
-        return asdict(manager.submit(request))
+        return asdict(get_manager().submit(request))
+
+    @app.get("/api/v1/jobs")
+    def list_jobs(
+        status: JobStatus | None = None,
+        scanner: Literal["image", "filesystem", "repository", "sbom"] | None = None,
+        limit: int = Query(default=20, ge=1, le=100),
+    ) -> list[dict[str, object]]:
+        return [asdict(record) for record in get_manager().list(status=status, scanner=scanner, limit=limit)]
 
     @app.get("/api/v1/jobs/{job_id}")
     def get_job(job_id: str) -> dict[str, object]:
-        record = manager.get(job_id)
+        record = get_manager().get(job_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        return asdict(record)
+
+    @app.delete("/api/v1/jobs/{job_id}")
+    def cancel_job(job_id: str) -> dict[str, object]:
+        try:
+            record = get_manager().cancel(job_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         if record is None:
             raise HTTPException(status_code=404, detail="job not found")
         return asdict(record)
 
     @app.get("/api/v1/jobs/{job_id}/artifacts/{name}")
     def get_artifact(job_id: str, name: str) -> FileResponse:
+        manager = get_manager()
         record = manager.get(job_id)
         if record is None:
             raise HTTPException(status_code=404, detail="job not found")

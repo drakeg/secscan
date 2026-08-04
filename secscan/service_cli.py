@@ -11,6 +11,11 @@ def main() -> None:
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--job-root", type=Path, default=Path("/reports/jobs"))
+    parser.add_argument(
+        "--job-database",
+        type=Path,
+        help="SQLite job database (default: <job-root>/jobs.db)",
+    )
     parser.add_argument("--workers", type=int, default=2, help="maximum concurrent scan jobs")
     args = parser.parse_args()
 
@@ -19,7 +24,15 @@ def main() -> None:
 
     from secscan.service import create_app
 
-    uvicorn.run(create_app(job_root=args.job_root, max_workers=args.workers), host=args.host, port=args.port)
+    uvicorn.run(
+        create_app(
+            job_root=args.job_root,
+            job_database=args.job_database,
+            max_workers=args.workers,
+        ),
+        host=args.host,
+        port=args.port,
+    )
 
 
 if __name__ == "__main__":
