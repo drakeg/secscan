@@ -118,9 +118,31 @@ Current and projected recurring infrastructure cost remains **$0**. Policy evalu
 
 ### Sprint 9 — Service Mode and API
 
-Add a long-running API, background jobs, bounded concurrency, health endpoints, and an optional PostgreSQL backend while preserving the standalone CLI.
+Delivered a long-running local API, background jobs, bounded concurrency, health and job status endpoints, and allow-listed artifact downloads while preserving the standalone CLI.
 
-### Sprint 10 — AWS Asset Discovery
+### Sprint 10 — Persistent Service Job Management
+
+Persist service job metadata in a local SQLite database, retain job status across service restarts, list recent jobs with bounded status and scanner filters, and safely cancel jobs that have not started.
+
+#### Stories and acceptance criteria
+
+- submitted jobs are recorded before worker execution and remain queryable after restart
+- jobs interrupted by a restart are marked failed rather than replayed automatically
+- `GET /api/v1/jobs` returns newest-first results with optional `status`, `scanner`, and bounded `limit` filters
+- `DELETE /api/v1/jobs/{job_id}` cancels only queued jobs and rejects running or terminal jobs
+- the existing submit, status, artifact, CLI, and scanner behavior remains compatible
+- SQLite and the local filesystem remain the only service-state dependencies
+- restart recovery, filtering, cancellation races, and endpoint responses have automated tests
+- documentation, branch preflight, CI, and CodeQL pass before merge
+
+#### Security and cost boundaries
+
+- active scanner processes are never terminated through the API
+- cancelled jobs are retained for auditability; this sprint adds no deletion endpoint
+- interrupted work is not automatically replayed against potentially changed targets
+- current and projected recurring infrastructure cost remains **$0**
+
+### Sprint 11 — AWS Asset Discovery
 
 Discover approved ECR assets across configured accounts and regions using documented least-privilege IAM permissions and an explicit cost model.
 

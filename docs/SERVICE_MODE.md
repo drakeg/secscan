@@ -25,7 +25,9 @@ OpenAPI documentation is available at `/docs` while the service is running.
 
 - `GET /healthz`
 - `POST /api/v1/jobs`
+- `GET /api/v1/jobs`
 - `GET /api/v1/jobs/{job_id}`
+- `DELETE /api/v1/jobs/{job_id}`
 - `GET /api/v1/jobs/{job_id}/artifacts/{name}`
 
 Submit a scan:
@@ -38,6 +40,20 @@ curl -X POST http://localhost:8000/api/v1/jobs \
 
 Exit code `2` is a successfully completed job whose policy failed. Exit code `1` or an unexpected exception produces a failed job.
 
+List the 10 newest completed image jobs:
+
+```bash
+curl 'http://localhost:8000/api/v1/jobs?status=completed&scanner=image&limit=10'
+```
+
+Results are newest first. `limit` must be between 1 and 100. Only queued jobs can be cancelled:
+
+```bash
+curl -X DELETE http://localhost:8000/api/v1/jobs/JOB_ID
+```
+
+Cancellation of a running, completed, failed, or already cancelled job returns `409`. Active scanner processes are not terminated.
+
 ## Security boundaries
 
 This first increment is intended for trusted local networks and single-operator deployments. It does not provide authentication, authorization, uploads, remote target retrieval, tenant isolation, TLS termination, or distributed workers. Do not expose it directly to an untrusted network.
@@ -46,7 +62,9 @@ Artifact names are allow-listed and each job receives a UUID-scoped output direc
 
 ## Persistence
 
-Generated reports remain on disk under the configured job root. Job status metadata is currently held in memory and is lost when the service restarts. Persistent job state and PostgreSQL remain later increments.
+Generated reports remain on disk under the configured job root. Job metadata is stored in `<job-root>/jobs.db` by default. Use `--job-database` to select another SQLite path; keep it on persistent storage when running in a disposable container.
+
+Completed, failed, and cancelled records remain queryable after restart. Jobs found in `queued` or `running` state during startup are marked failed with a restart explanation. They are not replayed automatically.
 
 ## Cost
 
