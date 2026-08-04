@@ -14,6 +14,13 @@ from pydantic import BaseModel, Field
 
 JobStatus = Literal["queued", "running", "completed", "failed"]
 ScanRunner = Callable[[list[str]], int]
+ARTIFACT_PATHS = {
+    "trivy.json": Path("trivy.json"),
+    "secscan.json": Path("secscan.json"),
+    "secscan.html": Path("secscan.html"),
+    "secscan.cdx.json": Path("secscan.cdx.json"),
+    "secscan.diff.json": Path("secscan.diff.json"),
+}
 
 
 class ScanSubmission(BaseModel):
@@ -43,7 +50,7 @@ class JobManager:
     def __init__(self, root: Path, runner: ScanRunner, max_workers: int = 2) -> None:
         if max_workers < 1:
             raise ValueError("max_workers must be at least 1")
-        self.root = root
+        self.root = root.expanduser().resolve()
         self.runner = runner
         self.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="secscan")
         self._jobs: dict[str, JobRecord] = {}
@@ -51,7 +58,9 @@ class JobManager:
 
     def submit(self, request: ScanSubmission) -> JobRecord:
         job_id = str(uuid4())
-        output_dir = self.root / job_id
+        output_dir = (self.root / job_id).resolve()
+        if not output_dir.is_relative_to(self.root):
+            raise ValueError("job output directory escaped the configured job root")
         record = JobRecord(
             id=job_id,
             status="queued",
@@ -69,11 +78,32 @@ class JobManager:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def artifact_path(self, record: JobRecord, artifact_name: str) -> Path | None:
+        relative_path = ARTIFACT_PATHS.get(artifact_name)
+        if relative_path is None:
+            return None
+        job_dir = (self.root / record.id).resolve()
+        recorded_dir = Path(record.output_dir).resolve()
+        if job_dir != recorded_dir or not job_dir.is_relative_to(self.root):
+            return None
+        artifact = (job_dir / relative_path).resolve()
+        if artifact.parent != job_dir or not artifact.is_relative_to(self.root):
+            return None
+        return artifact
+
     def _run(self, job_id: str, request: ScanSubmission) -> None:
         record = self._require(job_id)
         record.status = "running"
         record.started_at = _timestamp()
-        args = ["scan", request.scanner, request.target, "--output-dir", record.output_dir, "--timeout", str(request.timeout)]
+        args = [
+            "scan",
+            request.scanner,
+            request.target,
+            "--output-dir",
+            record.output_dir,
+            "--timeout",
+            str(request.timeout),
+        ]
         if request.fail_on:
             args.extend(["--fail-on", request.fail_on])
         if request.policy:
@@ -102,7 +132,12 @@ def _timestamp() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def create_app(*, job_root: Path = Path("/reports/jobs"), max_workers: int = 2, runner: ScanRunner | None = None) -> FastAPI:
+def create_app(
+    *,
+    job_root: Path = Path("/reports/jobs"),
+    max_workers: int = 2,
+    runner: ScanRunner | None = None,
+) -> FastAPI:
     if runner is None:
         from secscan.cli import main
 
@@ -127,14 +162,11 @@ def create_app(*, job_root: Path = Path("/reports/jobs"), max_workers: int = 2, 
 
     @app.get("/api/v1/jobs/{job_id}/artifacts/{name}")
     def get_artifact(job_id: str, name: str) -> FileResponse:
-        allowed = {"trivy.json", "secscan.json", "secscan.html", "secscan.cdx.json", "secscan.diff.json"}
-        if name not in allowed:
-            raise HTTPException(status_code=404, detail="artifact not found")
         record = manager.get(job_id)
         if record is None:
             raise HTTPException(status_code=404, detail="job not found")
-        artifact = Path(record.output_dir) / name
-        if not artifact.is_file():
+        artifact = manager.artifact_path(record, name)
+        if artifact is None or not artifact.is_file():
             raise HTTPException(status_code=404, detail="artifact not found")
         return FileResponse(artifact)
 
