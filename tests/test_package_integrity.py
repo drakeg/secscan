@@ -5,6 +5,7 @@ import importlib
 
 MODULES = [
     "secscan",
+    "secscan.aws",
     "secscan.cli",
     "secscan.compare",
     "secscan.models",

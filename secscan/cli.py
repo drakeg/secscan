@@ -7,6 +7,7 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from time import perf_counter
 
+from secscan.aws import AwsDiscoveryError, discover_ecr_assets, load_ecr_config, write_ecr_assets
 from secscan.compare import compare_findings, load_baseline
 from secscan.history import HistoryStore, ScanHistoryEntry
 from secscan.policy import Policy, evaluate_policy, load_policy, policy_failed
@@ -81,6 +82,17 @@ def build_parser() -> argparse.ArgumentParser:
     show = subparsers.add_parser("show", help="show one recorded scan")
     show.add_argument("scan_id", type=int)
     _add_history_db_argument(show, default=Path("/reports/secscan.db"))
+
+    discover = subparsers.add_parser("discover", help="discover approved cloud assets")
+    discover_subparsers = discover.add_subparsers(dest="discovery_type", required=True)
+    ecr = discover_subparsers.add_parser("ecr", help="discover approved Amazon ECR images")
+    ecr.add_argument("--config", type=Path, required=True, help="AWS discovery YAML config")
+    ecr.add_argument(
+        "--output",
+        type=Path,
+        default=Path("/reports/ecr-assets.json"),
+        help="discovered asset inventory path",
+    )
     return parser
 
 
@@ -222,6 +234,14 @@ def _run_scan(args: argparse.Namespace) -> int:
     )
 
 
+def _run_ecr_discovery(args: argparse.Namespace) -> int:
+    report = discover_ecr_assets(load_ecr_config(args.config))
+    write_ecr_assets(report, args.output)
+    print(f"Discovered {report['asset_count']} ECR images")
+    print(f"Inventory written to {args.output}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -231,8 +251,10 @@ def main(argv: list[str] | None = None) -> int:
             return _run_history(args)
         if args.command == "show":
             return _run_show(args)
+        if args.command == "discover" and args.discovery_type == "ecr":
+            return _run_ecr_discovery(args)
         return 1
-    except (TrivyError, OSError, ValueError) as exc:
+    except (AwsDiscoveryError, TrivyError, OSError, ValueError) as exc:
         print(f"secscan error: {exc}", file=sys.stderr)
         return 1
 

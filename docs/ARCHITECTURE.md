@@ -284,3 +284,7 @@ Cloud components remain optional. Storage, queue, discovery, policy distribution
 ### Local service job state
 
 The service stores job metadata in SQLite and report artifacts in UUID-scoped directories. A submitted record is persisted before worker execution. Terminal records survive restarts; non-terminal records found at startup are failed explicitly instead of being replayed. The API can cancel queued work, but it does not terminate running scanners.
+
+### AWS discovery boundary
+
+AWS discovery is a read-only inventory adapter outside the scanner registry. Explicit YAML configuration bounds account, region, and ECR repository access. The adapter verifies same-account identities or assumes one exact cross-account role, then maps paginated `DescribeImages` metadata into a versioned local JSON artifact. Inventory discovery does not imply image authentication, pulling, or scanning.

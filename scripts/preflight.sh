@@ -19,7 +19,7 @@ python scripts/verify_wheel.py dist/secscan-*.whl
 
 python -m venv /tmp/secscan-wheel-test
 /tmp/secscan-wheel-test/bin/pip install dist/secscan-*.whl
-/tmp/secscan-wheel-test/bin/python -c "import secscan, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.service, secscan.service_cli, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.sbom"
+/tmp/secscan-wheel-test/bin/python -c "import secscan, secscan.aws, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.service, secscan.service_cli, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.sbom"
 /tmp/secscan-wheel-test/bin/secscan --version
 /tmp/secscan-wheel-test/bin/secscan-service --help >/dev/null
 

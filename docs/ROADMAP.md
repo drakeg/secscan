@@ -122,7 +122,7 @@ Delivered a long-running local API, background jobs, bounded concurrency, health
 
 ### Sprint 10 — Persistent Service Job Management
 
-Persist service job metadata in a local SQLite database, retain job status across service restarts, list recent jobs with bounded status and scanner filters, and safely cancel jobs that have not started.
+Delivered SQLite-backed service job metadata, restart recovery, filtered recent-job listing, and safe queued-job cancellation.
 
 #### Stories and acceptance criteria
 
@@ -145,6 +145,25 @@ Persist service job metadata in a local SQLite database, retain job status acros
 ### Sprint 11 — AWS Asset Discovery
 
 Discover approved ECR assets across configured accounts and regions using documented least-privilege IAM permissions and an explicit cost model.
+
+#### Stories and acceptance criteria
+
+- YAML configuration requires explicit account IDs, regions, and exact repository names
+- same-account discovery verifies the caller account before accessing ECR
+- cross-account discovery uses one explicitly configured role ARN and short-lived credentials
+- paginated `DescribeImages` results produce a versioned JSON inventory with immutable digest URIs
+- discovery does not enumerate repositories, pull images, start scans, or mutate AWS resources
+- credential-free tests cover configuration validation, repository scoping, pagination, output, and account rejection
+- local automated and optional live AWS testing procedures are documented
+- least-privilege IAM, security boundaries, and the projected cost remain documented
+- branch preflight, CI, and CodeQL pass before merge
+
+#### Security and cost boundaries
+
+- credentials and session tokens are never persisted
+- exact repository allow-lists prevent unbounded discovery
+- output is treated as security-sensitive infrastructure inventory
+- current and projected recurring secscan infrastructure cost remains **$0**
 
 ## Future epics and backlog
 
