@@ -18,11 +18,15 @@ def test_job_lifecycle_and_artifact_download(tmp_path: Path) -> None:
     def runner(args: list[str]) -> int:
         output_dir = Path(args[args.index("--output-dir") + 1])
         output_dir.mkdir(parents=True)
-        (output_dir / "secscan.json").write_text(json.dumps({"summary": {"total": 0}}), encoding="utf-8")
+        (output_dir / "secscan.json").write_text(
+            json.dumps({"summary": {"total": 0}}), encoding="utf-8"
+        )
         return 0
 
     client = TestClient(create_app(job_root=tmp_path, runner=runner))
-    response = client.post("/api/v1/jobs", json={"scanner": "image", "target": "alpine:3.20"})
+    response = client.post(
+        "/api/v1/jobs", json={"scanner": "image", "target": "alpine:3.20"}
+    )
     assert response.status_code == 202
     job_id = response.json()["id"]
 
@@ -49,6 +53,16 @@ def test_policy_failure_is_completed_job(tmp_path: Path) -> None:
         sleep(0.01)
     assert current.status == "completed"
     assert current.exit_code == 2
+
+
+def test_artifact_path_rejects_unknown_name_and_escaped_directory(tmp_path: Path) -> None:
+    manager = JobManager(tmp_path / "jobs", lambda _args: 0, max_workers=1)
+    record = manager.submit(ScanSubmission(scanner="image", target="alpine:3.20"))
+
+    assert manager.artifact_path(record, "../../etc/passwd") is None
+
+    record.output_dir = str(tmp_path / "outside")
+    assert manager.artifact_path(record, "secscan.json") is None
 
 
 def test_unknown_job_returns_404(tmp_path: Path) -> None:
