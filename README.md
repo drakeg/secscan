@@ -19,6 +19,18 @@ A successful scan creates four artifacts:
 
 A scan using `--baseline` also creates `secscan.diff.json`. Completed scans are recorded in `secscan.db` unless `--no-history` is supplied.
 
+## AWS ECR discovery
+
+Create a read-only inventory from explicitly approved accounts, regions, and repositories:
+
+```bash
+secscan discover ecr \
+  --config ./aws-discovery.yaml \
+  --output ./reports/ecr-assets.json
+```
+
+Discovery does not enumerate repositories, pull images, or start scans. See [AWS ECR Asset Discovery](docs/AWS_ECR_DISCOVERY.md) for configuration, least-privilege IAM, costs, and step-by-step local testing procedures.
+
 ## Image scanning
 
 ```bash
@@ -198,7 +210,7 @@ secscan --help
 
 ## Current boundaries
 
-The built-in scanners support public container images, local filesystem paths, checked-out source repositories, and CycloneDX JSON SBOM files. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history and persistent service job metadata. Private registry authentication, remote repository cloning, SPDX input, AWS discovery, and contextual risk scoring remain later increments.
+The built-in scanners support public container images, local filesystem paths, checked-out source repositories, and CycloneDX JSON SBOM files. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history and persistent service job metadata. Read-only AWS discovery inventories explicitly approved ECR repositories. Private registry authentication, remote repository cloning, SPDX input, automatic AWS scanning, and contextual risk scoring remain later increments.
 
 ## Security notes
 
@@ -218,6 +230,7 @@ The built-in scanners support public container images, local filesystem paths, c
 - [Policy configuration](docs/POLICIES.md)
 - [Finding baselines](docs/BASELINES.md)
 - [Local scan history](docs/HISTORY.md)
+- [AWS ECR asset discovery and local testing](docs/AWS_ECR_DISCOVERY.md)
 - [Repository scanning](docs/REPOSITORY_SCANNING.md)
 - [SBOM scanning](docs/SBOM_SCANNING.md)
 - [Definition of done](docs/DEFINITION_OF_DONE.md)
