@@ -22,6 +22,7 @@ python -m venv /tmp/secscan-wheel-test
 /tmp/secscan-wheel-test/bin/python -c "import secscan, secscan.aws, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.service, secscan.service_cli, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.sbom"
 /tmp/secscan-wheel-test/bin/secscan --version
 /tmp/secscan-wheel-test/bin/secscan batch ecr --help >/dev/null
+/tmp/secscan-wheel-test/bin/secscan trends --help >/dev/null
 /tmp/secscan-wheel-test/bin/secscan-service --help >/dev/null
 
 if [[ "$run_container" == true ]]; then

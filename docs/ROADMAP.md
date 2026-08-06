@@ -59,60 +59,56 @@ Delivered a repository scanner plugin for checked-out source trees using the exi
 
 Delivered CycloneDX JSON validation, Trivy SBOM vulnerability scanning, normalized findings, standard artifact preservation, and scanner-neutral policy, baseline, history, and reporting integration.
 
+### Sprint 8 — Policy v2
+
+Delivered typed, explainable rules for packages, vulnerability IDs, severities, fix availability, and vulnerability age while preserving existing policy compatibility.
+
 ## Current sprint
 
-### Sprint 8 — Policy v2
+### Sprint 14 — Local Historical Trends
 
 #### Goal
 
-Add typed, explainable policy rules for fix availability, vulnerability age, package, vulnerability ID, and severity while preserving complete compatibility with existing threshold and suppression policy files.
+Turn existing local scan-level history into bounded, machine-readable trend summaries without introducing a service, cloud database, or finding-level retention.
 
 #### User stories
 
-1. As a security owner, I can apply stricter thresholds to selected packages or vulnerabilities.
-2. As an operator, I can fail scans on findings that have a fix available.
-3. As a risk owner, I can enforce remediation expectations based on vulnerability age when publication data is available.
-4. As an auditor, I can see exactly which rule matched each finding and why.
-5. As an existing user, my current policy files continue to work unchanged.
+1. As an operator, I can inspect severity totals across recent scans of one target and scanner.
+2. As an automation author, I can save a versioned JSON trend document.
+3. As a security owner, I can see the net severity change from the oldest included scan to the newest.
+4. As an existing user, my history database continues to work without migration or duplication.
 
 #### Planned implementation
 
-- typed `PolicyRule` model
-- exact package, vulnerability, and severity match conditions
-- `fix_available` condition derived from normalized fixed-version metadata
-- `max_age_days` condition using optional normalized publication dates
-- deterministic suppression-before-rule precedence
-- rule-specific `fail_on` thresholds and reasons
-- strict unknown-key and type validation
-- conflicting duplicate rule detection
-- explainable `rule_matches` metadata in `secscan.json`
-- backward-compatibility and failure-path tests
-- policy, roadmap, architecture, and README updates
+- a `secscan trends` command requiring an exact scanner and target cohort
+- a bounded 2–100 scan window, ordered oldest to newest
+- latest severity totals and signed change since the oldest included scan
+- versioned JSON output with atomic replacement
+- readable console output when no output file is selected
+- query, validation, serialization, CLI, and compatibility tests
+- history, roadmap, architecture, README, and local test-procedure updates
 
 #### Acceptance criteria
 
-- existing `policy.fail_on` and `suppressions` files parse and behave unchanged
-- a rule requires at least one match condition
-- all configured rule conditions must match the same finding
-- active suppressions prevent rule matches for the suppressed finding
-- missing publication dates do not satisfy age rules
-- global threshold or any matching rule may produce exit code `2`
-- invalid or conflicting rules fail clearly with exit code `1`
-- report metadata explains every rule match
+- trends contain only records matching both the exact scanner and target
+- the most recent bounded records are returned in chronological order
+- fewer than two matching scans fail clearly instead of implying a trend
+- JSON records its schema version, cohort, time range, latest totals, signed changes, and series
+- existing version 1 history databases remain compatible without schema migration
+- trend generation does not mutate scan records or read detailed report artifacts
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- wildcard or regular-expression matching
-- KEV, EPSS, exploitability, or internet-exposure enrichment
-- centrally signed or remotely distributed policy bundles
-- approval workflows or multi-user policy governance
-- risk-score aggregation
+- charts, dashboards, forecasting, or cross-target aggregation
+- finding-level persistence or vulnerability lifecycle correlation
+- mean time to remediation, because scan-level totals cannot establish finding identity
+- remote history stores, scheduled analysis, or service API endpoints
 
 #### Cost outlook
 
-Current and projected recurring infrastructure cost remains **$0**. Policy evaluation remains local and introduces no external services.
+Current and projected recurring infrastructure cost remains **$0**. Trend computation reads the existing local SQLite database and introduces no external services.
 
 ## Planned feature sprints
 
@@ -191,7 +187,7 @@ Delivered authenticated scanning of one explicitly selected immutable ECR image 
 
 ### Sprint 13 — Bounded ECR Batch Scanning
 
-Run a sequential batch of up to 20 explicitly selected immutable ECR inventory URIs with isolated artifacts, shared history, and a machine-readable batch manifest.
+Delivered sequential batches of up to 20 explicitly selected immutable ECR inventory URIs with isolated artifacts, shared history, and a machine-readable batch manifest.
 
 #### Stories and acceptance criteria
 
@@ -221,7 +217,7 @@ Run a sequential batch of up to 20 explicitly selected immutable ECR inventory U
 - cross-source correlation
 - additional private registry authentication
 - release automation, immutable images, provenance, and checksums
-- historical trends and mean time to remediation
+- finding-level history and mean time to remediation
 - additional scanner adapters such as Syft and Grype
 - risk scoring, KEV, and EPSS enrichment
 - EC2 inventory or snapshot-based scanning
