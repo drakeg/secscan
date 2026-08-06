@@ -44,6 +44,20 @@ secscan scan ecr \
 
 The image must still be approved by the AWS configuration. Temporary credentials are passed only to Trivy's child-process environment.
 
+Run a sequential batch of up to 20 explicit immutable URIs:
+
+```bash
+secscan batch ecr \
+  --image-uri 'COPY_FIRST_EXACT_IMAGE_URI' \
+  --image-uri 'COPY_SECOND_EXACT_IMAGE_URI' \
+  --inventory ./reports/ecr-assets.json \
+  --aws-config ./aws-discovery.yaml \
+  --output-root ./reports/ecr-batch \
+  --fail-on HIGH
+```
+
+The output root must be empty. Each scan gets isolated artifacts, while `batch.json` and a shared `secscan.db` summarize the run. See [AWS ECR Discovery and Authenticated Scanning](docs/AWS_ECR_DISCOVERY.md) for exit-code behavior and local/live test procedures.
+
 ## Image scanning
 
 ```bash
@@ -223,7 +237,7 @@ secscan --help
 
 ## Current boundaries
 
-The built-in scanners support public and explicitly inventoried ECR container images, local filesystem paths, checked-out source repositories, and CycloneDX JSON SBOM files. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history and persistent service job metadata. AWS discovery inventories explicitly approved ECR repositories. General private registry authentication, remote repository cloning, SPDX input, batch AWS scanning, and contextual risk scoring remain later increments.
+The built-in scanners support public and explicitly inventoried ECR container images, including bounded sequential batches, plus local filesystem paths, checked-out source repositories, and CycloneDX JSON SBOM files. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history and persistent service job metadata. AWS discovery inventories explicitly approved ECR repositories. General private registry authentication, remote repository cloning, SPDX input, scheduled AWS scanning, and contextual risk scoring remain later increments.
 
 ## Security notes
 

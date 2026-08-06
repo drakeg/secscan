@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict, dataclass
 import json
 import sys
 from importlib.metadata import PackageNotFoundError, version
@@ -12,7 +13,9 @@ from secscan.aws import (
     discover_ecr_assets,
     ecr_scan_environment,
     load_ecr_asset,
+    load_ecr_assets,
     load_ecr_config,
+    validate_ecr_asset,
     write_ecr_assets,
 )
 from secscan.compare import compare_findings, load_baseline
@@ -115,7 +118,45 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("/reports/ecr-assets.json"),
         help="discovered asset inventory path",
     )
+
+    batch = subparsers.add_parser("batch", help="run a bounded batch operation")
+    batch_subparsers = batch.add_subparsers(dest="batch_type", required=True)
+    ecr_batch = batch_subparsers.add_parser(
+        "ecr", help="scan up to 20 explicitly selected ECR image digests"
+    )
+    ecr_batch.add_argument(
+        "--image-uri",
+        action="append",
+        required=True,
+        help="exact immutable URI from the inventory; repeat for each image",
+    )
+    ecr_batch.add_argument(
+        "--inventory", type=Path, required=True, help="ECR asset inventory JSON"
+    )
+    ecr_batch.add_argument(
+        "--aws-config", type=Path, required=True, help="AWS discovery YAML config"
+    )
+    ecr_batch.add_argument(
+        "--output-root", type=Path, default=Path("/reports/ecr-batch")
+    )
+    ecr_batch.add_argument(
+        "--fail-on",
+        default=None,
+        choices=["NONE", "UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
+    )
+    ecr_batch.add_argument("--policy", type=Path)
+    ecr_batch.add_argument("--timeout", type=int, default=600)
+    _add_history_db_argument(ecr_batch, default=None)
+    ecr_batch.add_argument("--no-history", action="store_true")
     return parser
+
+
+@dataclass(frozen=True)
+class BatchEntry:
+    image_uri: str
+    output_dir: str
+    status: str
+    exit_code: int
 
 
 def _print_history_entry(entry: ScanHistoryEntry) -> None:
@@ -272,6 +313,57 @@ def _run_ecr_discovery(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_ecr_batch(args: argparse.Namespace) -> int:
+    image_uris = tuple(args.image_uri)
+    assets = load_ecr_assets(args.inventory, image_uris)
+    config = load_ecr_config(args.aws_config)
+    for asset in assets:
+        validate_ecr_asset(config, asset)
+
+    if args.output_root.exists() and any(args.output_root.iterdir()):
+        raise ValueError("ECR batch output root must be empty")
+    args.output_root.mkdir(parents=True, exist_ok=True)
+    history_db = args.history_db or (args.output_root / "secscan.db")
+    entries: list[BatchEntry] = []
+    for index, asset in enumerate(assets, start=1):
+        digest_prefix = asset.digest.removeprefix("sha256:")[:12]
+        output_dir = args.output_root / f"{index:02d}-{digest_prefix}"
+        scan_args = argparse.Namespace(
+            target_type="ecr",
+            target=asset.image_uri,
+            inventory=args.inventory,
+            aws_config=args.aws_config,
+            output_dir=output_dir,
+            fail_on=args.fail_on,
+            policy=args.policy,
+            baseline=None,
+            timeout=args.timeout,
+            history_db=history_db,
+            no_history=args.no_history,
+        )
+        try:
+            exit_code = _run_scan(scan_args)
+            status = "completed" if exit_code == 0 else "policy_failed"
+        except (AwsDiscoveryError, TrivyError, OSError, ValueError) as exc:
+            print(f"secscan batch error for {asset.image_uri}: {exc}", file=sys.stderr)
+            exit_code = 1
+            status = "failed"
+        entries.append(BatchEntry(asset.image_uri, str(output_dir), status, exit_code))
+
+    batch_exit_code = 1 if any(entry.exit_code == 1 for entry in entries) else 0
+    if batch_exit_code == 0 and any(entry.exit_code == 2 for entry in entries):
+        batch_exit_code = 2
+    manifest = {
+        "schema_version": 1,
+        "image_count": len(entries),
+        "exit_code": batch_exit_code,
+        "entries": [asdict(entry) for entry in entries],
+    }
+    write_json(manifest, args.output_root / "batch.json")
+    print(f"Batch manifest written to {args.output_root / 'batch.json'}")
+    return batch_exit_code
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -283,6 +375,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_show(args)
         if args.command == "discover" and args.discovery_type == "ecr":
             return _run_ecr_discovery(args)
+        if args.command == "batch" and args.batch_type == "ecr":
+            return _run_ecr_batch(args)
         return 1
     except (AwsDiscoveryError, TrivyError, OSError, ValueError) as exc:
         print(f"secscan error: {exc}", file=sys.stderr)

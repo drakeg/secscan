@@ -167,7 +167,7 @@ Delivered read-only discovery of exact ECR repositories across approved accounts
 
 ### Sprint 12 — Authenticated ECR Scanning
 
-Scan one explicitly selected immutable ECR image from the generated inventory through the existing image, policy, baseline, reporting, SBOM, history, and exit-code pipeline.
+Delivered authenticated scanning of one explicitly selected immutable ECR image through the existing image, policy, baseline, reporting, SBOM, history, and exit-code pipeline.
 
 #### Stories and acceptance criteria
 
@@ -188,6 +188,31 @@ Scan one explicitly selected immutable ECR image from the generated inventory th
 - batch selection, scheduling, repository enumeration, and service-mode ECR scans remain out of scope
 - credentials and authorization tokens are never persisted
 - current recurring secscan infrastructure cost remains **$0**; users retain responsibility for AWS data-transfer and registry costs
+
+### Sprint 13 — Bounded ECR Batch Scanning
+
+Run a sequential batch of up to 20 explicitly selected immutable ECR inventory URIs with isolated artifacts, shared history, and a machine-readable batch manifest.
+
+#### Stories and acceptance criteria
+
+- users repeat `--image-uri` to select exact digest URIs from the versioned inventory
+- selections must be unique, present in the inventory, approved by configuration, and limited to 20
+- the complete inventory and allow-list selection is validated before the first scan starts
+- scans run sequentially and reuse authenticated ECR scanning without adding a scheduler or queue
+- each image writes to a deterministic index-and-digest directory beneath an initially empty output root
+- batch history uses one shared SQLite database unless history is disabled or another path is supplied
+- `batch.json` records each selected URI, output directory, status, exit code, and the aggregate exit code
+- aggregate exit code is `1` for any operational failure, otherwise `2` for any policy failure, otherwise `0`
+- credential-free tests cover bounds, duplicates, CLI selection, output isolation, manifests, and exit aggregation
+- local automated and optional live batch testing procedures remain documented
+- branch preflight, CI, and CodeQL pass before merge
+
+#### Security and cost boundaries
+
+- no tag, wildcard, repository-wide, or implicit “all images” selection is supported
+- concurrency, scheduling, retries, resume, and service-mode batch submission remain out of scope
+- the output root must be empty to prevent accidental artifact overwrite
+- current recurring secscan infrastructure cost remains **$0**; users retain responsibility for per-image AWS data-transfer and registry costs
 
 ## Future epics and backlog
 

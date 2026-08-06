@@ -53,6 +53,30 @@ secscan verifies that the URI appears exactly once in the versioned inventory an
 
 Only one digest can be scanned per command. Tags are not accepted as selectors because they are mutable.
 
+## Scan a bounded batch
+
+Repeat `--image-uri` for each exact immutable URI. A batch accepts between 1 and 20 unique inventory URIs and runs sequentially:
+
+```bash
+secscan batch ecr \
+  --image-uri '123456789012.dkr.ecr.us-east-1.amazonaws.com/platform/api@sha256:FIRST_FULL_DIGEST' \
+  --image-uri '123456789012.dkr.ecr.us-east-1.amazonaws.com/platform/worker@sha256:SECOND_FULL_DIGEST' \
+  --inventory ./reports/ecr-assets.json \
+  --aws-config ./aws-discovery.yaml \
+  --output-root ./reports/ecr-batch \
+  --fail-on HIGH
+```
+
+The output root must be empty. Each image receives an index-and-digest subdirectory such as `01-a1b2c3d4e5f6/`. All scans share `<output-root>/secscan.db` by default, and `<output-root>/batch.json` records per-image and aggregate results.
+
+The aggregate exit code is:
+
+- `0` when every scan completes and passes policy
+- `1` when any scan has an operational failure
+- `2` when no operational failure occurs and at least one scan fails policy
+
+The complete selection is validated before the first scan. Batch execution does not add concurrency, retries, resume behavior, scheduling, or implicit inventory selection.
+
 ## Least-privilege IAM
 
 For same-account discovery, the active identity needs `ecr:DescribeImages` for only the configured repositories. secscan calls `sts:GetCallerIdentity` to verify the account; AWS does not require an explicit permission for that identity call.
@@ -118,7 +142,7 @@ python -m venv .venv
 .venv/bin/pytest tests/test_aws.py tests/test_cli_ecr.py tests/test_trivy.py -v
 ```
 
-These tests use local fakes. They verify configuration validation, explicit repository scoping, pagination, normalized inventory output, exact digest selection, allow-list revalidation, short-lived credential mapping, CLI parsing, and child-process environment isolation. They do not contact AWS or incur charges.
+These tests use local fakes. They verify configuration validation, explicit repository scoping, pagination, normalized inventory output, exact digest selection, batch bounds and duplicate rejection, allow-list revalidation, short-lived credential mapping, CLI parsing, isolated batch outputs, aggregate manifests, and child-process environment isolation. They do not contact AWS or incur charges.
 
 Run the complete repository validation before submitting changes:
 
@@ -167,6 +191,8 @@ PATH="$PWD/.venv/bin:$PATH" bash scripts/preflight.sh
    fi
    ```
 
+9. To smoke-test batching, choose two non-production immutable URIs, use a new empty output root, and run the bounded batch example above. Confirm `batch.json` contains two entries, each output directory contains the standard artifacts, and `secscan.db` contains both scan history records.
+
 The discovery and scan commands do not create AWS resources. Image-layer downloads can incur AWS data-transfer or surrounding registry costs, and Trivy may download vulnerability databases. This feature has no required recurring secscan-managed infrastructure.
 
 ## Failure behavior and boundaries
@@ -176,4 +202,5 @@ The discovery and scan commands do not create AWS resources. Image-layer downloa
 - Invalid accounts, regions, repository names, duplicates, permission errors, and AWS API errors stop the command with exit code `1`.
 - Credentials and session tokens are never written to the inventory.
 - Scan credentials are supplied only to the Trivy child process and are not included in its command arguments.
-- Batch scans, tag selection, repository enumeration, automatic scheduling, service-mode ECR scans, and resource mutation remain out of scope.
+- Batch scans require 1–20 explicit unique digest URIs and run sequentially.
+- Tags, wildcards, repository-wide selection, concurrency, retries, resume, automatic scheduling, service-mode ECR scans, and resource mutation remain out of scope.
