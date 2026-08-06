@@ -1,17 +1,27 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 
 class TrivyError(RuntimeError):
     pass
 
 
-def _run_trivy(command: list[str], output_path: Path, timeout_seconds: int) -> None:
+def _run_trivy(
+    command: list[str],
+    output_path: Path,
+    timeout_seconds: int,
+    environment: Mapping[str, str] | None = None,
+) -> None:
+    process_environment = None
+    if environment is not None:
+        process_environment = dict(os.environ)
+        process_environment.update(environment)
     try:
         completed = subprocess.run(
             command,
@@ -19,6 +29,7 @@ def _run_trivy(command: list[str], output_path: Path, timeout_seconds: int) -> N
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
+            env=process_environment,
         )
     except FileNotFoundError as exc:
         raise TrivyError("Trivy is not installed or is not on PATH") from exc
@@ -79,7 +90,11 @@ def _generate_path_cyclonedx(
     )
 
 
-def scan_image(image: str, timeout_seconds: int = 600) -> dict[str, Any]:
+def scan_image(
+    image: str,
+    timeout_seconds: int = 600,
+    environment: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="secscan-") as temp_dir:
         output_path = Path(temp_dir) / "trivy.json"
         _run_trivy(
@@ -95,6 +110,7 @@ def scan_image(image: str, timeout_seconds: int = 600) -> dict[str, Any]:
             ],
             output_path,
             timeout_seconds,
+            environment,
         )
         return _read_json_output(output_path)
 
@@ -111,7 +127,12 @@ def scan_sbom(target: Path, timeout_seconds: int = 600) -> dict[str, Any]:
     return _scan_path("sbom", target, timeout_seconds)
 
 
-def generate_cyclonedx(image: str, output_path: Path, timeout_seconds: int = 600) -> None:
+def generate_cyclonedx(
+    image: str,
+    output_path: Path,
+    timeout_seconds: int = 600,
+    environment: Mapping[str, str] | None = None,
+) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     _run_trivy(
         [
@@ -126,6 +147,7 @@ def generate_cyclonedx(image: str, output_path: Path, timeout_seconds: int = 600
         ],
         output_path,
         timeout_seconds,
+        environment,
     )
 
 

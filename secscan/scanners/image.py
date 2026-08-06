@@ -18,7 +18,11 @@ class ImageScanner(Scanner):
         )
 
     def scan(self, request: ScanRequest) -> ScanResult:
-        raw = scan_image(request.target, timeout_seconds=request.timeout_seconds)
+        raw = scan_image(
+            request.target,
+            timeout_seconds=request.timeout_seconds,
+            environment=request.environment,
+        )
         findings = tuple(normalize_trivy(raw))
         return ScanResult(
             request=request,
@@ -32,6 +36,7 @@ class ImageScanner(Scanner):
             request.target,
             output_path,
             timeout_seconds=request.timeout_seconds,
+            environment=request.environment,
         )
 
     @staticmethod

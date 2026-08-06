@@ -44,6 +44,15 @@ class EcrDiscoveryConfig:
     profile: str | None = None
 
 
+@dataclass(frozen=True)
+class EcrAsset:
+    account_id: str
+    region: str
+    repository: str
+    digest: str
+    image_uri: str
+
+
 def load_ecr_config(path: Path) -> EcrDiscoveryConfig:
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -61,6 +70,81 @@ def load_ecr_config(path: Path) -> EcrDiscoveryConfig:
     if len({account.account_id for account in accounts}) != len(accounts):
         raise AwsDiscoveryError("account IDs must not contain duplicates")
     return EcrDiscoveryConfig(accounts=accounts, profile=profile)
+
+
+def load_ecr_asset(inventory_path: Path, image_uri: str) -> EcrAsset:
+    try:
+        data = json.loads(inventory_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AwsDiscoveryError(f"could not read ECR inventory: {exc}") from exc
+    if not isinstance(data, dict) or data.get("schema_version") != 1:
+        raise AwsDiscoveryError("ECR inventory must use schema version 1")
+    raw_assets = data.get("assets")
+    if not isinstance(raw_assets, list):
+        raise AwsDiscoveryError("ECR inventory assets must be a list")
+    matches: list[EcrAsset] = []
+    for value in raw_assets:
+        asset = _parse_asset(value)
+        if asset.image_uri == image_uri:
+            matches.append(asset)
+    if not matches:
+        raise AwsDiscoveryError("requested image URI is not present in the ECR inventory")
+    if len(matches) > 1:
+        raise AwsDiscoveryError("requested image URI appears more than once in the ECR inventory")
+    return matches[0]
+
+
+def _parse_asset(value: object) -> EcrAsset:
+    if not isinstance(value, dict):
+        raise AwsDiscoveryError("each ECR inventory asset must be a mapping")
+    account_id = value.get("account_id")
+    region = value.get("region")
+    repository = value.get("repository")
+    digest = value.get("digest")
+    image_uri = value.get("image_uri")
+    if not isinstance(account_id, str) or not ACCOUNT_ID_PATTERN.fullmatch(account_id):
+        raise AwsDiscoveryError("ECR inventory contains an invalid account ID")
+    if not isinstance(region, str) or not REGION_PATTERN.fullmatch(region):
+        raise AwsDiscoveryError("ECR inventory contains an invalid region")
+    if not isinstance(repository, str) or not REPOSITORY_PATTERN.fullmatch(repository):
+        raise AwsDiscoveryError("ECR inventory contains an invalid repository")
+    if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+        raise AwsDiscoveryError("ECR inventory contains an invalid image digest")
+    expected_uri = f"{account_id}.dkr.ecr.{region}.amazonaws.com/{repository}@{digest}"
+    if image_uri != expected_uri:
+        raise AwsDiscoveryError("ECR inventory contains an inconsistent image URI")
+    return EcrAsset(account_id, region, repository, digest, expected_uri)
+
+
+def ecr_scan_environment(
+    config: EcrDiscoveryConfig,
+    asset: EcrAsset,
+    client_factory: ClientFactory | None = None,
+) -> dict[str, str]:
+    account = next(
+        (candidate for candidate in config.accounts if candidate.account_id == asset.account_id),
+        None,
+    )
+    if account is None:
+        raise AwsDiscoveryError("inventory account is not approved by the AWS config")
+    if asset.region not in account.regions:
+        raise AwsDiscoveryError("inventory region is not approved by the AWS config")
+    if asset.repository not in account.repositories:
+        raise AwsDiscoveryError("inventory repository is not approved by the AWS config")
+    factory = client_factory or _boto3_client_factory(config.profile)
+    credentials = _credentials_for_account(account, factory)
+    environment = {"AWS_REGION": asset.region, "AWS_DEFAULT_REGION": asset.region}
+    if credentials:
+        environment.update(
+            {
+                "AWS_ACCESS_KEY_ID": credentials["aws_access_key_id"],
+                "AWS_SECRET_ACCESS_KEY": credentials["aws_secret_access_key"],
+                "AWS_SESSION_TOKEN": credentials["aws_session_token"],
+            }
+        )
+    elif config.profile:
+        environment["AWS_PROFILE"] = config.profile
+    return environment
 
 
 def _parse_account(value: object) -> EcrAccount:

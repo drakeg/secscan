@@ -31,6 +31,19 @@ secscan discover ecr \
 
 Discovery does not enumerate repositories, pull images, or start scans. See [AWS ECR Asset Discovery](docs/AWS_ECR_DISCOVERY.md) for configuration, least-privilege IAM, costs, and step-by-step local testing procedures.
 
+Scan one exact digest from that inventory:
+
+```bash
+secscan scan ecr \
+  '123456789012.dkr.ecr.us-east-1.amazonaws.com/platform/api@sha256:FULL_DIGEST' \
+  --inventory ./reports/ecr-assets.json \
+  --aws-config ./aws-discovery.yaml \
+  --output-dir ./reports/ecr-scan \
+  --fail-on HIGH
+```
+
+The image must still be approved by the AWS configuration. Temporary credentials are passed only to Trivy's child-process environment.
+
 ## Image scanning
 
 ```bash
@@ -210,7 +223,7 @@ secscan --help
 
 ## Current boundaries
 
-The built-in scanners support public container images, local filesystem paths, checked-out source repositories, and CycloneDX JSON SBOM files. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history and persistent service job metadata. Read-only AWS discovery inventories explicitly approved ECR repositories. Private registry authentication, remote repository cloning, SPDX input, automatic AWS scanning, and contextual risk scoring remain later increments.
+The built-in scanners support public and explicitly inventoried ECR container images, local filesystem paths, checked-out source repositories, and CycloneDX JSON SBOM files. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history and persistent service job metadata. AWS discovery inventories explicitly approved ECR repositories. General private registry authentication, remote repository cloning, SPDX input, batch AWS scanning, and contextual risk scoring remain later increments.
 
 ## Security notes
 

@@ -144,7 +144,7 @@ Delivered SQLite-backed service job metadata, restart recovery, filtered recent-
 
 ### Sprint 11 — AWS Asset Discovery
 
-Discover approved ECR assets across configured accounts and regions using documented least-privilege IAM permissions and an explicit cost model.
+Delivered read-only discovery of exact ECR repositories across approved accounts and regions with versioned inventory output and documented least-privilege IAM.
 
 #### Stories and acceptance criteria
 
@@ -165,12 +165,36 @@ Discover approved ECR assets across configured accounts and regions using docume
 - output is treated as security-sensitive infrastructure inventory
 - current and projected recurring secscan infrastructure cost remains **$0**
 
+### Sprint 12 — Authenticated ECR Scanning
+
+Scan one explicitly selected immutable ECR image from the generated inventory through the existing image, policy, baseline, reporting, SBOM, history, and exit-code pipeline.
+
+#### Stories and acceptance criteria
+
+- `secscan scan ecr` requires an exact digest URI present in a schema-versioned inventory
+- the inventory account, region, and repository are rechecked against the AWS allow-list
+- same-account scans use the standard AWS credential chain or configured profile
+- cross-account scans use short-lived assumed-role credentials
+- AWS credentials are passed only through the Trivy child-process environment and are never written to commands, reports, history, or logs
+- existing policy, baseline, JSON, HTML, CycloneDX, history, timeout, and exit-code behavior remains available
+- credential-free tests cover inventory selection, allow-list rejection, credential handling, CLI parsing, and child-process isolation
+- local automated and optional live ECR testing procedures remain documented
+- least-privilege pull permissions, security boundaries, and potential data-transfer costs are documented
+- branch preflight, CI, and CodeQL pass before merge
+
+#### Security and cost boundaries
+
+- only one exact inventory digest is scanned per command
+- batch selection, scheduling, repository enumeration, and service-mode ECR scans remain out of scope
+- credentials and authorization tokens are never persisted
+- current recurring secscan infrastructure cost remains **$0**; users retain responsibility for AWS data-transfer and registry costs
+
 ## Future epics and backlog
 
 - SPDX and additional SBOM formats
 - SBOM package and license intelligence
 - cross-source correlation
-- private registry and ECR authentication
+- additional private registry authentication
 - release automation, immutable images, provenance, and checksums
 - historical trends and mean time to remediation
 - additional scanner adapters such as Syft and Grype
