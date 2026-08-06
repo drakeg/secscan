@@ -130,6 +130,25 @@ class HistoryStore:
             ).fetchall()
         return [self._entry(row) for row in rows]
 
+    def list_trend_scans(
+        self, *, scanner: str, target: str, limit: int
+    ) -> list[ScanHistoryEntry]:
+        if limit < 1:
+            raise ValueError("history limit must be at least 1")
+        self.migrate()
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM scans
+                WHERE scanner = ? AND target = ?
+                ORDER BY id DESC
+                LIMIT ?
+                """,
+                (scanner, target, limit),
+            ).fetchall()
+        rows.reverse()
+        return [self._entry(row) for row in rows]
+
     def get_scan(self, scan_id: int) -> ScanHistoryEntry | None:
         self.migrate()
         with self._connect() as connection:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict, dataclass
 import json
+import os
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -108,6 +109,13 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("scan_id", type=int)
     _add_history_db_argument(show, default=Path("/reports/secscan.db"))
 
+    trends = subparsers.add_parser("trends", help="summarize scans for one target")
+    _add_history_db_argument(trends, default=Path("/reports/secscan.db"))
+    trends.add_argument("--scanner", required=True, help="exact recorded scanner name")
+    trends.add_argument("--target", required=True, help="exact recorded target")
+    trends.add_argument("--limit", type=int, default=20, help="matching scans to include (2-100)")
+    trends.add_argument("--output", type=Path, help="write versioned JSON instead of console output")
+
     discover = subparsers.add_parser("discover", help="discover approved cloud assets")
     discover_subparsers = discover.add_subparsers(dest="discovery_type", required=True)
     ecr = discover_subparsers.add_parser("ecr", help="discover approved Amazon ECR images")
@@ -195,6 +203,83 @@ def _run_show(args: argparse.Namespace) -> int:
     if entry is None:
         raise ValueError(f"scan history entry not found: {args.scan_id}")
     _print_history_entry(entry)
+    return 0
+
+
+_TREND_SEVERITIES = ("critical", "high", "medium", "low", "unknown")
+
+
+def _build_trend(entries: list[ScanHistoryEntry], scanner: str, target: str) -> dict[str, object]:
+    if len(entries) < 2:
+        raise ValueError(
+            f"at least 2 matching scans are required for scanner={scanner!r} target={target!r}"
+        )
+    oldest = entries[0]
+    latest = entries[-1]
+    latest_counts = {severity: getattr(latest, severity) for severity in _TREND_SEVERITIES}
+    changes = {
+        severity: getattr(latest, severity) - getattr(oldest, severity)
+        for severity in _TREND_SEVERITIES
+    }
+    series = [
+        {
+            "scan_id": entry.id,
+            "created_at": entry.created_at,
+            "duration_ms": entry.duration_ms,
+            "severity": {severity: getattr(entry, severity) for severity in _TREND_SEVERITIES},
+        }
+        for entry in entries
+    ]
+    return {
+        "schema_version": 1,
+        "scanner": scanner,
+        "target": target,
+        "scan_count": len(entries),
+        "oldest_created_at": oldest.created_at,
+        "latest_created_at": latest.created_at,
+        "latest": latest_counts,
+        "change_since_oldest": changes,
+        "series": series,
+    }
+
+
+def _write_json_atomic(document: dict[str, object], output: Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(f".{output.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_text(
+            json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        temporary.replace(output)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _run_trends(args: argparse.Namespace) -> int:
+    if not 2 <= args.limit <= 100:
+        raise ValueError("trend limit must be between 2 and 100")
+    entries = HistoryStore(args.history_db).list_trend_scans(
+        scanner=args.scanner, target=args.target, limit=args.limit
+    )
+    trend = _build_trend(entries, args.scanner, args.target)
+    if args.output:
+        _write_json_atomic(trend, args.output)
+        print(f"Trend written to {args.output}")
+        return 0
+
+    print(f"Trend: {args.scanner} {args.target} ({len(entries)} scans)")
+    print("ID  Date                 Critical High Medium Low Unknown")
+    for entry in entries:
+        print(
+            f"{entry.id:<3} {entry.created_at:<20} {entry.critical:<8} "
+            f"{entry.high:<4} {entry.medium:<6} {entry.low:<3} {entry.unknown}"
+        )
+    changes = trend["change_since_oldest"]
+    assert isinstance(changes, dict)
+    print(
+        "Change since oldest: "
+        + " ".join(f"{severity.upper()}={changes[severity]:+d}" for severity in _TREND_SEVERITIES)
+    )
     return 0
 
 
@@ -373,6 +458,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_history(args)
         if args.command == "show":
             return _run_show(args)
+        if args.command == "trends":
+            return _run_trends(args)
         if args.command == "discover" and args.discovery_type == "ecr":
             return _run_ecr_discovery(args)
         if args.command == "batch" and args.batch_type == "ecr":
