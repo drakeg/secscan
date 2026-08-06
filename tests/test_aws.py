@@ -13,6 +13,7 @@ from secscan.aws import (
     discover_ecr_assets,
     ecr_scan_environment,
     load_ecr_asset,
+    load_ecr_assets,
     load_ecr_config,
 )
 
@@ -254,3 +255,14 @@ accounts:
     )
     with pytest.raises(AwsDiscoveryError, match="repository is not approved"):
         ecr_scan_environment(config, asset)
+
+
+def test_ecr_batch_selection_is_bounded_and_unique(tmp_path: Path) -> None:
+    inventory = tmp_path / "inventory.json"
+    inventory.write_text(json.dumps({"schema_version": 1, "assets": []}), encoding="utf-8")
+    image_uri = f"123456789012.dkr.ecr.us-east-1.amazonaws.com/app@sha256:{'a' * 64}"
+
+    with pytest.raises(AwsDiscoveryError, match="must not contain duplicates"):
+        load_ecr_assets(inventory, (image_uri, image_uri))
+    with pytest.raises(AwsDiscoveryError, match="limit of 20"):
+        load_ecr_assets(inventory, tuple(f"{image_uri}{index}" for index in range(21)))

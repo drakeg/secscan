@@ -13,6 +13,7 @@ import yaml
 ACCOUNT_ID_PATTERN = re.compile(r"^[0-9]{12}$")
 REGION_PATTERN = re.compile(r"^[a-z]{2}-[a-z]+-[0-9]+$")
 REPOSITORY_PATTERN = re.compile(r"^(?![./])[a-z0-9]+(?:[._/-][a-z0-9]+)*$")
+MAX_ECR_BATCH_IMAGES = 20
 
 
 class AwsDiscoveryError(RuntimeError):
@@ -73,6 +74,21 @@ def load_ecr_config(path: Path) -> EcrDiscoveryConfig:
 
 
 def load_ecr_asset(inventory_path: Path, image_uri: str) -> EcrAsset:
+    return load_ecr_assets(inventory_path, (image_uri,))[0]
+
+
+def load_ecr_assets(
+    inventory_path: Path,
+    image_uris: tuple[str, ...],
+) -> tuple[EcrAsset, ...]:
+    if not image_uris:
+        raise AwsDiscoveryError("at least one ECR image URI must be selected")
+    if len(image_uris) > MAX_ECR_BATCH_IMAGES:
+        raise AwsDiscoveryError(
+            f"ECR batch selection exceeds the limit of {MAX_ECR_BATCH_IMAGES} images"
+        )
+    if len(set(image_uris)) != len(image_uris):
+        raise AwsDiscoveryError("ECR image URI selections must not contain duplicates")
     try:
         data = json.loads(inventory_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -82,16 +98,16 @@ def load_ecr_asset(inventory_path: Path, image_uri: str) -> EcrAsset:
     raw_assets = data.get("assets")
     if not isinstance(raw_assets, list):
         raise AwsDiscoveryError("ECR inventory assets must be a list")
-    matches: list[EcrAsset] = []
+    assets: dict[str, EcrAsset] = {}
     for value in raw_assets:
         asset = _parse_asset(value)
-        if asset.image_uri == image_uri:
-            matches.append(asset)
-    if not matches:
-        raise AwsDiscoveryError("requested image URI is not present in the ECR inventory")
-    if len(matches) > 1:
-        raise AwsDiscoveryError("requested image URI appears more than once in the ECR inventory")
-    return matches[0]
+        if asset.image_uri in assets:
+            raise AwsDiscoveryError("an image URI appears more than once in the ECR inventory")
+        assets[asset.image_uri] = asset
+    missing = [image_uri for image_uri in image_uris if image_uri not in assets]
+    if missing:
+        raise AwsDiscoveryError("a requested image URI is not present in the ECR inventory")
+    return tuple(assets[image_uri] for image_uri in image_uris)
 
 
 def _parse_asset(value: object) -> EcrAsset:
@@ -121,16 +137,7 @@ def ecr_scan_environment(
     asset: EcrAsset,
     client_factory: ClientFactory | None = None,
 ) -> dict[str, str]:
-    account = next(
-        (candidate for candidate in config.accounts if candidate.account_id == asset.account_id),
-        None,
-    )
-    if account is None:
-        raise AwsDiscoveryError("inventory account is not approved by the AWS config")
-    if asset.region not in account.regions:
-        raise AwsDiscoveryError("inventory region is not approved by the AWS config")
-    if asset.repository not in account.repositories:
-        raise AwsDiscoveryError("inventory repository is not approved by the AWS config")
+    account = validate_ecr_asset(config, asset)
     factory = client_factory or _boto3_client_factory(config.profile)
     credentials = _credentials_for_account(account, factory)
     environment = {"AWS_REGION": asset.region, "AWS_DEFAULT_REGION": asset.region}
@@ -145,6 +152,20 @@ def ecr_scan_environment(
     elif config.profile:
         environment["AWS_PROFILE"] = config.profile
     return environment
+
+
+def validate_ecr_asset(config: EcrDiscoveryConfig, asset: EcrAsset) -> EcrAccount:
+    account = next(
+        (candidate for candidate in config.accounts if candidate.account_id == asset.account_id),
+        None,
+    )
+    if account is None:
+        raise AwsDiscoveryError("inventory account is not approved by the AWS config")
+    if asset.region not in account.regions:
+        raise AwsDiscoveryError("inventory region is not approved by the AWS config")
+    if asset.repository not in account.repositories:
+        raise AwsDiscoveryError("inventory repository is not approved by the AWS config")
+    return account
 
 
 def _parse_account(value: object) -> EcrAccount:

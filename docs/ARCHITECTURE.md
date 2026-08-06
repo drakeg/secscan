@@ -290,3 +290,5 @@ The service stores job metadata in SQLite and report artifacts in UUID-scoped di
 AWS discovery is a read-only inventory adapter outside the scanner registry. Explicit YAML configuration bounds account, region, and ECR repository access. The adapter verifies same-account identities or assumes one exact cross-account role, then maps paginated `DescribeImages` metadata into a versioned local JSON artifact. Inventory discovery does not imply image authentication, pulling, or scanning.
 
 Authenticated ECR scanning is an explicit bridge from one immutable inventory URI to the existing image scanner. The bridge revalidates the asset against configuration, prepares a minimal AWS child-process environment, and delegates to the standard scanner pipeline. Credentials do not enter command arguments, normalized models, reports, or history.
+
+Bounded ECR batching is a sequential CLI orchestrator over that bridge. It validates 1–20 explicit URIs before execution, gives each scan an isolated digest-scoped artifact directory, shares one history database, and writes an aggregate manifest. It is not a scheduler, distributed queue, or implicit inventory selector.
