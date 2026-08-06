@@ -7,7 +7,14 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from time import perf_counter
 
-from secscan.aws import AwsDiscoveryError, discover_ecr_assets, load_ecr_config, write_ecr_assets
+from secscan.aws import (
+    AwsDiscoveryError,
+    discover_ecr_assets,
+    ecr_scan_environment,
+    load_ecr_asset,
+    load_ecr_config,
+    write_ecr_assets,
+)
 from secscan.compare import compare_findings, load_baseline
 from secscan.history import HistoryStore, ScanHistoryEntry
 from secscan.policy import Policy, evaluate_policy, load_policy, policy_failed
@@ -35,6 +42,34 @@ def _add_history_db_argument(
     )
 
 
+def _add_scan_arguments(parser: argparse.ArgumentParser, target_help: str) -> None:
+    parser.add_argument("target", help=target_help)
+    parser.add_argument("--output-dir", type=Path, default=Path("/reports"))
+    parser.add_argument(
+        "--fail-on",
+        default=None,
+        choices=["NONE", "UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
+        help="override the policy severity threshold",
+    )
+    parser.add_argument(
+        "--policy",
+        type=Path,
+        help="YAML policy file containing thresholds, suppressions, and rules",
+    )
+    parser.add_argument(
+        "--baseline",
+        type=Path,
+        help="previous secscan.json report used to classify findings",
+    )
+    parser.add_argument(
+        "--timeout", type=int, default=600, help="scan timeout in seconds"
+    )
+    _add_history_db_argument(parser, default=None)
+    parser.add_argument(
+        "--no-history", action="store_true", help="do not record this completed scan"
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     registry = build_default_registry()
     parser = argparse.ArgumentParser(
@@ -49,31 +84,18 @@ def build_parser() -> argparse.ArgumentParser:
         target_parser = scan_subparsers.add_parser(
             capability.name, help=capability.description
         )
-        target_parser.add_argument("target", help=capability.target_help)
-        target_parser.add_argument("--output-dir", type=Path, default=Path("/reports"))
-        target_parser.add_argument(
-            "--fail-on",
-            default=None,
-            choices=["NONE", "UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
-            help="override the policy severity threshold",
-        )
-        target_parser.add_argument(
-            "--policy",
-            type=Path,
-            help="YAML policy file containing thresholds, suppressions, and rules",
-        )
-        target_parser.add_argument(
-            "--baseline",
-            type=Path,
-            help="previous secscan.json report used to classify findings",
-        )
-        target_parser.add_argument(
-            "--timeout", type=int, default=600, help="scan timeout in seconds"
-        )
-        _add_history_db_argument(target_parser, default=None)
-        target_parser.add_argument(
-            "--no-history", action="store_true", help="do not record this completed scan"
-        )
+        _add_scan_arguments(target_parser, capability.target_help)
+
+    ecr_scan = scan_subparsers.add_parser(
+        "ecr", help="scan one approved ECR image by immutable digest"
+    )
+    _add_scan_arguments(ecr_scan, "immutable ECR image URI from the inventory")
+    ecr_scan.add_argument(
+        "--inventory", type=Path, required=True, help="ECR asset inventory JSON"
+    )
+    ecr_scan.add_argument(
+        "--aws-config", type=Path, required=True, help="AWS discovery YAML config"
+    )
 
     history = subparsers.add_parser("history", help="list recorded scans")
     _add_history_db_argument(history, default=Path("/reports/secscan.db"))
@@ -138,19 +160,27 @@ def _run_show(args: argparse.Namespace) -> int:
 def _run_scan(args: argparse.Namespace) -> int:
     started = perf_counter()
     registry = build_default_registry()
-    scanner = registry.get(args.target_type)
+    logical_scanner = args.target_type
+    scanner_name = logical_scanner
+    environment = None
+    if logical_scanner == "ecr":
+        asset = load_ecr_asset(args.inventory, args.target)
+        environment = ecr_scan_environment(load_ecr_config(args.aws_config), asset)
+        scanner_name = "image"
+    scanner = registry.get(scanner_name)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     baseline_findings = load_baseline(args.baseline) if args.baseline else None
     request = ScanRequest(
-        scanner_name=args.target_type,
+        scanner_name=logical_scanner,
         target=args.target,
         timeout_seconds=args.timeout,
         output_dir=args.output_dir,
+        environment=environment,
     )
     result = scanner.scan(request)
     scanner_metadata = dict(result.scanner)
     scanner_metadata["secscan_version"] = _secscan_version()
-    report_target_type = "container_image" if args.target_type == "image" else args.target_type
+    report_target_type = "container_image" if scanner_name == "image" else logical_scanner
     report = build_report(
         args.target,
         list(result.findings),
@@ -206,7 +236,7 @@ def _run_scan(args: argparse.Namespace) -> int:
         history_db = args.history_db or (args.output_dir / "secscan.db")
         duration_ms = round((perf_counter() - started) * 1000)
         scan_id = HistoryStore(history_db).record_scan(
-            scanner=args.target_type,
+            scanner=logical_scanner,
             target=args.target,
             duration_ms=duration_ms,
             fail_on=fail_on,

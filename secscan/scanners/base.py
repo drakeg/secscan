@@ -3,7 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from secscan.models import Finding
 
@@ -21,6 +21,7 @@ class ScanRequest:
     target: str
     timeout_seconds: int = 600
     output_dir: Path | None = None
+    environment: Mapping[str, str] | None = None
 
 
 @dataclass(frozen=True)

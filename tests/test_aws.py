@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from secscan.aws import AwsDiscoveryError, discover_ecr_assets, load_ecr_config
+from secscan.aws import (
+    AwsDiscoveryError,
+    EcrAsset,
+    discover_ecr_assets,
+    ecr_scan_environment,
+    load_ecr_asset,
+    load_ecr_config,
+)
 
 
 class FakePaginator:
@@ -150,3 +158,99 @@ accounts:
 
     with pytest.raises(AwsDiscoveryError, match="does not match caller account"):
         discover_ecr_assets(config, factory)
+
+
+def test_load_ecr_asset_requires_exact_inventory_uri(tmp_path: Path) -> None:
+    digest = f"sha256:{'a' * 64}"
+    image_uri = f"123456789012.dkr.ecr.us-east-1.amazonaws.com/platform/api@{digest}"
+    inventory = tmp_path / "inventory.json"
+    inventory.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "assets": [
+                    {
+                        "account_id": "123456789012",
+                        "region": "us-east-1",
+                        "repository": "platform/api",
+                        "digest": digest,
+                        "image_uri": image_uri,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    asset = load_ecr_asset(inventory, image_uri)
+    assert asset.digest == digest
+    with pytest.raises(AwsDiscoveryError, match="not present"):
+        load_ecr_asset(inventory, image_uri.replace(digest, f"sha256:{'b' * 64}"))
+
+
+def test_ecr_scan_environment_uses_short_lived_role_credentials(tmp_path: Path) -> None:
+    config = _config(
+        tmp_path,
+        """
+accounts:
+  - account_id: "123456789012"
+    role_arn: arn:aws:iam::123456789012:role/SecscanEcrDiscovery
+    regions: [us-east-1]
+    repositories: [platform/api]
+""",
+    )
+    digest = f"sha256:{'a' * 64}"
+    inventory = tmp_path / "inventory.json"
+    image_uri = f"123456789012.dkr.ecr.us-east-1.amazonaws.com/platform/api@{digest}"
+    inventory.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "assets": [
+                    {
+                        "account_id": "123456789012",
+                        "region": "us-east-1",
+                        "repository": "platform/api",
+                        "digest": digest,
+                        "image_uri": image_uri,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    environment = ecr_scan_environment(
+        config,
+        load_ecr_asset(inventory, image_uri),
+        lambda _service, _region, _credentials: FakeSts("123456789012"),
+    )
+
+    assert environment == {
+        "AWS_REGION": "us-east-1",
+        "AWS_DEFAULT_REGION": "us-east-1",
+        "AWS_ACCESS_KEY_ID": "access",
+        "AWS_SECRET_ACCESS_KEY": "secret",
+        "AWS_SESSION_TOKEN": "token",
+    }
+
+
+def test_ecr_scan_environment_rechecks_repository_allow_list(tmp_path: Path) -> None:
+    config = _config(
+        tmp_path,
+        """
+accounts:
+  - account_id: "123456789012"
+    regions: [us-east-1]
+    repositories: [approved]
+""",
+    )
+    asset = EcrAsset(
+        "123456789012",
+        "us-east-1",
+        "not-approved",
+        f"sha256:{'a' * 64}",
+        f"123456789012.dkr.ecr.us-east-1.amazonaws.com/not-approved@sha256:{'a' * 64}",
+    )
+    with pytest.raises(AwsDiscoveryError, match="repository is not approved"):
+        ecr_scan_environment(config, asset)
