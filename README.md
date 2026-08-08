@@ -140,6 +140,15 @@ docker run --rm \
 
 The validated input is preserved byte-for-byte as `secscan.cdx.json` or `secscan.spdx.json`, according to its format. See [SBOM Scanning](docs/SBOM_SCANNING.md) for validation rules and automated/manual local test procedures.
 
+Extract a deterministic package and declared-license inventory without invoking Trivy:
+
+```bash
+secscan inventory sbom build.spdx.json \
+  --output ./reports/secscan.inventory.json
+```
+
+The inventory retains source-declared license strings and package PURLs but does not make license-compliance judgments.
+
 ## YAML policies
 
 A policy can define the default threshold and temporary, auditable suppressions:
@@ -240,7 +249,7 @@ secscan --help
 
 ## Current boundaries
 
-The built-in scanners support public and explicitly inventoried ECR container images, including bounded sequential batches, plus local filesystem paths, checked-out source repositories, and CycloneDX or SPDX 2.2/2.3 JSON SBOM files. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history, supports exact-cohort severity trends, and persists service job metadata. AWS discovery inventories explicitly approved ECR repositories. Finding-level remediation timing, general private registry authentication, remote repository cloning, additional SBOM encodings, scheduled AWS scanning, and contextual risk scoring remain later increments.
+The built-in scanners support public and explicitly inventoried ECR container images, including bounded sequential batches, plus local filesystem paths, checked-out source repositories, and CycloneDX or SPDX 2.2/2.3 JSON SBOM files. Supported SBOMs can also produce local normalized package and declared-license inventories. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history, supports exact-cohort severity trends, and persists service job metadata. AWS discovery inventories explicitly approved ECR repositories. License policy, finding-level remediation timing, general private registry authentication, remote repository cloning, additional SBOM encodings, scheduled AWS scanning, and contextual risk scoring remain later increments.
 
 ## Security notes
 

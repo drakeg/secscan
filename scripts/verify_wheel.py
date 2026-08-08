@@ -16,6 +16,7 @@ REQUIRED_FILES = {
     "secscan/report.py",
     "secscan/service.py",
     "secscan/service_cli.py",
+    "secscan/sbom_inventory.py",
     "secscan/trivy.py",
     "secscan/scanners/__init__.py",
     "secscan/scanners/base.py",

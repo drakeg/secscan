@@ -184,9 +184,13 @@ Convert engine-specific output into stable `Finding` values and calculate severi
 
 Write project artifacts from normalized data without rerunning or reinterpreting the scanner.
 
+### `sbom_inventory.py`
+
+Read an already supported local SBOM format and normalize source-declared package identity and license values. Inventory extraction is independent of Trivy, policy, reports, and SQLite. It does not infer effective licensing or compliance.
+
 ## Artifact contract
 
-A successful image or filesystem scan produces:
+A successful scan produces the applicable artifacts:
 
 - `trivy.json` — raw engine findings
 - `secscan.json` — normalized findings plus policy evaluation metadata
@@ -195,6 +199,8 @@ A successful image or filesystem scan produces:
 - `secscan.html` — self-contained human-readable report
 
 Artifact names and exit semantics remain stable.
+
+`secscan inventory sbom` is a separate read-only projection. It writes `secscan.inventory.json` by default and does not create scan artifacts or history records.
 
 ## Exit-code contract
 

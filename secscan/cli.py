@@ -25,6 +25,7 @@ from secscan.policy import Policy, evaluate_policy, load_policy, policy_failed
 from secscan.report import build_report, write_html, write_json, write_raw_json
 from secscan.scanners.base import ScanRequest
 from secscan.scanners.registry import build_default_registry
+from secscan.sbom_inventory import build_sbom_inventory, write_sbom_inventory
 from secscan.trivy import TrivyError
 
 
@@ -156,6 +157,19 @@ def build_parser() -> argparse.ArgumentParser:
     ecr_batch.add_argument("--timeout", type=int, default=600)
     _add_history_db_argument(ecr_batch, default=None)
     ecr_batch.add_argument("--no-history", action="store_true")
+
+    inventory = subparsers.add_parser("inventory", help="extract local inventory data")
+    inventory_subparsers = inventory.add_subparsers(dest="inventory_type", required=True)
+    sbom_inventory = inventory_subparsers.add_parser(
+        "sbom", help="normalize packages and declared licenses from an SBOM"
+    )
+    sbom_inventory.add_argument("target", type=Path, help="CycloneDX or SPDX JSON SBOM")
+    sbom_inventory.add_argument(
+        "--output",
+        type=Path,
+        default=Path("/reports/secscan.inventory.json"),
+        help="versioned inventory JSON output path",
+    )
     return parser
 
 
@@ -398,6 +412,19 @@ def _run_ecr_discovery(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_sbom_inventory(args: argparse.Namespace) -> int:
+    inventory = build_sbom_inventory(args.target)
+    write_sbom_inventory(inventory, args.output)
+    summary = inventory["summary"]
+    assert isinstance(summary, dict)
+    print(
+        f"Inventory: packages={summary['package_count']} "
+        f"licensed={summary['packages_with_declared_license']}"
+    )
+    print(f"Inventory written to {args.output}")
+    return 0
+
+
 def _run_ecr_batch(args: argparse.Namespace) -> int:
     image_uris = tuple(args.image_uri)
     assets = load_ecr_assets(args.inventory, image_uris)
@@ -464,6 +491,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_ecr_discovery(args)
         if args.command == "batch" and args.batch_type == "ecr":
             return _run_ecr_batch(args)
+        if args.command == "inventory" and args.inventory_type == "sbom":
+            return _run_sbom_inventory(args)
         return 1
     except (AwsDiscoveryError, TrivyError, OSError, ValueError) as exc:
         print(f"secscan error: {exc}", file=sys.stderr)
