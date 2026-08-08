@@ -87,3 +87,32 @@ cmp build.spdx.json ./reports/spdx/secscan.spdx.json
 ```
 
 Confirm `trivy.json`, `secscan.json`, `secscan.html`, `secscan.spdx.json`, and `secscan.db` exist. The `cmp` command should produce no output and return success. Repeat with a CycloneDX input and confirm the preserved artifact remains `secscan.cdx.json`.
+
+## Package and declared-license inventory
+
+Create a normalized inventory without running Trivy or writing scan history:
+
+```bash
+secscan inventory sbom build.cdx.json --output ./reports/secscan.inventory.json
+secscan inventory sbom build.spdx.json --output ./reports/secscan.inventory.json
+```
+
+The versioned JSON contains source format metadata, deterministically sorted packages, declared license values, package/license coverage totals, and per-license package counts. CycloneDX license IDs, names, and expressions are retained as source-declared strings; SPDX uses `licenseDeclared`. Missing values remain empty and are never inferred.
+
+This output is inventory data, not legal advice or a compliance determination. secscan does not evaluate license compatibility, obligations, concluded licenses, or effective licensing.
+
+Test the inventory path locally:
+
+```bash
+pytest tests/test_sbom_inventory.py tests/test_cli_inventory.py
+secscan inventory sbom build.spdx.json --output ./reports/secscan.inventory.json
+python -m json.tool ./reports/secscan.inventory.json
+```
+
+Run the command twice and compare checksums to confirm deterministic output:
+
+```bash
+shasum -a 256 ./reports/secscan.inventory.json
+secscan inventory sbom build.spdx.json --output ./reports/secscan.inventory.json
+shasum -a 256 ./reports/secscan.inventory.json
+```

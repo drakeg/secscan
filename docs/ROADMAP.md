@@ -67,53 +67,59 @@ Delivered typed, explainable rules for packages, vulnerability IDs, severities, 
 
 Delivered bounded exact-cohort severity trends from local SQLite history with console and versioned JSON output.
 
+### Sprint 15 — SPDX JSON SBOM Ingestion
+
+Delivered SPDX 2.2/2.3 JSON scanning, format-specific preserved artifacts, history integration, and constant-path service downloads.
+
 ## Current sprint
 
-### Sprint 15 — SPDX JSON SBOM Ingestion
+### Sprint 16 — SBOM Package and License Inventory
 
 #### Goal
 
-Accept SPDX 2.2 and 2.3 JSON as first-class SBOM scan inputs while preserving the existing scanner-neutral vulnerability, policy, baseline, reporting, history, and exit-code pipeline.
+Produce a deterministic, versioned local package and declared-license inventory from supported CycloneDX or SPDX JSON without running a vulnerability scanner or making compliance judgments.
 
 #### User stories
 
-1. As an operator, I can scan a local SPDX JSON document with the existing `scan sbom` command.
-2. As an auditor, I receive an unmodified, accurately named copy of the validated input SBOM.
-3. As an existing CycloneDX user, my commands and artifact names remain unchanged.
-4. As an automation author, unsupported or ambiguous SBOM formats fail clearly before Trivy runs.
+1. As an operator, I can normalize package names, versions, PURLs, and declared licenses from a supported SBOM.
+2. As an automation author, I receive stable JSON plus deterministic package and license ordering.
+3. As a reviewer, I can see package totals, license coverage, and counts for each declared license value.
+4. As a security-conscious user, I can run inventory locally without Trivy, network access, or database changes.
 
 #### Planned implementation
 
-- detect CycloneDX or SPDX from format-specific top-level fields
-- accept CycloneDX JSON plus SPDX 2.2 and 2.3 JSON only
-- validate the format-specific component or package collection before engine execution
-- preserve CycloneDX input as `secscan.cdx.json` and SPDX input as `secscan.spdx.json`
-- allow-list the new artifact in service mode
-- retain the current Trivy SBOM adapter and normalized finding pipeline
-- validation, artifact, CLI, service, and compatibility tests
+- add `secscan inventory sbom` with an explicit input path and JSON output path
+- reuse the supported CycloneDX/SPDX format validation boundary
+- normalize package name, version, PURL, and declared license strings
+- recognize CycloneDX license IDs, names, and expressions plus SPDX `licenseDeclared`
+- sort normalized packages and license summaries deterministically
+- emit schema version, source format/version, summary counts, license counts, and packages
+- use atomic same-directory output replacement
+- parser, validation, deterministic-output, CLI, and compatibility tests
 - SBOM, roadmap, architecture, README, and local test-procedure updates
 
 #### Acceptance criteria
 
-- valid CycloneDX, SPDX 2.2, and SPDX 2.3 JSON reaches Trivy SBOM mode
-- malformed JSON, unsupported SPDX versions, ambiguous markers, and invalid collection types return exit code `1`
-- preserved input content is byte-for-byte identical and uses the correct format-specific artifact name
-- history records the actual preserved SBOM path
-- service artifact downloads remain restricted to explicit constant paths
-- existing CycloneDX behavior and artifact naming remain compatible
+- supported CycloneDX and SPDX inputs produce schema-versioned normalized inventory JSON
+- equivalent repeated runs produce byte-for-byte identical output
+- package entries and license values are deterministically sorted and deduplicated
+- PURLs are read only from defined CycloneDX and SPDX package fields
+- absent declared licenses remain visibly unlicensed rather than guessed
+- malformed package, external-reference, or license structures fail clearly with exit code `1`
+- inventory generation invokes neither Trivy nor SQLite and makes no network request
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- SPDX tag/value, YAML, RDF, or XML
-- SPDX 3, CycloneDX XML, or automatic format conversion
-- package or license inventory analysis
-- SBOM signing, attestation verification, or cross-source correlation
+- license compatibility, obligation, policy, or legal-compliance evaluation
+- concluded/effective license inference or package-file license discovery
+- vulnerability scanning, package enrichment, or registry lookups
+- dependency graphs, SBOM comparison, signing, or cross-source correlation
 
 #### Cost outlook
 
-Current and projected recurring infrastructure cost remains **$0**. SPDX validation and scanning remain local and introduce no external services.
+Current and projected recurring infrastructure cost remains **$0**. Inventory extraction is local, standard-library-only, and introduces no external services.
 
 ## Planned feature sprints
 
@@ -218,7 +224,7 @@ Delivered sequential batches of up to 20 explicitly selected immutable ECR inven
 ## Future epics and backlog
 
 - additional SBOM formats beyond CycloneDX JSON and SPDX 2.x JSON
-- SBOM package and license intelligence
+- SBOM license policy and dependency intelligence
 - cross-source correlation
 - additional private registry authentication
 - release automation, immutable images, provenance, and checksums
