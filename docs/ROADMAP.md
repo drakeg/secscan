@@ -63,52 +63,57 @@ Delivered CycloneDX JSON validation, Trivy SBOM vulnerability scanning, normaliz
 
 Delivered typed, explainable rules for packages, vulnerability IDs, severities, fix availability, and vulnerability age while preserving existing policy compatibility.
 
+### Sprint 14 — Local Historical Trends
+
+Delivered bounded exact-cohort severity trends from local SQLite history with console and versioned JSON output.
+
 ## Current sprint
 
-### Sprint 14 — Local Historical Trends
+### Sprint 15 — SPDX JSON SBOM Ingestion
 
 #### Goal
 
-Turn existing local scan-level history into bounded, machine-readable trend summaries without introducing a service, cloud database, or finding-level retention.
+Accept SPDX 2.2 and 2.3 JSON as first-class SBOM scan inputs while preserving the existing scanner-neutral vulnerability, policy, baseline, reporting, history, and exit-code pipeline.
 
 #### User stories
 
-1. As an operator, I can inspect severity totals across recent scans of one target and scanner.
-2. As an automation author, I can save a versioned JSON trend document.
-3. As a security owner, I can see the net severity change from the oldest included scan to the newest.
-4. As an existing user, my history database continues to work without migration or duplication.
+1. As an operator, I can scan a local SPDX JSON document with the existing `scan sbom` command.
+2. As an auditor, I receive an unmodified, accurately named copy of the validated input SBOM.
+3. As an existing CycloneDX user, my commands and artifact names remain unchanged.
+4. As an automation author, unsupported or ambiguous SBOM formats fail clearly before Trivy runs.
 
 #### Planned implementation
 
-- a `secscan trends` command requiring an exact scanner and target cohort
-- a bounded 2–100 scan window, ordered oldest to newest
-- latest severity totals and signed change since the oldest included scan
-- versioned JSON output with atomic replacement
-- readable console output when no output file is selected
-- query, validation, serialization, CLI, and compatibility tests
-- history, roadmap, architecture, README, and local test-procedure updates
+- detect CycloneDX or SPDX from format-specific top-level fields
+- accept CycloneDX JSON plus SPDX 2.2 and 2.3 JSON only
+- validate the format-specific component or package collection before engine execution
+- preserve CycloneDX input as `secscan.cdx.json` and SPDX input as `secscan.spdx.json`
+- allow-list the new artifact in service mode
+- retain the current Trivy SBOM adapter and normalized finding pipeline
+- validation, artifact, CLI, service, and compatibility tests
+- SBOM, roadmap, architecture, README, and local test-procedure updates
 
 #### Acceptance criteria
 
-- trends contain only records matching both the exact scanner and target
-- the most recent bounded records are returned in chronological order
-- fewer than two matching scans fail clearly instead of implying a trend
-- JSON records its schema version, cohort, time range, latest totals, signed changes, and series
-- existing version 1 history databases remain compatible without schema migration
-- trend generation does not mutate scan records or read detailed report artifacts
+- valid CycloneDX, SPDX 2.2, and SPDX 2.3 JSON reaches Trivy SBOM mode
+- malformed JSON, unsupported SPDX versions, ambiguous markers, and invalid collection types return exit code `1`
+- preserved input content is byte-for-byte identical and uses the correct format-specific artifact name
+- history records the actual preserved SBOM path
+- service artifact downloads remain restricted to explicit constant paths
+- existing CycloneDX behavior and artifact naming remain compatible
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- charts, dashboards, forecasting, or cross-target aggregation
-- finding-level persistence or vulnerability lifecycle correlation
-- mean time to remediation, because scan-level totals cannot establish finding identity
-- remote history stores, scheduled analysis, or service API endpoints
+- SPDX tag/value, YAML, RDF, or XML
+- SPDX 3, CycloneDX XML, or automatic format conversion
+- package or license inventory analysis
+- SBOM signing, attestation verification, or cross-source correlation
 
 #### Cost outlook
 
-Current and projected recurring infrastructure cost remains **$0**. Trend computation reads the existing local SQLite database and introduces no external services.
+Current and projected recurring infrastructure cost remains **$0**. SPDX validation and scanning remain local and introduce no external services.
 
 ## Planned feature sprints
 
@@ -212,7 +217,7 @@ Delivered sequential batches of up to 20 explicitly selected immutable ECR inven
 
 ## Future epics and backlog
 
-- SPDX and additional SBOM formats
+- additional SBOM formats beyond CycloneDX JSON and SPDX 2.x JSON
 - SBOM package and license intelligence
 - cross-source correlation
 - additional private registry authentication

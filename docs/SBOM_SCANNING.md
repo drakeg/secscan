@@ -1,11 +1,19 @@
 # SBOM Scanning
 
-Sprint 7 adds CycloneDX JSON SBOMs as a first-class secscan input.
+secscan accepts CycloneDX JSON plus SPDX 2.2 and 2.3 JSON as first-class SBOM inputs.
 
 ## Usage
 
 ```bash
 secscan scan sbom build.cdx.json \
+  --output-dir ./reports \
+  --fail-on HIGH
+```
+
+The same command accepts SPDX JSON:
+
+```bash
+secscan scan sbom build.spdx.json \
   --output-dir ./reports \
   --fail-on HIGH
 ```
@@ -32,8 +40,9 @@ The input must:
 
 - be a readable regular file
 - contain valid JSON
-- have `bomFormat` set to `CycloneDX`
-- contain a `components` value that is a list when present
+- identify exactly one supported format: `bomFormat: CycloneDX`, or `spdxVersion: SPDX-2.2` / `SPDX-2.3`
+- contain a `components` value that is a list when present for CycloneDX
+- contain a `packages` value that is a list when present for SPDX
 
 Malformed or unsupported input exits with code `1`.
 
@@ -44,13 +53,14 @@ The scanner preserves the existing artifact contract:
 - `trivy.json` contains raw Trivy SBOM vulnerability results
 - `secscan.json` contains normalized findings and policy metadata
 - `secscan.html` contains the browser report
-- `secscan.cdx.json` is a copy of the validated input SBOM
+- `secscan.cdx.json` is a byte-for-byte copy of validated CycloneDX input
+- `secscan.spdx.json` is a byte-for-byte copy of validated SPDX input
 - `secscan.diff.json` is written when `--baseline` is supplied
 - `secscan.db` records scan metadata unless `--no-history` is supplied
 
 ## Scope
 
-This sprint supports CycloneDX JSON ingestion only. SPDX input, package inventory analysis, license analysis, SBOM-to-SBOM package diffing, signing, attestation verification, and cross-source correlation remain backlog items.
+Only CycloneDX JSON and SPDX 2.2/2.3 JSON are supported. SPDX tag/value, YAML, RDF, XML, SPDX 3, CycloneDX XML, package inventory analysis, license analysis, SBOM-to-SBOM package diffing, signing, attestation verification, and cross-source correlation remain out of scope.
 
 ## Security
 
@@ -59,3 +69,21 @@ Treat SBOMs as security-sensitive inventory. Mount inputs read-only, restrict re
 ## Cost
 
 SBOM ingestion is local and introduces no cloud resources or recurring infrastructure cost.
+
+## Local testing procedure
+
+Run the automated scanner and CLI/service integration tests:
+
+```bash
+pytest tests/test_sbom_scanner.py tests/test_cli_sbom.py tests/test_service.py
+```
+
+For a manual SPDX smoke test, save a valid SPDX 2.3 JSON document as `build.spdx.json`, then run:
+
+```bash
+secscan scan sbom build.spdx.json --output-dir ./reports/spdx --fail-on NONE
+python -m json.tool ./reports/spdx/secscan.spdx.json
+cmp build.spdx.json ./reports/spdx/secscan.spdx.json
+```
+
+Confirm `trivy.json`, `secscan.json`, `secscan.html`, `secscan.spdx.json`, and `secscan.db` exist. The `cmp` command should produce no output and return success. Repeat with a CycloneDX input and confirm the preserved artifact remains `secscan.cdx.json`.

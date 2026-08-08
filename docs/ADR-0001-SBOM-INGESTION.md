@@ -1,5 +1,7 @@
 # ADR-0001: CycloneDX SBOM Ingestion
 
+> Sprint 15 extends this decision to SPDX 2.2/2.3 JSON. The same scanner and pipeline are reused, while validated SPDX input is preserved as `secscan.spdx.json` rather than the CycloneDX-specific artifact.
+
 ## Status
 
 Accepted for Sprint 7.

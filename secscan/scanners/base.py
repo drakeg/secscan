@@ -45,3 +45,6 @@ class Scanner(ABC):
     @abstractmethod
     def generate_sbom(self, request: ScanRequest, output_path: Path) -> None:
         raise NotImplementedError
+
+    def sbom_artifact_name(self, request: ScanRequest) -> str:
+        return "secscan.cdx.json"

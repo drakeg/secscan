@@ -14,7 +14,9 @@ A successful scan creates four artifacts:
 
 - `trivy.json` — raw Trivy vulnerability output
 - `secscan.json` — normalized secscan findings and policy metadata
-- `secscan.cdx.json` — CycloneDX JSON SBOM
+- `secscan.cdx.json` — generated CycloneDX JSON SBOM, or a preserved CycloneDX input
+
+SPDX input scans preserve the input as `secscan.spdx.json` instead.
 - `secscan.html` — self-contained browser report
 
 A scan using `--baseline` also creates `secscan.diff.json`. Completed scans are recorded in `secscan.db` unless `--no-history` is supplied.
@@ -116,7 +118,7 @@ Remote cloning and repository credentials are not handled in this increment. See
 
 ## SBOM scanning
 
-Scan an existing CycloneDX JSON SBOM:
+Scan an existing CycloneDX or SPDX 2.2/2.3 JSON SBOM:
 
 ```bash
 secscan scan sbom build.cdx.json \
@@ -136,7 +138,7 @@ docker run --rm \
     --fail-on HIGH
 ```
 
-The input must be CycloneDX JSON. The original validated SBOM is copied to `secscan.cdx.json`. See [SBOM Scanning](docs/SBOM_SCANNING.md).
+The validated input is preserved byte-for-byte as `secscan.cdx.json` or `secscan.spdx.json`, according to its format. See [SBOM Scanning](docs/SBOM_SCANNING.md) for validation rules and automated/manual local test procedures.
 
 ## YAML policies
 
@@ -238,7 +240,7 @@ secscan --help
 
 ## Current boundaries
 
-The built-in scanners support public and explicitly inventoried ECR container images, including bounded sequential batches, plus local filesystem paths, checked-out source repositories, and CycloneDX JSON SBOM files. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history, supports exact-cohort severity trends, and persists service job metadata. AWS discovery inventories explicitly approved ECR repositories. Finding-level remediation timing, general private registry authentication, remote repository cloning, SPDX input, scheduled AWS scanning, and contextual risk scoring remain later increments.
+The built-in scanners support public and explicitly inventoried ECR container images, including bounded sequential batches, plus local filesystem paths, checked-out source repositories, and CycloneDX or SPDX 2.2/2.3 JSON SBOM files. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history, supports exact-cohort severity trends, and persists service job metadata. AWS discovery inventories explicitly approved ECR repositories. Finding-level remediation timing, general private registry authentication, remote repository cloning, additional SBOM encodings, scheduled AWS scanning, and contextual risk scoring remain later increments.
 
 ## Security notes
 

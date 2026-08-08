@@ -90,7 +90,7 @@ Scanner plugins accept `ScanRequest` values and return `ScanResult` values. They
 
 ### Plugins never generate project reports
 
-A scanner returns raw traceability data, normalized findings, and scanner metadata. The report layer writes normalized JSON and HTML. CycloneDX generation is an engine-native scanner capability, but the caller chooses the destination and artifact name.
+A scanner returns raw traceability data, normalized findings, and scanner metadata. The report layer writes normalized JSON and HTML. CycloneDX generation is an engine-native scanner capability. Scanner plugins choose the SBOM artifact name so native SPDX input can be preserved without mislabeling it as CycloneDX.
 
 ### Normalization is mandatory
 
@@ -191,6 +191,7 @@ A successful image or filesystem scan produces:
 - `trivy.json` — raw engine findings
 - `secscan.json` — normalized findings plus policy evaluation metadata
 - `secscan.cdx.json` — CycloneDX SBOM
+- `secscan.spdx.json` — preserved SPDX input for SPDX SBOM scans
 - `secscan.html` — self-contained human-readable report
 
 Artifact names and exit semantics remain stable.
@@ -294,3 +295,5 @@ Authenticated ECR scanning is an explicit bridge from one immutable inventory UR
 Bounded ECR batching is a sequential CLI orchestrator over that bridge. It validates 1–20 explicit URIs before execution, gives each scan an isolated digest-scoped artifact directory, shares one history database, and writes an aggregate manifest. It is not a scheduler, distributed queue, or implicit inventory selector.
 
 Historical trend summaries are read-only projections over version 1 scan history. The CLI selects a bounded newest window for one exact scanner and target, restores chronological order, and computes signed changes between the oldest and latest aggregate severity counts. Versioned JSON is written through a same-directory temporary file and atomic replacement. The model intentionally does not infer finding identity or remediation duration from aggregate counts.
+
+The SBOM scanner recognizes CycloneDX JSON and SPDX 2.2/2.3 JSON from mutually exclusive top-level format markers. Both formats use the same Trivy SBOM vulnerability adapter and normalized pipeline. The validated source document is copied byte-for-byte to a format-specific constant artifact path; service downloads explicitly allow-list both names.
