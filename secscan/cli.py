@@ -344,7 +344,7 @@ def _run_scan(args: argparse.Namespace) -> int:
     raw_path = args.output_dir / "trivy.json"
     report_path = args.output_dir / "secscan.json"
     html_path = args.output_dir / "secscan.html"
-    sbom_path = args.output_dir / "secscan.cdx.json"
+    sbom_path = args.output_dir / scanner.sbom_artifact_name(request)
     diff_path: Path | None = None
 
     write_raw_json(result.raw, raw_path)

@@ -62,6 +62,27 @@ def test_artifact_path_rejects_unknown_name_and_escaped_directory(tmp_path: Path
     assert manager.artifact_path(record, "secscan.json") is None
 
 
+def test_service_allows_spdx_artifact_download(tmp_path: Path) -> None:
+    def runner(args: list[str]) -> int:
+        output_dir = Path(args[args.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True)
+        (output_dir / "secscan.spdx.json").write_text("{}", encoding="utf-8")
+        return 0
+
+    client = TestClient(create_app(job_root=tmp_path, runner=runner))
+    job_id = client.post(
+        "/api/v1/jobs", json={"scanner": "sbom", "target": "/input/example.spdx.json"}
+    ).json()["id"]
+    for _ in range(100):
+        if client.get(f"/api/v1/jobs/{job_id}").json()["status"] == "completed":
+            break
+        sleep(0.01)
+
+    artifact = client.get(f"/api/v1/jobs/{job_id}/artifacts/secscan.spdx.json")
+    assert artifact.status_code == 200
+    assert artifact.json() == {}
+
+
 def test_unknown_job_returns_404(tmp_path: Path) -> None:
     client = TestClient(create_app(job_root=tmp_path, runner=lambda _args: 0))
     assert client.get("/api/v1/jobs/missing").status_code == 404

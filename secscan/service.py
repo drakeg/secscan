@@ -20,6 +20,7 @@ ARTIFACT_PATHS = {
     "secscan.json": Path("secscan.json"),
     "secscan.html": Path("secscan.html"),
     "secscan.cdx.json": Path("secscan.cdx.json"),
+    "secscan.spdx.json": Path("secscan.spdx.json"),
     "secscan.diff.json": Path("secscan.diff.json"),
 }
 
