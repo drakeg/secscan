@@ -25,7 +25,8 @@ from secscan.policy import Policy, evaluate_policy, load_policy, policy_failed
 from secscan.report import build_report, write_html, write_json, write_raw_json
 from secscan.scanners.base import ScanRequest
 from secscan.scanners.registry import build_default_registry
-from secscan.sbom_inventory import build_sbom_inventory, write_sbom_inventory
+from secscan.sbom_inventory import build_sbom_inventory, write_json_atomic, write_sbom_inventory
+from secscan.sbom_inventory_compare import compare_sbom_inventories
 from secscan.trivy import TrivyError
 
 
@@ -169,6 +170,19 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("/reports/secscan.inventory.json"),
         help="versioned inventory JSON output path",
+    )
+
+    compare = subparsers.add_parser("compare", help="compare local secscan artifacts")
+    compare_subparsers = compare.add_subparsers(dest="compare_type", required=True)
+    inventory_compare = compare_subparsers.add_parser(
+        "inventory", help="compare two normalized SBOM inventories"
+    )
+    inventory_compare.add_argument("baseline", type=Path)
+    inventory_compare.add_argument("current", type=Path)
+    inventory_compare.add_argument(
+        "--output",
+        type=Path,
+        default=Path("/reports/secscan.inventory.diff.json"),
     )
     return parser
 
@@ -425,6 +439,14 @@ def _run_sbom_inventory(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_inventory_compare(args: argparse.Namespace) -> int:
+    comparison = compare_sbom_inventories(args.baseline, args.current)
+    write_json_atomic(comparison, args.output)
+    print(f"Inventory comparison: {json.dumps(comparison['summary'], sort_keys=True)}")
+    print(f"Comparison written to {args.output}")
+    return 0
+
+
 def _run_ecr_batch(args: argparse.Namespace) -> int:
     image_uris = tuple(args.image_uri)
     assets = load_ecr_assets(args.inventory, image_uris)
@@ -493,6 +515,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_ecr_batch(args)
         if args.command == "inventory" and args.inventory_type == "sbom":
             return _run_sbom_inventory(args)
+        if args.command == "compare" and args.compare_type == "inventory":
+            return _run_inventory_compare(args)
         return 1
     except (AwsDiscoveryError, TrivyError, OSError, ValueError) as exc:
         print(f"secscan error: {exc}", file=sys.stderr)

@@ -149,6 +149,17 @@ secscan inventory sbom build.spdx.json \
 
 The inventory retains source-declared license strings and package PURLs but does not make license-compliance judgments.
 
+Compare two normalized inventory snapshots:
+
+```bash
+secscan compare inventory \
+  ./baseline/secscan.inventory.json \
+  ./current/secscan.inventory.json \
+  --output ./reports/secscan.inventory.diff.json
+```
+
+Comparison reports added, removed, declared-license-changed, and unchanged packages. Differences are informational; malformed or ambiguous inventories return an operational error. See [SBOM Scanning](docs/SBOM_SCANNING.md) for identity rules and local test procedures.
+
 ## YAML policies
 
 A policy can define the default threshold and temporary, auditable suppressions:
@@ -249,7 +260,7 @@ secscan --help
 
 ## Current boundaries
 
-The built-in scanners support public and explicitly inventoried ECR container images, including bounded sequential batches, plus local filesystem paths, checked-out source repositories, and CycloneDX or SPDX 2.2/2.3 JSON SBOM files. Supported SBOMs can also produce local normalized package and declared-license inventories. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history, supports exact-cohort severity trends, and persists service job metadata. AWS discovery inventories explicitly approved ECR repositories. License policy, finding-level remediation timing, general private registry authentication, remote repository cloning, additional SBOM encodings, scheduled AWS scanning, and contextual risk scoring remain later increments.
+The built-in scanners support public and explicitly inventoried ECR container images, including bounded sequential batches, plus local filesystem paths, checked-out source repositories, and CycloneDX or SPDX 2.2/2.3 JSON SBOM files. Supported SBOMs can produce and compare local normalized package and declared-license inventories. YAML policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history, supports exact-cohort severity trends, and persists service job metadata. AWS discovery inventories explicitly approved ECR repositories. License policy, dependency-graph analysis, finding-level remediation timing, general private registry authentication, remote repository cloning, additional SBOM encodings, scheduled AWS scanning, and contextual risk scoring remain later increments.
 
 ## Security notes
 

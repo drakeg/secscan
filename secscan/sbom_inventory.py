@@ -203,13 +203,17 @@ def build_sbom_inventory(target: Path) -> dict[str, object]:
     }
 
 
-def write_sbom_inventory(inventory: dict[str, object], output: Path) -> None:
+def write_json_atomic(document: dict[str, object], output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(f".{output.name}.{os.getpid()}.tmp")
     try:
         temporary.write_text(
-            json.dumps(inventory, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         temporary.replace(output)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def write_sbom_inventory(inventory: dict[str, object], output: Path) -> None:
+    write_json_atomic(inventory, output)

@@ -188,6 +188,10 @@ Write project artifacts from normalized data without rerunning or reinterpreting
 
 Read an already supported local SBOM format and normalize source-declared package identity and license values. Inventory extraction is independent of Trivy, policy, reports, and SQLite. It does not infer effective licensing or compliance.
 
+### `sbom_inventory_compare.py`
+
+Strictly load two version 1 normalized inventory documents and classify exact package identities. PURLs take precedence; packages without PURLs fall back to exact name and version. Duplicate identities are rejected. Comparison is deterministic and informational and does not correlate version upgrades, vulnerabilities, or dependency graphs.
+
 ## Artifact contract
 
 A successful scan produces the applicable artifacts:
@@ -201,6 +205,8 @@ A successful scan produces the applicable artifacts:
 Artifact names and exit semantics remain stable.
 
 `secscan inventory sbom` is a separate read-only projection. It writes `secscan.inventory.json` by default and does not create scan artifacts or history records.
+
+`secscan compare inventory` reads two such projections and writes `secscan.inventory.diff.json`. It does not alter scan policy exit codes or persist state.
 
 ## Exit-code contract
 
