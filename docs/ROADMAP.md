@@ -71,55 +71,60 @@ Delivered bounded exact-cohort severity trends from local SQLite history with co
 
 Delivered SPDX 2.2/2.3 JSON scanning, format-specific preserved artifacts, history integration, and constant-path service downloads.
 
+### Sprint 16 — SBOM Package and License Inventory
+
+Delivered deterministic local package and declared-license inventory for supported CycloneDX and SPDX JSON.
+
 ## Current sprint
 
-### Sprint 16 — SBOM Package and License Inventory
+### Sprint 17 — SBOM Inventory Comparison
 
 #### Goal
 
-Produce a deterministic, versioned local package and declared-license inventory from supported CycloneDX or SPDX JSON without running a vulnerability scanner or making compliance judgments.
+Compare two normalized SBOM inventory documents and deterministically classify package and declared-license changes without vulnerability scanning, network access, or policy enforcement.
 
 #### User stories
 
-1. As an operator, I can normalize package names, versions, PURLs, and declared licenses from a supported SBOM.
-2. As an automation author, I receive stable JSON plus deterministic package and license ordering.
-3. As a reviewer, I can see package totals, license coverage, and counts for each declared license value.
-4. As a security-conscious user, I can run inventory locally without Trivy, network access, or database changes.
+1. As an operator, I can compare a baseline inventory with a current inventory.
+2. As a reviewer, I can see added, removed, license-changed, and unchanged packages.
+3. As an automation author, I receive stable versioned JSON with deterministic ordering.
+4. As a security-conscious user, ambiguous duplicate package identities fail clearly rather than producing misleading results.
 
 #### Planned implementation
 
-- add `secscan inventory sbom` with an explicit input path and JSON output path
-- reuse the supported CycloneDX/SPDX format validation boundary
-- normalize package name, version, PURL, and declared license strings
-- recognize CycloneDX license IDs, names, and expressions plus SPDX `licenseDeclared`
-- sort normalized packages and license summaries deterministically
-- emit schema version, source format/version, summary counts, license counts, and packages
+- add `secscan compare inventory BASELINE CURRENT --output ...`
+- strictly validate version 1 normalized inventory structure
+- identify packages by exact PURL when available, otherwise exact name and version
+- reject duplicate identities within either input
+- classify added, removed, declared-license-changed, and unchanged packages
+- retain before/after package values for changed entries
+- emit deterministic versioned JSON with input paths and summary counts
 - use atomic same-directory output replacement
-- parser, validation, deterministic-output, CLI, and compatibility tests
+- validation, classification, ordering, CLI, and compatibility tests
 - SBOM, roadmap, architecture, README, and local test-procedure updates
 
 #### Acceptance criteria
 
-- supported CycloneDX and SPDX inputs produce schema-versioned normalized inventory JSON
-- equivalent repeated runs produce byte-for-byte identical output
-- package entries and license values are deterministically sorted and deduplicated
-- PURLs are read only from defined CycloneDX and SPDX package fields
-- absent declared licenses remain visibly unlicensed rather than guessed
-- malformed package, external-reference, or license structures fail clearly with exit code `1`
-- inventory generation invokes neither Trivy nor SQLite and makes no network request
+- version 1 inventories from either supported source format can be compared
+- added, removed, license-changed, and unchanged counts and entries are correct
+- PURL identity takes precedence over name/version fallback identity
+- duplicate identities, malformed fields, and unsupported schema versions return exit code `1`
+- equivalent repeated comparisons produce byte-for-byte identical output
+- comparison is informational and returns exit code `0` when differences exist
+- comparison invokes neither Trivy nor SQLite and makes no network request
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- license compatibility, obligation, policy, or legal-compliance evaluation
-- concluded/effective license inference or package-file license discovery
-- vulnerability scanning, package enrichment, or registry lookups
-- dependency graphs, SBOM comparison, signing, or cross-source correlation
+- version-upgrade correlation across distinct PURLs or name/version identities
+- dependency-graph or transitive-impact analysis
+- license compatibility, obligation, allow/deny policy, or legal-compliance evaluation
+- vulnerability correlation, scan exit-code changes, signing, or remote storage
 
 #### Cost outlook
 
-Current and projected recurring infrastructure cost remains **$0**. Inventory extraction is local, standard-library-only, and introduces no external services.
+Current and projected recurring infrastructure cost remains **$0**. Inventory comparison is local, standard-library-only, and introduces no external services.
 
 ## Planned feature sprints
 
@@ -225,7 +230,7 @@ Delivered sequential batches of up to 20 explicitly selected immutable ECR inven
 
 - additional SBOM formats beyond CycloneDX JSON and SPDX 2.x JSON
 - SBOM license policy and dependency intelligence
-- cross-source correlation
+- vulnerability-to-inventory and other cross-source correlation
 - additional private registry authentication
 - release automation, immutable images, provenance, and checksums
 - finding-level history and mean time to remediation

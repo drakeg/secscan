@@ -116,3 +116,28 @@ shasum -a 256 ./reports/secscan.inventory.json
 secscan inventory sbom build.spdx.json --output ./reports/secscan.inventory.json
 shasum -a 256 ./reports/secscan.inventory.json
 ```
+
+## Compare inventories
+
+Compare a baseline and current normalized inventory:
+
+```bash
+secscan compare inventory \
+  ./baseline/secscan.inventory.json \
+  ./current/secscan.inventory.json \
+  --output ./reports/secscan.inventory.diff.json
+```
+
+The versioned result classifies packages as `added`, `removed`, `changed`, or `unchanged`. `changed` means the exact package identity remained present while its declared-license values changed. Exact PURL is the preferred identity; packages without a PURL use exact name and version. Version upgrades therefore appear as one removal and one addition rather than an inferred upgrade.
+
+Differences are informational and return exit code `0`. Duplicate identities or malformed/unsupported inventory documents return exit code `1`.
+
+Run automated and manual comparison tests locally:
+
+```bash
+pytest tests/test_sbom_inventory_compare.py tests/test_cli_inventory_compare.py
+secscan compare inventory ./baseline/secscan.inventory.json ./current/secscan.inventory.json --output ./reports/secscan.inventory.diff.json
+python -m json.tool ./reports/secscan.inventory.diff.json
+```
+
+Run the comparison twice and compare checksums if you want to confirm deterministic output. Comparison is local and does not invoke Trivy, SQLite, or a network service.
