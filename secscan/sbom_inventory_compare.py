@@ -33,7 +33,7 @@ def _identity_document(identity: PackageIdentity) -> dict[str, object]:
     }
 
 
-def _load_inventory(path: Path) -> dict[PackageIdentity, InventoryPackage]:
+def load_sbom_inventory(path: Path) -> dict[PackageIdentity, InventoryPackage]:
     resolved = path.expanduser().resolve()
     if not resolved.is_file():
         raise ValueError(f"inventory is not a file: {resolved}")
@@ -84,8 +84,8 @@ def _load_inventory(path: Path) -> dict[PackageIdentity, InventoryPackage]:
 def compare_sbom_inventories(baseline: Path, current: Path) -> dict[str, object]:
     baseline_path = baseline.expanduser().resolve()
     current_path = current.expanduser().resolve()
-    baseline_packages = _load_inventory(baseline_path)
-    current_packages = _load_inventory(current_path)
+    baseline_packages = load_sbom_inventory(baseline_path)
+    current_packages = load_sbom_inventory(current_path)
     baseline_ids = set(baseline_packages)
     current_ids = set(current_packages)
 

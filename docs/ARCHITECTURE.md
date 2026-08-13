@@ -192,6 +192,10 @@ Read an already supported local SBOM format and normalize source-declared packag
 
 Strictly load two version 1 normalized inventory documents and classify exact package identities. PURLs take precedence; packages without PURLs fall back to exact name and version. Duplicate identities are rejected. Comparison is deterministic and informational and does not correlate version upgrades, vulnerabilities, or dependency graphs.
 
+### `license_policy.py`
+
+Strictly load local declared-license policy and evaluate a version 1 normalized inventory. Allow and deny entries match exact, case-sensitive source strings; expressions are opaque. The evaluator emits deterministic evidence but does not interpret compatibility, obligations, or legal compliance.
+
 ## Artifact contract
 
 A successful scan produces the applicable artifacts:
@@ -207,6 +211,8 @@ Artifact names and exit semantics remain stable.
 `secscan inventory sbom` is a separate read-only projection. It writes `secscan.inventory.json` by default and does not create scan artifacts or history records.
 
 `secscan compare inventory` reads two such projections and writes `secscan.inventory.diff.json`. It does not alter scan policy exit codes or persist state.
+
+`secscan check inventory` writes `secscan.inventory.policy.json` and returns policy exit code `2` when violations exist. It shares the inventory validation boundary but remains separate from vulnerability scan policy and history.
 
 ## Exit-code contract
 
