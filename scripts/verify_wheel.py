@@ -10,6 +10,7 @@ REQUIRED_FILES = {
     "secscan/cli.py",
     "secscan/compare.py",
     "secscan/history.py",
+    "secscan/license_policy.py",
     "secscan/models.py",
     "secscan/normalize.py",
     "secscan/policy.py",

@@ -141,3 +141,5 @@ python -m json.tool ./reports/secscan.inventory.diff.json
 ```
 
 Run the comparison twice and compare checksums if you want to confirm deterministic output. Comparison is local and does not invoke Trivy, SQLite, or a network service.
+
+Exact declared-license policy can be applied to the normalized inventory with `secscan check inventory`. See [Policy Configuration](POLICIES.md) for policy schema, exit codes, limitations, and local testing procedures.

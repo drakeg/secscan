@@ -21,6 +21,7 @@ from secscan.aws import (
 )
 from secscan.compare import compare_findings, load_baseline
 from secscan.history import HistoryStore, ScanHistoryEntry
+from secscan.license_policy import evaluate_license_policy, load_license_policy
 from secscan.policy import Policy, evaluate_policy, load_policy, policy_failed
 from secscan.report import build_report, write_html, write_json, write_raw_json
 from secscan.scanners.base import ScanRequest
@@ -183,6 +184,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=Path("/reports/secscan.inventory.diff.json"),
+    )
+
+    check = subparsers.add_parser("check", help="evaluate local artifact policy")
+    check_subparsers = check.add_subparsers(dest="check_type", required=True)
+    inventory_check = check_subparsers.add_parser(
+        "inventory", help="check declared licenses in a normalized inventory"
+    )
+    inventory_check.add_argument("inventory", type=Path)
+    inventory_check.add_argument("--policy", type=Path, required=True)
+    inventory_check.add_argument(
+        "--output",
+        type=Path,
+        default=Path("/reports/secscan.inventory.policy.json"),
     )
     return parser
 
@@ -447,6 +461,16 @@ def _run_inventory_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_inventory_check(args: argparse.Namespace) -> int:
+    result = evaluate_license_policy(args.inventory, load_license_policy(args.policy))
+    write_json_atomic(result, args.output)
+    summary = result["summary"]
+    assert isinstance(summary, dict)
+    print(f"License policy: {json.dumps(summary, sort_keys=True)}")
+    print(f"Policy evidence written to {args.output}")
+    return 2 if summary["violation_count"] else 0
+
+
 def _run_ecr_batch(args: argparse.Namespace) -> int:
     image_uris = tuple(args.image_uri)
     assets = load_ecr_assets(args.inventory, image_uris)
@@ -517,6 +541,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_sbom_inventory(args)
         if args.command == "compare" and args.compare_type == "inventory":
             return _run_inventory_compare(args)
+        if args.command == "check" and args.check_type == "inventory":
+            return _run_inventory_check(args)
         return 1
     except (AwsDiscoveryError, TrivyError, OSError, ValueError) as exc:
         print(f"secscan error: {exc}", file=sys.stderr)

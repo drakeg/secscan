@@ -114,6 +114,55 @@ The standard findings remain in the report for traceability. `secscan.json` incl
 
 Only active, unsuppressed findings participate in global threshold and Policy v2 rule failure evaluation.
 
+## Declared-license inventory policy
+
+Inventory license policy is a separate strict YAML document used by `secscan check inventory`. It does not change vulnerability scan policy behavior.
+
+```yaml
+license_policy:
+  allow:
+    - Apache-2.0
+    - MIT
+  deny:
+    - GPL-3.0-only
+  require_declared: true
+```
+
+- `allow` is optional. When present, every non-empty declared-license value must exactly match an entry. An empty list rejects every declared value.
+- `deny` is optional and rejects exact matching values.
+- `require_declared` defaults to `false` and rejects packages with no declared-license value when `true`.
+
+Values are case-sensitive opaque strings. For example, `MIT OR Apache-2.0` does not match separate `MIT` and `Apache-2.0` allow entries. secscan does not parse SPDX expressions, infer equivalence, calculate obligations, or determine legal compliance.
+
+Run the check and retain its versioned evidence:
+
+```bash
+secscan check inventory ./reports/secscan.inventory.json \
+  --policy ./license-policy.yaml \
+  --output ./reports/secscan.inventory.policy.json
+```
+
+Exit codes are `0` for a passing policy, `2` for one or more violations, and `1` for malformed policy/inventory or output errors. Policies reject unknown keys, non-list allow/deny values, empty or duplicate entries, overlap between allow and deny, and non-boolean `require_declared`.
+
+### Local license-policy testing
+
+Run the automated tests:
+
+```bash
+pytest tests/test_license_policy.py tests/test_cli_license_policy.py
+```
+
+For a manual test, generate an inventory, save the example policy above, and run the check. Inspect the evidence and repeat the command to confirm deterministic output:
+
+```bash
+secscan inventory sbom ./build.spdx.json --output ./reports/secscan.inventory.json
+secscan check inventory ./reports/secscan.inventory.json --policy ./license-policy.yaml --output ./reports/secscan.inventory.policy.json
+python -m json.tool ./reports/secscan.inventory.policy.json
+shasum -a 256 ./reports/secscan.inventory.policy.json
+```
+
+Add or remove exact policy values and repeat. Confirm violations contain the package plus explicit reasons, and remember that the output is policy evidence rather than legal advice.
+
 ## Security guidance
 
 - Keep policy files in source control when they contain no secrets.
