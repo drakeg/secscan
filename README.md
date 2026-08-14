@@ -168,7 +168,7 @@ secscan check inventory ./reports/secscan.inventory.json \
   --output ./reports/secscan.inventory.policy.json
 ```
 
-A policy violation returns exit code `2`; invalid policy or inventory input returns `1`. License expressions are treated as opaque strings, and the result is policy evidence rather than a legal-compliance determination. See [Policy Configuration](docs/POLICIES.md) for the schema and local testing procedures.
+A policy violation returns exit code `2`; invalid policy or inventory input returns `1`. Auditable expiring exceptions can suppress one exact package/license violation. License expressions remain opaque strings, and the result is policy evidence rather than a legal-compliance determination. See [Policy Configuration](docs/POLICIES.md) for the schema and local testing procedures.
 
 ## YAML policies
 
