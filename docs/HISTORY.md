@@ -65,7 +65,21 @@ secscan trends \
 
 The command requires between 2 and 100 matching scans. It selects the newest matching records and presents them oldest first. `change_since_oldest` is the signed difference `latest - oldest` for each severity; a negative number means fewer recorded findings. Trend generation is read-only with respect to scan records.
 
-This scan-level history cannot identify when an individual vulnerability first appeared or was fixed. It therefore does not claim to calculate mean time to remediation; that requires a later finding-level history model.
+## Compare latest finding observations
+
+New scans retain normalized finding fingerprints. Compare the two latest finding-enabled scans from one exact cohort:
+
+```bash
+secscan finding-changes \
+  --history-db ./reports/secscan.db \
+  --scanner image \
+  --target alpine:3.20 \
+  --output ./reports/alpine-finding-changes.json
+```
+
+The report classifies stable fingerprints as `new`, `resolved`, or `unchanged` and identifies both source scan records. It requires two finding-enabled scans. A completed zero-finding scan is a valid observation and resolves findings from the previous matching scan.
+
+Legacy records are not interpreted as zero-finding scans. secscan cannot know whether their old report paths still exist or are unchanged, so it does not backfill them automatically. This latest-transition report also does not claim first-seen time or mean time to remediation; trustworthy episode timing remains a later increment.
 
 ## Disable recording
 
@@ -77,7 +91,7 @@ secscan scan filesystem . --output-dir ./reports --no-history
 
 ## Stored data
 
-Sprint 5.5 stores scan-level metadata only:
+Each new scan stores scan-level metadata plus normalized finding identity fields:
 
 - timestamp
 - scanner type and target
@@ -86,12 +100,13 @@ Sprint 5.5 stores scan-level metadata only:
 - severity totals
 - report, SBOM, and optional diff paths
 - secscan and scanner-engine versions
+- stable fingerprint, vulnerability ID, package, installed/fixed version, severity, finding target, and package type
 
-Detailed findings remain in the normalized report artifacts and are not duplicated in SQLite.
+Titles, URLs, publication dates, raw scanner payloads, and policy evaluation remain in report artifacts rather than SQLite. Protect both the database and reports as security-sensitive inventory.
 
 ## Schema migrations
 
-The database contains a `schema_migrations` table. secscan applies internal, ordered migrations before reading or writing history. Migration version 1 creates the `scans` table and the target/timestamp index.
+The database contains a `schema_migrations` table. secscan applies internal, ordered migrations before reading or writing history. Migration version 1 creates aggregate scan history. Version 2 adds finding observations and marks legacy rows as not recorded; it neither reads old report paths nor invents empty observations.
 
 ## Operational notes
 
@@ -116,7 +131,9 @@ secscan scan image alpine:3.20 --output-dir ./reports/run-1 --history-db ./repor
 secscan scan image alpine:3.20 --output-dir ./reports/run-2 --history-db ./reports/secscan.db --fail-on NONE
 secscan trends --history-db ./reports/secscan.db --scanner image --target alpine:3.20 --limit 20
 secscan trends --history-db ./reports/secscan.db --scanner image --target alpine:3.20 --limit 20 --output ./reports/alpine-trend.json
+secscan finding-changes --history-db ./reports/secscan.db --scanner image --target alpine:3.20 --output ./reports/alpine-finding-changes.json
 python -m json.tool ./reports/alpine-trend.json
+python -m json.tool ./reports/alpine-finding-changes.json
 ```
 
-Confirm the JSON series is chronological, contains only `image` / `alpine:3.20` records, and that each signed change equals the latest count minus the oldest count. Use `--scanner ecr` with the exact immutable digest URI when inspecting authenticated ECR history.
+Confirm the trend series is chronological and exact-cohort. In finding changes, confirm the scan IDs are the two latest matching observations and manually cross-check new, resolved, and unchanged entries against their `secscan.json` reports. Run a third scan against another target and confirm it does not affect the result. Use `--scanner ecr` with the exact immutable digest URI for authenticated ECR history.
