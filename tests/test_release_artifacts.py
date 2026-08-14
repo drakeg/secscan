@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 from pathlib import Path
 
 import pytest
 
-from scripts.release_artifacts import project_version, verify_release_tag, write_checksums
+SCRIPT = Path(__file__).parents[1] / "scripts" / "release_artifacts.py"
+SPEC = importlib.util.spec_from_file_location("release_artifacts", SCRIPT)
+assert SPEC is not None and SPEC.loader is not None
+release_artifacts = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(release_artifacts)
+
+project_version = release_artifacts.project_version
+verify_release_tag = release_artifacts.verify_release_tag
+write_checksums = release_artifacts.write_checksums
 
 
 def _pyproject(path: Path, version: str = "1.2.3") -> None:
