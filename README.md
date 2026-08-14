@@ -216,6 +216,7 @@ Successful scans are recorded after report and SBOM generation completes. For sc
 secscan history --history-db ./reports/secscan.db
 secscan show 1 --history-db ./reports/secscan.db
 secscan trends --history-db ./reports/secscan.db --scanner image --target alpine:3.20
+secscan finding-changes --history-db ./reports/secscan.db --scanner image --target alpine:3.20
 ```
 
 Use an explicit database path when needed:
@@ -226,7 +227,7 @@ secscan scan image alpine:3.20 \
   --history-db ./state/secscan.db
 ```
 
-`trends` requires at least two matching scans and can write versioned JSON with `--output`. Skip recording for one scan with `--no-history`. See [Local Scan History](docs/HISTORY.md) for metric definitions and automated/manual local testing procedures.
+`trends` summarizes aggregate changes; `finding-changes` classifies stable fingerprints between the two latest finding-enabled exact-cohort scans. Both can write versioned JSON with `--output`. Skip recording with `--no-history`. See [Local Scan History](docs/HISTORY.md) for migration behavior, limitations, and automated/manual local testing procedures.
 
 ## Copy reports from a rootless Docker volume
 
