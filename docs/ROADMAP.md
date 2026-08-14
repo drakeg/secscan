@@ -83,57 +83,60 @@ Delivered deterministic comparison of normalized SBOM inventories with strict pa
 
 Delivered strict exact-string declared-license policy with deterministic evidence and CI-friendly exit codes.
 
+### Sprint 19 — Guarded GitHub Release Artifacts
+
+Delivered exact version-tag validation, verified Python release artifacts, deterministic SHA-256 checksums, and least-privilege GitHub Release automation.
+
 ## Current sprint
 
-### Sprint 19 — Guarded GitHub Release Artifacts
+### Sprint 20 — Auditable License-Policy Exceptions
 
 #### Goal
 
-Build verified Python release artifacts and SHA-256 checksums from an exact semantic-version tag, then publish them to a GitHub Release through a least-privilege workflow.
+Allow a narrowly identified package and exact declared-license value to receive a temporary, auditable policy exception without weakening policy for other packages or interpreting license expressions.
 
 #### User stories
 
-1. As a maintainer, I can publish a release only when `vX.Y.Z` matches the project version exactly.
-2. As a user, I can download a wheel, source archive, and SHA-256 checksum manifest from one GitHub Release.
-3. As an auditor, I can see that release packaging passed the repository's wheel verification before publication.
-4. As a security owner, release automation receives only the GitHub contents permission needed to create the release.
+1. As a security owner, I can temporarily except one exact package/license pair while keeping the global policy strict.
+2. As a reviewer, I can require a reason and expiration date for every exception.
+3. As an auditor, I can distinguish active suppressed violations from unsuppressed violations in deterministic evidence.
+4. As an automation author, expired or non-matching exceptions continue to produce policy exit code `2`.
 
 #### Planned implementation
 
-- add a standard-library tag/version validation script
-- require an exact stable `vMAJOR.MINOR.PATCH` tag matching `project.version`
-- trigger release automation only for matching version tags
-- install build tooling from the existing development dependency set
-- run the existing preflight before release packaging
-- build wheel and source distribution and verify wheel contents
-- generate `SHA256SUMS` over the release artifacts with a portable Python script
-- create release notes and upload artifacts using the GitHub CLI bundled on the runner
-- document dry-run, tag, verification, and recovery procedures
-- add unit and failure-path tests for tag validation and checksum generation
+- add optional `license_policy.exceptions` entries
+- require an exact package PURL or exact name/version fallback identity
+- require one exact opaque declared-license value, reason, and ISO expiration date
+- apply exceptions only to allow/deny violations for the matching package/license pair
+- treat the expiration date as active through that date and ignore expired exceptions
+- reject ambiguous identities, unknown keys, missing audit fields, and duplicate matches
+- retain configured exceptions and active suppressed violations in versioned evidence
+- include suppressed counts without changing the existing CLI exit-code contract
+- document automated and manual local tests, review guidance, and limitations
 
 #### Acceptance criteria
 
-- tag validation rejects malformed, prerelease, build-metadata, and version-mismatched tags
-- local checksum generation is deterministic and covers only explicit regular files
-- release workflow runs the full Python preflight before packaging
-- wheel contents are verified before upload
-- the GitHub Release contains wheel, source archive, and `SHA256SUMS`
-- release creation uses `contents: write` and no broader permission
-- ordinary branch and pull-request CI behavior remains unchanged
-- local dry-run and post-release checksum verification procedures are documented
+- active exact exceptions suppress only their matching allow/deny violation
+- expired, wrong-package, and wrong-license exceptions do not suppress violations
+- packages with PURLs require PURL exceptions; fallback identity cannot shadow them
+- missing-license violations cannot be excepted through a fabricated license value
+- evidence deterministically records active suppressions, reasons, and expirations
+- malformed or duplicate exceptions return operational exit code `1`
+- passing or suppressed-only policy checks return `0`; unsuppressed violations return `2`
+- evaluation invokes neither Trivy nor SQLite and makes no network request
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- container image publication or registry authentication
-- artifact signing, keyless signatures, attestations, or SLSA provenance
-- PyPI publication, release promotion, rollback, or automatic version mutation
-- prerelease tags, moving tags, or releases from branches
+- wildcard, regex, case-insensitive, or dependency-tree exception matching
+- exceptions for missing license declarations
+- SPDX expression parsing, equivalence, compatibility, or legal determinations
+- remote approvals, policy distribution, user identity, or exception deletion APIs
 
 #### Cost outlook
 
-No secscan runtime infrastructure is introduced. GitHub Actions usage and artifact retention remain subject to the repository owner's GitHub plan and settings.
+Evaluation remains local and introduces no runtime infrastructure or external service. Current recurring secscan infrastructure cost remains **$0**.
 
 ## Planned feature sprints
 

@@ -194,7 +194,7 @@ Strictly load two version 1 normalized inventory documents and classify exact pa
 
 ### `license_policy.py`
 
-Strictly load local declared-license policy and evaluate a version 1 normalized inventory. Allow and deny entries match exact, case-sensitive source strings; expressions are opaque. The evaluator emits deterministic evidence but does not interpret compatibility, obligations, or legal compliance.
+Strictly load local declared-license policy and evaluate a version 1 normalized inventory. Allow and deny entries match exact, case-sensitive source strings; expressions are opaque. Temporary exceptions match one exact PURL or name/version fallback identity plus one exact license, and require a reason and expiration. The evaluator emits deterministic violation and suppression evidence but does not interpret compatibility, obligations, or legal compliance.
 
 ## Artifact contract
 
