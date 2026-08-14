@@ -268,6 +268,10 @@ pytest
 secscan --help
 ```
 
+## Releases
+
+Stable `vMAJOR.MINOR.PATCH` tags trigger guarded GitHub release packaging when the tag exactly matches `project.version`. Releases include a verified wheel, source distribution, and `SHA256SUMS`. See [Release Artifacts](docs/RELEASES.md) for local dry-run, publication, verification, and failure-recovery procedures.
+
 ## Current boundaries
 
 The built-in scanners support public and explicitly inventoried ECR container images, including bounded sequential batches, plus local filesystem paths, checked-out source repositories, and CycloneDX or SPDX 2.2/2.3 JSON SBOM files. Supported SBOMs can produce, compare, and apply exact declared-license policy to local normalized inventories. YAML scan policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history, supports exact-cohort severity trends, and persists service job metadata. AWS discovery inventories explicitly approved ECR repositories. Richer license governance, dependency-graph analysis, finding-level remediation timing, general private registry authentication, remote repository cloning, additional SBOM encodings, scheduled AWS scanning, and contextual risk scoring remain later increments.
@@ -293,6 +297,7 @@ The built-in scanners support public and explicitly inventoried ECR container im
 - [AWS ECR asset discovery and local testing](docs/AWS_ECR_DISCOVERY.md)
 - [Repository scanning](docs/REPOSITORY_SCANNING.md)
 - [SBOM scanning](docs/SBOM_SCANNING.md)
+- [Release artifacts and testing](docs/RELEASES.md)
 - [Definition of done](docs/DEFINITION_OF_DONE.md)
 
 ## License

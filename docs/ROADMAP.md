@@ -79,57 +79,61 @@ Delivered deterministic local package and declared-license inventory for support
 
 Delivered deterministic comparison of normalized SBOM inventories with strict package identity validation.
 
+### Sprint 18 — SBOM Declared-License Policy
+
+Delivered strict exact-string declared-license policy with deterministic evidence and CI-friendly exit codes.
+
 ## Current sprint
 
-### Sprint 18 — SBOM Declared-License Policy
+### Sprint 19 — Guarded GitHub Release Artifacts
 
 #### Goal
 
-Evaluate exact source-declared license strings in a normalized SBOM inventory against a strict local allow/deny policy without interpreting license expressions or making legal-compliance claims.
+Build verified Python release artifacts and SHA-256 checksums from an exact semantic-version tag, then publish them to a GitHub Release through a least-privilege workflow.
 
 #### User stories
 
-1. As a security owner, I can deny exact declared-license values.
-2. As a release owner, I can optionally require every package to declare a license.
-3. As an automation author, I can allow only exact approved values and receive exit code `2` for violations.
-4. As an auditor, I receive deterministic evidence describing every violating package and reason.
+1. As a maintainer, I can publish a release only when `vX.Y.Z` matches the project version exactly.
+2. As a user, I can download a wheel, source archive, and SHA-256 checksum manifest from one GitHub Release.
+3. As an auditor, I can see that release packaging passed the repository's wheel verification before publication.
+4. As a security owner, release automation receives only the GitHub contents permission needed to create the release.
 
 #### Planned implementation
 
-- add `secscan check inventory INVENTORY --policy POLICY --output ...`
-- define a strict YAML `license_policy` mapping with `allow`, `deny`, and `require_declared`
-- treat allow and deny entries as exact, case-sensitive source-declared strings
-- reject unknown keys, invalid values, duplicates, and allow/deny overlap
-- reuse strict version 1 inventory and duplicate-identity validation
-- report missing declarations, denied values, and values absent from a configured allow-list
-- emit deterministic versioned JSON evidence and return exit code `2` for violations
-- use atomic same-directory output replacement
-- validation, evaluation, ordering, CLI, and compatibility tests
-- policy, SBOM, roadmap, architecture, README, and local test-procedure updates
+- add a standard-library tag/version validation script
+- require an exact stable `vMAJOR.MINOR.PATCH` tag matching `project.version`
+- trigger release automation only for matching version tags
+- install build tooling from the existing development dependency set
+- run the existing preflight before release packaging
+- build wheel and source distribution and verify wheel contents
+- generate `SHA256SUMS` over the release artifacts with a portable Python script
+- create release notes and upload artifacts using the GitHub CLI bundled on the runner
+- document dry-run, tag, verification, and recovery procedures
+- add unit and failure-path tests for tag validation and checksum generation
 
 #### Acceptance criteria
 
-- valid policies deterministically report every violating package and exact reason
-- deny-list matches and required missing declarations return exit code `2`
-- when `allow` is configured, each non-empty declared value must match it exactly
-- no violations return exit code `0`
-- malformed policies or inventories return exit code `1`
-- overlapping allow/deny values and duplicate policy values are rejected
-- license expressions remain opaque strings and are never parsed or rewritten
-- evaluation invokes neither Trivy nor SQLite and makes no network request
+- tag validation rejects malformed, prerelease, build-metadata, and version-mismatched tags
+- local checksum generation is deterministic and covers only explicit regular files
+- release workflow runs the full Python preflight before packaging
+- wheel contents are verified before upload
+- the GitHub Release contains wheel, source archive, and `SHA256SUMS`
+- release creation uses `contents: write` and no broader permission
+- ordinary branch and pull-request CI behavior remains unchanged
+- local dry-run and post-release checksum verification procedures are documented
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- SPDX expression parsing, equivalence, implication, or normalization
-- license compatibility, obligations, exceptions, or legal-compliance evaluation
-- per-package exceptions, suppressions, expirations, or remote policy distribution
-- dependency-graph analysis, vulnerability correlation, or scan-policy integration
+- container image publication or registry authentication
+- artifact signing, keyless signatures, attestations, or SLSA provenance
+- PyPI publication, release promotion, rollback, or automatic version mutation
+- prerelease tags, moving tags, or releases from branches
 
 #### Cost outlook
 
-Current and projected recurring infrastructure cost remains **$0**. License-policy evaluation is local and introduces no external services.
+No secscan runtime infrastructure is introduced. GitHub Actions usage and artifact retention remain subject to the repository owner's GitHub plan and settings.
 
 ## Planned feature sprints
 
@@ -237,7 +241,7 @@ Delivered sequential batches of up to 20 explicitly selected immutable ECR inven
 - richer SBOM license governance and dependency intelligence
 - vulnerability-to-inventory and other cross-source correlation
 - additional private registry authentication
-- release automation, immutable images, provenance, and checksums
+- container releases, immutable image digests, signatures, and provenance
 - finding-level history and mean time to remediation
 - additional scanner adapters such as Syft and Grype
 - risk scoring, KEV, and EPSS enrichment

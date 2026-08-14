@@ -275,6 +275,10 @@ Only trusted built-in plugins are registered. Arbitrary plugin loading remains o
 - release images are scanned
 - future release work adds signatures, provenance, and immutable digests
 
+## Release artifact boundary
+
+Stable version tags invoke a dedicated least-privilege workflow. A standard-library script verifies that the immutable tag name exactly matches `project.version` and creates a deterministic checksum manifest from explicit regular-file inputs. The workflow runs repository preflight, builds and verifies Python artifacts, then uses the runner-provided GitHub CLI to create the release. Signing, provenance, container publication, and package-index publication remain outside this boundary.
+
 ## Coding and design standards
 
 - Python 3.12 is the current runtime baseline.
