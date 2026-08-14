@@ -20,7 +20,7 @@ from secscan.aws import (
     write_ecr_assets,
 )
 from secscan.compare import compare_findings, load_baseline
-from secscan.history import HistoryStore, ScanHistoryEntry
+from secscan.history import HistoryStore, ScanHistoryEntry, StoredFinding
 from secscan.license_policy import evaluate_license_policy, load_license_policy
 from secscan.policy import Policy, evaluate_policy, load_policy, policy_failed
 from secscan.report import build_report, write_html, write_json, write_raw_json
@@ -118,6 +118,14 @@ def build_parser() -> argparse.ArgumentParser:
     trends.add_argument("--target", required=True, help="exact recorded target")
     trends.add_argument("--limit", type=int, default=20, help="matching scans to include (2-100)")
     trends.add_argument("--output", type=Path, help="write versioned JSON instead of console output")
+
+    finding_changes = subparsers.add_parser(
+        "finding-changes", help="compare the two latest finding-level scan records"
+    )
+    _add_history_db_argument(finding_changes, default=Path("/reports/secscan.db"))
+    finding_changes.add_argument("--scanner", required=True, help="exact recorded scanner name")
+    finding_changes.add_argument("--target", required=True, help="exact recorded target")
+    finding_changes.add_argument("--output", type=Path, help="write versioned JSON evidence")
 
     discover = subparsers.add_parser("discover", help="discover approved cloud assets")
     discover_subparsers = discover.add_subparsers(dest="discovery_type", required=True)
@@ -325,6 +333,68 @@ def _run_trends(args: argparse.Namespace) -> int:
     return 0
 
 
+def _finding_map(findings: tuple[StoredFinding, ...]) -> dict[str, StoredFinding]:
+    return {finding.fingerprint: finding for finding in findings}
+
+
+def _build_finding_changes(
+    observations: list[tuple[ScanHistoryEntry, tuple[StoredFinding, ...]]],
+    scanner: str,
+    target: str,
+) -> dict[str, object]:
+    if len(observations) != 2:
+        raise ValueError(
+            f"2 finding-level scans are required for scanner={scanner!r} target={target!r}"
+        )
+    previous_scan, previous_findings = observations[0]
+    current_scan, current_findings = observations[1]
+    previous = _finding_map(previous_findings)
+    current = _finding_map(current_findings)
+    previous_ids = set(previous)
+    current_ids = set(current)
+
+    def documents(ids: set[str], source: dict[str, StoredFinding]) -> list[dict[str, object]]:
+        return [asdict(source[fingerprint]) for fingerprint in sorted(ids)]
+
+    new_ids = current_ids - previous_ids
+    resolved_ids = previous_ids - current_ids
+    unchanged_ids = previous_ids & current_ids
+    return {
+        "schema_version": 1,
+        "scanner": scanner,
+        "target": target,
+        "previous_scan": {"id": previous_scan.id, "created_at": previous_scan.created_at},
+        "current_scan": {"id": current_scan.id, "created_at": current_scan.created_at},
+        "summary": {
+            "new": len(new_ids),
+            "resolved": len(resolved_ids),
+            "unchanged": len(unchanged_ids),
+        },
+        "new": documents(new_ids, current),
+        "resolved": documents(resolved_ids, previous),
+        "unchanged": documents(unchanged_ids, current),
+    }
+
+
+def _run_finding_changes(args: argparse.Namespace) -> int:
+    observations = HistoryStore(args.history_db).latest_finding_observations(
+        scanner=args.scanner, target=args.target
+    )
+    changes = _build_finding_changes(observations, args.scanner, args.target)
+    if args.output:
+        _write_json_atomic(changes, args.output)
+        print(f"Finding changes written to {args.output}")
+    else:
+        summary = changes["summary"]
+        assert isinstance(summary, dict)
+        print(
+            f"Finding changes: {args.scanner} {args.target} "
+            f"new={summary['new']} resolved={summary['resolved']} "
+            f"unchanged={summary['unchanged']}"
+        )
+    return 0
+
+
 def _run_scan(args: argparse.Namespace) -> int:
     started = perf_counter()
     registry = build_default_registry()
@@ -414,6 +484,7 @@ def _run_scan(args: argparse.Namespace) -> int:
             diff_path=diff_path,
             secscan_version=_secscan_version(),
             scanner_version=str(scanner_metadata.get("version", "unknown")),
+            findings=tuple(result.findings),
         )
         print(f"History: recorded scan {scan_id} in {history_db}")
 
@@ -533,6 +604,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_show(args)
         if args.command == "trends":
             return _run_trends(args)
+        if args.command == "finding-changes":
+            return _run_finding_changes(args)
         if args.command == "discover" and args.discovery_type == "ecr":
             return _run_ecr_discovery(args)
         if args.command == "batch" and args.batch_type == "ecr":
