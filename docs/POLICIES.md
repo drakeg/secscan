@@ -126,11 +126,32 @@ license_policy:
   deny:
     - GPL-3.0-only
   require_declared: true
+  exceptions:
+    - package:
+        purl: pkg:pypi/legacy-library@2.0
+      license: GPL-3.0-only
+      reason: Replacement is scheduled
+      expires: 2026-09-30
 ```
 
 - `allow` is optional. When present, every non-empty declared-license value must exactly match an entry. An empty list rejects every declared value.
 - `deny` is optional and rejects exact matching values.
 - `require_declared` defaults to `false` and rejects packages with no declared-license value when `true`.
+- `exceptions` is optional. Each entry suppresses one allow/deny violation for one exact package/license pair through its expiration date.
+
+An exception package uses either one exact PURL or an exact fallback name and version:
+
+```yaml
+  exceptions:
+    - package:
+        name: legacy-library
+        version: "2.0"
+      license: GPL-3.0-only
+      reason: Replacement is scheduled
+      expires: 2026-09-30
+```
+
+For a package whose inventory entry has a PURL, the exception must use that PURL. Name/version matching is reserved for packages without PURLs; use `version: null` to match a missing version. The exact license value must already appear in the package's `declared_licenses`. Exceptions do not suppress `require_declared` failures, use wildcards, or apply to related package versions. The expiration date remains active through that date.
 
 Values are case-sensitive opaque strings. For example, `MIT OR Apache-2.0` does not match separate `MIT` and `Apache-2.0` allow entries. secscan does not parse SPDX expressions, infer equivalence, calculate obligations, or determine legal compliance.
 
@@ -142,7 +163,7 @@ secscan check inventory ./reports/secscan.inventory.json \
   --output ./reports/secscan.inventory.policy.json
 ```
 
-Exit codes are `0` for a passing policy, `2` for one or more violations, and `1` for malformed policy/inventory or output errors. Policies reject unknown keys, non-list allow/deny values, empty or duplicate entries, overlap between allow and deny, and non-boolean `require_declared`.
+Exit codes are `0` for a passing or suppressed-only policy, `2` for one or more unsuppressed violations, and `1` for malformed policy/inventory or output errors. Evidence includes configured exceptions, `suppressed_count`, and each active suppressed violation with its reason and expiration. Policies reject unknown keys, non-list allow/deny/exception values, empty or duplicate entries, ambiguous exception identities, missing audit fields, invalid dates, overlap between allow and deny, and non-boolean `require_declared`.
 
 ### Local license-policy testing
 
@@ -163,10 +184,13 @@ shasum -a 256 ./reports/secscan.inventory.policy.json
 
 Add or remove exact policy values and repeat. Confirm violations contain the package plus explicit reasons, and remember that the output is policy evidence rather than legal advice.
 
+To test an exception locally, add the exact inventory PURL and declared-license value to `exceptions`, set `expires` to today or later, and rerun the check. Confirm the command returns `0`, `summary.suppressed_count` increases, and `suppressed` records the reason and expiration. Then change the PURL, license, or expiration to a non-matching or past value and confirm the same violation returns exit code `2`.
+
 ## Security guidance
 
 - Keep policy files in source control when they contain no secrets.
 - Require meaningful reasons for suppressions and important rules.
 - Use short suppression expiration periods.
 - Review rule matches in `secscan.json` rather than relying only on the process exit code.
+- Review active and expired license exceptions regularly; use short expiration periods and exact immutable PURLs where available.
 - Never use suppressions to conceal scanner errors or missing scan coverage.
