@@ -5,7 +5,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+from secscan.compare import finding_fingerprint
+from secscan.models import Finding
+
+SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -26,6 +29,19 @@ class ScanHistoryEntry:
     diff_path: str | None
     secscan_version: str
     scanner_version: str
+    findings_recorded: int
+
+
+@dataclass(frozen=True)
+class StoredFinding:
+    fingerprint: str
+    vulnerability_id: str
+    package_name: str
+    installed_version: str
+    fixed_version: str | None
+    severity: str
+    target: str
+    package_type: str | None
 
 
 class HistoryStore:
@@ -73,6 +89,34 @@ class HistoryStore:
                     """
                 )
                 connection.execute("INSERT INTO schema_migrations(version) VALUES (1)")
+            if 2 not in applied:
+                columns = {
+                    str(row["name"])
+                    for row in connection.execute("PRAGMA table_info(scans)")
+                }
+                if "findings_recorded" not in columns:
+                    connection.execute(
+                        "ALTER TABLE scans ADD COLUMN findings_recorded INTEGER NOT NULL DEFAULT 0"
+                    )
+                connection.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS scan_findings (
+                        scan_id INTEGER NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+                        fingerprint TEXT NOT NULL,
+                        vulnerability_id TEXT NOT NULL,
+                        package_name TEXT NOT NULL,
+                        installed_version TEXT NOT NULL,
+                        fixed_version TEXT,
+                        severity TEXT NOT NULL,
+                        target TEXT NOT NULL,
+                        package_type TEXT,
+                        PRIMARY KEY (scan_id, fingerprint)
+                    );
+                    CREATE INDEX IF NOT EXISTS scan_findings_fingerprint_idx
+                        ON scan_findings(fingerprint, scan_id);
+                    """
+                )
+                connection.execute("INSERT INTO schema_migrations(version) VALUES (2)")
 
     def record_scan(
         self,
@@ -87,6 +131,7 @@ class HistoryStore:
         diff_path: Path | None,
         secscan_version: str,
         scanner_version: str,
+        findings: tuple[Finding, ...] | None = None,
     ) -> int:
         self.migrate()
         with self._connect() as connection:
@@ -96,8 +141,8 @@ class HistoryStore:
                     scanner, target, duration_ms, fail_on,
                     critical, high, medium, low, unknown,
                     report_path, sbom_path, diff_path,
-                    secscan_version, scanner_version
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    secscan_version, scanner_version, findings_recorded
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     scanner,
@@ -114,11 +159,71 @@ class HistoryStore:
                     str(diff_path) if diff_path else None,
                     secscan_version,
                     scanner_version,
+                    int(findings is not None),
                 ),
             )
             if cursor.lastrowid is None:
                 raise RuntimeError("SQLite did not return a scan history ID")
-            return cursor.lastrowid
+            scan_id = cursor.lastrowid
+            if findings is not None:
+                rows = [
+                    (
+                        scan_id,
+                        finding_fingerprint(finding),
+                        finding.vulnerability_id,
+                        finding.package_name,
+                        finding.installed_version,
+                        finding.fixed_version,
+                        finding.severity,
+                        finding.target,
+                        finding.package_type,
+                    )
+                    for finding in findings
+                ]
+                if len({row[1] for row in rows}) != len(rows):
+                    raise ValueError("scan contains duplicate finding fingerprints")
+                connection.executemany(
+                    """
+                    INSERT INTO scan_findings (
+                        scan_id, fingerprint, vulnerability_id, package_name,
+                        installed_version, fixed_version, severity, target, package_type
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    rows,
+                )
+            return scan_id
+
+    def latest_finding_observations(
+        self, *, scanner: str, target: str
+    ) -> list[tuple[ScanHistoryEntry, tuple[StoredFinding, ...]]]:
+        self.migrate()
+        with self._connect() as connection:
+            scans = connection.execute(
+                """
+                SELECT * FROM scans
+                WHERE scanner = ? AND target = ? AND findings_recorded = 1
+                ORDER BY id DESC
+                LIMIT 2
+                """,
+                (scanner, target),
+            ).fetchall()
+            scans.reverse()
+            observations = []
+            for scan in scans:
+                rows = connection.execute(
+                    """
+                    SELECT fingerprint, vulnerability_id, package_name, installed_version,
+                           fixed_version, severity, target, package_type
+                    FROM scan_findings
+                    WHERE scan_id = ?
+                    ORDER BY fingerprint
+                    """,
+                    (scan["id"],),
+                ).fetchall()
+                observations.append(
+                    (self._entry(scan), tuple(StoredFinding(**dict(row)) for row in rows))
+                )
+        return observations
 
     def list_scans(self, limit: int = 20) -> list[ScanHistoryEntry]:
         if limit < 1:
