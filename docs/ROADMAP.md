@@ -87,56 +87,60 @@ Delivered strict exact-string declared-license policy with deterministic evidenc
 
 Delivered exact version-tag validation, verified Python release artifacts, deterministic SHA-256 checksums, and least-privilege GitHub Release automation.
 
+### Sprint 20 — Auditable License-Policy Exceptions
+
+Delivered exact package/license exceptions with required reasons, expirations, strict identity precedence, and deterministic suppression evidence.
+
 ## Current sprint
 
-### Sprint 20 — Auditable License-Policy Exceptions
+### Sprint 21 — Finding-Level History Transitions
 
 #### Goal
 
-Allow a narrowly identified package and exact declared-license value to receive a temporary, auditable policy exception without weakening policy for other packages or interpreting license expressions.
+Persist normalized finding identities with completed scans and compare the two latest observations for one exact scanner/target cohort without inferring remediation time.
 
 #### User stories
 
-1. As a security owner, I can temporarily except one exact package/license pair while keeping the global policy strict.
-2. As a reviewer, I can require a reason and expiration date for every exception.
-3. As an auditor, I can distinguish active suppressed violations from unsuppressed violations in deterministic evidence.
-4. As an automation author, expired or non-matching exceptions continue to produce policy exit code `2`.
+1. As an operator, I can see which findings are new, resolved, or unchanged between the latest two matching scans.
+2. As an automation author, I can retain deterministic versioned JSON evidence for that transition.
+3. As an existing user, I can migrate a version 1 history database without losing scan records or inventing missing finding data.
+4. As a security owner, comparisons remain bounded to one exact scanner and target.
 
 #### Planned implementation
 
-- add optional `license_policy.exceptions` entries
-- require an exact package PURL or exact name/version fallback identity
-- require one exact opaque declared-license value, reason, and ISO expiration date
-- apply exceptions only to allow/deny violations for the matching package/license pair
-- treat the expiration date as active through that date and ignore expired exceptions
-- reject ambiguous identities, unknown keys, missing audit fields, and duplicate matches
-- retain configured exceptions and active suppressed violations in versioned evidence
-- include suppressed counts without changing the existing CLI exit-code contract
-- document automated and manual local tests, review guidance, and limitations
+- add ordered SQLite migration version 2
+- mark whether each scan recorded finding-level observations
+- store stable existing finding fingerprints and essential normalized fields transactionally
+- reject duplicate fingerprints and roll back the entire scan record
+- add `secscan finding-changes --scanner ... --target ...`
+- select only the two latest finding-enabled scans in the exact cohort
+- classify new, resolved, and unchanged fingerprints deterministically
+- support concise console output and atomic versioned JSON output
+- document migration, privacy, automated/manual tests, and timing limitations
 
 #### Acceptance criteria
 
-- active exact exceptions suppress only their matching allow/deny violation
-- expired, wrong-package, and wrong-license exceptions do not suppress violations
-- packages with PURLs require PURL exceptions; fallback identity cannot shadow them
-- missing-license violations cannot be excepted through a fabricated license value
-- evidence deterministically records active suppressions, reasons, and expirations
-- malformed or duplicate exceptions return operational exit code `1`
-- passing or suppressed-only policy checks return `0`; unsuppressed violations return `2`
-- evaluation invokes neither Trivy nor SQLite and makes no network request
+- new successful scans persist their normalized finding identities with scan metadata
+- version 1 databases migrate without treating legacy aggregate records as empty scans
+- duplicate fingerprints fail atomically without leaving a scan row
+- exact cohort selection ignores other scanners and targets
+- two finding-enabled observations are required
+- JSON ordering and classification are deterministic
+- zero-finding observations are valid and can resolve all prior findings
+- existing history, show, trends, scan, report, and exit-code behavior remains compatible
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- wildcard, regex, case-insensitive, or dependency-tree exception matching
-- exceptions for missing license declarations
-- SPDX expression parsing, equivalence, compatibility, or legal determinations
-- remote approvals, policy distribution, user identity, or exception deletion APIs
+- mean/median time to remediation or first-seen claims
+- correlating across different scanner/target cohorts
+- backfilling legacy scan findings from report paths
+- finding search, retention/deletion APIs, scheduling, or remote storage
 
 #### Cost outlook
 
-Evaluation remains local and introduces no runtime infrastructure or external service. Current recurring secscan infrastructure cost remains **$0**.
+SQLite remains the only history dependency. Finding rows increase local disk use but introduce no runtime infrastructure or external service; current recurring secscan infrastructure cost remains **$0**.
 
 ## Planned feature sprints
 
@@ -245,7 +249,7 @@ Delivered sequential batches of up to 20 explicitly selected immutable ECR inven
 - vulnerability-to-inventory and other cross-source correlation
 - additional private registry authentication
 - container releases, immutable image digests, signatures, and provenance
-- finding-level history and mean time to remediation
+- finding episode timing and mean time to remediation
 - additional scanner adapters such as Syft and Grype
 - risk scoring, KEV, and EPSS enrichment
 - EC2 inventory or snapshot-based scanning
