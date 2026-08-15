@@ -103,53 +103,57 @@ Delivered censored-aware bounded finding episodes and scan-to-scan observed reso
 
 Delivered a secure, persistent, one-command Docker Compose environment for locally testing the service API and real scanner jobs.
 
+### Sprint 24 — Service Local-Input Boundaries
+
+Delivered configurable service input roots, Compose confinement to `/workspace`, and traversal and symlink-escape rejection before job persistence.
+
 ## Current sprint
 
-### Sprint 24 — Service Local-Input Boundaries
+### Sprint 25 — Service Artifact Integrity Manifests
 
 #### Goal
 
-Constrain service-controlled local file inputs to explicitly approved roots, with the Docker Compose service limited to its read-only `/workspace` mount.
+Produce a deterministic integrity manifest for every service job that creates downloadable artifacts.
 
 #### User stories
 
-1. As a local evaluator, I can continue to run `docker compose up --build` and scan `/workspace`.
-2. As an operator, I can configure one or more exact roots for service filesystem, repository, SBOM, policy, and baseline inputs.
-3. As a security owner, traversal and symlink paths cannot escape configured input roots.
-4. As a direct-service user, I retain the current trusted-local behavior unless I opt into input-root restrictions.
+1. As a local evaluator, I can download `artifacts.json` after a Compose scan.
+2. As an operator, I can see the exact allow-listed artifacts, sizes, and SHA-256 digests produced by a job.
+3. As a consumer, I can verify a downloaded report using only Python's standard library.
+4. As a security owner, manifests never enumerate unknown files or paths outside the job directory.
 
 #### Planned implementation
 
-- add repeatable `--allowed-input-root` service options
-- resolve configured roots once during service manager initialization
-- validate local scan targets plus optional policy and baseline paths before recording a job
-- use resolved-path containment so traversal and symlink escapes are rejected
-- configure Compose with `/workspace` as its only allowed input root
-- preserve unrestricted image references and trusted-local direct-service compatibility
-- document allowed and rejected requests plus local automated and Compose test procedures
+- add a versioned deterministic `artifacts.json` document to the service artifact allow-list
+- hash only existing regular files from the server-owned artifact map
+- record artifact name, byte size, and lowercase SHA-256 digest in stable name order
+- write the manifest atomically after scanner execution and before terminal job persistence
+- retain manifests with the existing report volume and job directories
+- document download, inspection, digest verification, and Compose test procedures
 
 #### Acceptance criteria
 
-- `/workspace` filesystem, repository, and SBOM inputs remain accepted by Compose
-- local target, policy, and baseline paths outside configured roots are rejected before job creation
-- traversal and symlink paths resolving outside an allowed root are rejected
-- image references remain accepted because they are not local paths
-- direct startup without `--allowed-input-root` remains backward compatible
-- rejected submissions do not create job records or output directories
-- automated tests cover CLI propagation, containment, symlink escape, and Compose configuration
+- completed and scanner-failed jobs with artifacts expose `artifacts.json`
+- each entry contains exactly `name`, `size_bytes`, and `sha256`
+- entries are deterministic, sorted, and limited to known artifact names
+- the manifest does not hash or list itself
+- a job that produces no artifacts receives an empty manifest
+- manifest-write failures mark the job failed with an explicit error
+- existing artifact paths, job APIs, scanners, CLI behavior, and Compose startup remain compatible
+- automated tests cover digest accuracy, ordering, empty output, failure behavior, and downloads
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- authentication, authorization, TLS termination, or untrusted-network exposure
-- uploads, remote target retrieval, or content copying into the service
-- per-user or per-scanner authorization rules
-- Docker socket mounting or host-level image scanning
+- signing, provenance, transparency logs, or remote attestations
+- archival bundles, compression, upload, deletion, or retention policies
+- checksums for non-service CLI output directories
+- authentication, authorization, TLS, or untrusted-network exposure
 
 #### Cost outlook
 
-Input validation uses local path resolution and introduces no hosted infrastructure or external service. Current and projected recurring infrastructure cost remains **$0**.
+SHA-256 hashing uses Python's standard library and existing local storage. Current and projected recurring infrastructure cost remains **$0**.
 
 ## Planned feature sprints
 

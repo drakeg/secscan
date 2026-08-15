@@ -306,7 +306,7 @@ Cloud components remain optional. Storage, queue, discovery, policy distribution
 
 ### Local service job state
 
-The service stores job metadata in SQLite and report artifacts in UUID-scoped directories. A submitted record is persisted before worker execution. Terminal records survive restarts; non-terminal records found at startup are failed explicitly instead of being replayed. The API can cancel queued work, but it does not terminate running scanners.
+The service stores job metadata in SQLite and report artifacts in UUID-scoped directories. A submitted record is persisted before worker execution. After execution it atomically writes a versioned manifest of allow-listed regular artifacts with deterministic names, sizes, and SHA-256 digests before persisting terminal state. Terminal records survive restarts; non-terminal records found at startup are failed explicitly instead of being replayed. The API can cancel queued work, but it does not terminate running scanners.
 
 The supported Docker Compose evaluation stack runs this service as the image's non-root user, binds the API only to host loopback, drops all capabilities, makes the container root filesystem read-only, and mounts only named report/cache volumes plus the repository at read-only `/workspace`. Service-side resolved-path validation limits local targets, policies, and baselines to `/workspace`; image references remain non-path inputs. A Python standard-library health check avoids adding runtime tools. Compose never mounts the Docker socket and introduces no separate database, queue, or cloud dependency.
 

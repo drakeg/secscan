@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from threading import Event
@@ -37,6 +38,21 @@ def test_job_lifecycle_and_artifact_download(tmp_path: Path) -> None:
     artifact = client.get(f"/api/v1/jobs/{job_id}/artifacts/secscan.json")
     assert artifact.status_code == 200
     assert artifact.json()["summary"]["total"] == 0
+    manifest_response = client.get(f"/api/v1/jobs/{job_id}/artifacts/artifacts.json")
+    assert manifest_response.status_code == 200
+    manifest = manifest_response.json()
+    report_bytes = artifact.content
+    assert manifest == {
+        "schema_version": 1,
+        "job_id": job_id,
+        "artifacts": [
+            {
+                "name": "secscan.json",
+                "size_bytes": len(report_bytes),
+                "sha256": hashlib.sha256(report_bytes).hexdigest(),
+            }
+        ],
+    }
 
 
 def test_policy_failure_is_completed_job(tmp_path: Path) -> None:
@@ -50,6 +66,65 @@ def test_policy_failure_is_completed_job(tmp_path: Path) -> None:
         sleep(0.01)
     assert current.status == "completed"
     assert current.exit_code == 2
+
+
+def test_artifact_manifest_is_sorted_and_excludes_unknown_files(tmp_path: Path) -> None:
+    def runner(args: list[str]) -> int:
+        output_dir = Path(args[args.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True)
+        (output_dir / "trivy.json").write_text("trivy", encoding="utf-8")
+        (output_dir / "secscan.html").write_text("html", encoding="utf-8")
+        (output_dir / "unknown.txt").write_text("unknown", encoding="utf-8")
+        return 1
+
+    client = TestClient(create_app(job_root=tmp_path, runner=runner))
+    job_id = client.post("/api/v1/jobs", json={"scanner": "image", "target": "alpine:3.20"}).json()["id"]
+    for _ in range(100):
+        job = client.get(f"/api/v1/jobs/{job_id}").json()
+        if job["status"] == "failed":
+            break
+        sleep(0.01)
+
+    manifest = client.get(f"/api/v1/jobs/{job_id}/artifacts/artifacts.json").json()
+    assert [item["name"] for item in manifest["artifacts"]] == ["secscan.html", "trivy.json"]
+    assert "artifacts.json" not in [item["name"] for item in manifest["artifacts"]]
+    assert "unknown.txt" not in [item["name"] for item in manifest["artifacts"]]
+
+
+def test_artifact_manifest_is_empty_when_runner_produces_no_files(tmp_path: Path) -> None:
+    client = TestClient(create_app(job_root=tmp_path, runner=lambda _args: 0))
+    job_id = client.post("/api/v1/jobs", json={"scanner": "image", "target": "alpine:3.20"}).json()["id"]
+    for _ in range(100):
+        job = client.get(f"/api/v1/jobs/{job_id}").json()
+        if job["status"] == "completed":
+            break
+        sleep(0.01)
+
+    manifest = client.get(f"/api/v1/jobs/{job_id}/artifacts/artifacts.json").json()
+    assert manifest["schema_version"] == 1
+    assert manifest["job_id"] == job_id
+    assert manifest["artifacts"] == []
+
+
+def test_artifact_manifest_failure_marks_job_failed(tmp_path: Path) -> None:
+    def runner(args: list[str]) -> int:
+        output_dir = Path(args[args.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True)
+        (output_dir / "artifacts.json").mkdir()
+        return 0
+
+    manager = JobManager(tmp_path, runner, max_workers=1)
+    submitted = manager.submit(ScanSubmission(scanner="image", target="alpine:3.20"))
+    for _ in range(100):
+        current = manager.get(submitted.id)
+        assert current is not None
+        if current.status == "failed":
+            break
+        sleep(0.01)
+
+    assert current.status == "failed"
+    assert current.error is not None
+    assert current.error.startswith("failed to write artifact manifest:")
 
 
 def test_artifact_path_rejects_unknown_name_and_escaped_directory(tmp_path: Path) -> None:

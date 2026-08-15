@@ -3,6 +3,8 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+import hashlib
+import json
 import os
 from pathlib import Path, PurePath
 import sqlite3
@@ -16,7 +18,9 @@ from pydantic import BaseModel, Field
 
 JobStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 ScanRunner = Callable[[list[str]], int]
+ARTIFACT_MANIFEST_NAME = "artifacts.json"
 ARTIFACT_PATHS = {
+    ARTIFACT_MANIFEST_NAME: Path(ARTIFACT_MANIFEST_NAME),
     "trivy.json": Path("trivy.json"),
     "secscan.json": Path("secscan.json"),
     "secscan.html": Path("secscan.html"),
@@ -280,6 +284,41 @@ class JobManager:
             return None
         return artifact
 
+    def _write_artifact_manifest(self, record: JobRecord) -> None:
+        job_dir = (self.root / record.id).resolve()
+        recorded_dir = Path(record.output_dir).resolve()
+        if job_dir != recorded_dir or not job_dir.is_relative_to(self.root):
+            raise ValueError("job output directory escaped the configured job root")
+        job_dir.mkdir(exist_ok=True)
+        artifacts: list[dict[str, object]] = []
+        for name in sorted(ARTIFACT_PATHS):
+            if name == ARTIFACT_MANIFEST_NAME:
+                continue
+            artifact = self.artifact_path(record, name)
+            if artifact is None or not artifact.is_file():
+                continue
+            digest = hashlib.sha256()
+            size_bytes = 0
+            with artifact.open("rb") as artifact_file:
+                for chunk in iter(lambda: artifact_file.read(1024 * 1024), b""):
+                    digest.update(chunk)
+                    size_bytes += len(chunk)
+            artifacts.append(
+                {
+                    "name": name,
+                    "size_bytes": size_bytes,
+                    "sha256": digest.hexdigest(),
+                }
+            )
+        manifest = {
+            "schema_version": 1,
+            "job_id": record.id,
+            "artifacts": artifacts,
+        }
+        temporary = job_dir / ".artifacts.json.tmp"
+        temporary.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        temporary.replace(job_dir / ARTIFACT_PATHS[ARTIFACT_MANIFEST_NAME])
+
     def _run(self, job_id: str, request: ScanSubmission) -> None:
         with self._lock:
             record = self.store.get(job_id)
@@ -312,6 +351,12 @@ class JobManager:
             record.status = "failed"
             record.error = str(exc)
         finally:
+            try:
+                self._write_artifact_manifest(record)
+            except Exception as exc:  # defensive artifact boundary
+                record.status = "failed"
+                manifest_error = f"failed to write artifact manifest: {exc}"
+                record.error = f"{record.error}; {manifest_error}" if record.error else manifest_error
             record.completed_at = _timestamp()
             with self._lock:
                 self.store.save(record)
