@@ -270,6 +270,17 @@ pytest
 secscan --help
 ```
 
+## Docker Compose local service
+
+Build and start a healthy local API with persistent reports, job metadata, and scanner cache:
+
+```bash
+docker compose up --build --wait
+curl --fail http://127.0.0.1:8000/healthz
+```
+
+The stack is localhost-only, non-root, capability-free, and mounts this repository read-only at `/workspace` for filesystem/repository/SBOM testing. See [Service Mode](docs/SERVICE_MODE.md) for job submission, artifact download, persistence verification, configuration, shutdown, and reset procedures.
+
 ## Releases
 
 Stable `vMAJOR.MINOR.PATCH` tags trigger guarded GitHub release packaging when the tag exactly matches `project.version`. Releases include a verified wheel, source distribution, and `SHA256SUMS`. See [Release Artifacts](docs/RELEASES.md) for local dry-run, publication, verification, and failure-recovery procedures.
@@ -300,6 +311,7 @@ The built-in scanners support public and explicitly inventoried ECR container im
 - [Repository scanning](docs/REPOSITORY_SCANNING.md)
 - [SBOM scanning](docs/SBOM_SCANNING.md)
 - [Release artifacts and testing](docs/RELEASES.md)
+- [Service mode and Docker Compose testing](docs/SERVICE_MODE.md)
 - [Definition of done](docs/DEFINITION_OF_DONE.md)
 
 ## License

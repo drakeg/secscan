@@ -308,6 +308,8 @@ Cloud components remain optional. Storage, queue, discovery, policy distribution
 
 The service stores job metadata in SQLite and report artifacts in UUID-scoped directories. A submitted record is persisted before worker execution. Terminal records survive restarts; non-terminal records found at startup are failed explicitly instead of being replayed. The API can cancel queued work, but it does not terminate running scanners.
 
+The supported Docker Compose evaluation stack runs this service as the image's non-root user, binds the API only to host loopback, drops all capabilities, makes the container root filesystem read-only, and mounts only named report/cache volumes plus the repository at read-only `/workspace`. A Python standard-library health check avoids adding runtime tools. Compose never mounts the Docker socket and introduces no separate database, queue, or cloud dependency.
+
 ### AWS discovery boundary
 
 AWS discovery is a read-only inventory adapter outside the scanner registry. Explicit YAML configuration bounds account, region, and ECR repository access. The adapter verifies same-account identities or assumes one exact cross-account role, then maps paginated `DescribeImages` metadata into a versioned local JSON artifact. Inventory discovery does not imply image authentication, pulling, or scanning.
