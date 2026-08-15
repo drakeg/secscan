@@ -95,57 +95,60 @@ Delivered exact package/license exceptions with required reasons, expirations, s
 
 Delivered transactional finding observations, safe version 1 database migration, and deterministic latest-transition evidence for exact cohorts.
 
+### Sprint 22 — Bounded Finding Observation Timing
+
+Delivered censored-aware bounded finding episodes and scan-to-scan observed resolution metrics without claiming authoritative MTTR.
+
 ## Current sprint
 
-### Sprint 22 — Bounded Finding Observation Timing
+### Sprint 23 — Docker Compose Local Evaluation
 
 #### Goal
 
-Summarize bounded finding presence episodes and measured scan-to-scan resolution intervals while explicitly separating left-censored and still-open observations from measurable resolved episodes.
+Provide a secure, persistent, one-command Docker Compose environment for locally testing the service API and real scanner jobs.
 
 #### User stories
 
-1. As an operator, I can see resolved and open finding episodes across a bounded exact-cohort window.
-2. As an analyst, I can calculate a mean only from episodes whose start and confirmed absence were both observed.
-3. As an auditor, I can identify left-censored episodes that are excluded from timing metrics.
-4. As an automation author, I can retain deterministic versioned JSON with scan references and explicit measurement semantics.
+1. As a local evaluator, I can run `docker compose up --build` and receive a healthy API.
+2. As a tester, I can scan the checked-out repository through read-only `/workspace` and download artifacts.
+3. As an operator, I can restart or recreate the container without losing jobs, reports, or cache.
+4. As a security owner, the default stack remains non-root, localhost-only, capability-free, and socket-free.
 
 #### Planned implementation
 
-- add `secscan finding-timing --scanner ... --target ... --limit 20`
-- select 2–100 newest finding-enabled scans from one exact cohort and restore chronological order
-- begin an episode when a fingerprint appears after an observed absence
-- resolve an episode at the first later scan where the fingerprint is absent
-- treat reappearance as a new episode
-- mark findings already present in the oldest selected scan as left-censored
-- exclude left-censored and open episodes from the observed-resolution mean
-- emit scan references, episode evidence, counts, and mean observed seconds
-- support concise console output and atomic versioned JSON output
-- document interpretation, caveats, automated tests, and manual procedures
+- add root-level `compose.yaml` with the existing application image and service entrypoint
+- bind the API to host loopback with configurable host port and worker count
+- retain `/reports` and `/cache` in named volumes
+- mount the repository read-only at `/workspace`
+- use a read-only root filesystem, bounded writable tmpfs, dropped capabilities, and no-new-privileges
+- add a standard-library `/healthz` health check
+- validate Compose security and persistence defaults with automated tests
+- exercise Compose configuration and healthy startup in CI
+- document start, health, scan, polling, artifact, logs, restart, shutdown, and destructive reset procedures
 
 #### Acceptance criteria
 
-- exact cohort selection and the 2–100 observation bound are enforced
-- resolved, open, reappeared, and zero-finding transitions are classified correctly
-- oldest-window findings are marked left-censored
-- only fully observed resolved episodes contribute to the mean
-- timestamps are parsed as UTC when SQLite values are timezone-naive
-- reversed or malformed timestamps fail rather than producing misleading durations
-- JSON evidence is deterministic and references its bounded scan window
-- existing history, trends, finding changes, scans, reports, and exit codes remain compatible
+- `docker compose config --quiet` succeeds
+- `docker compose up --build --wait` reaches healthy state
+- health and job-list endpoints respond through `127.0.0.1`
+- a `/workspace` filesystem job completes and its normalized report downloads
+- container recreation retains terminal job metadata and artifacts
+- ordinary `docker compose down` retains volumes; reset requires explicit `--volumes`
+- default Compose configuration requests no privileged mode, capabilities, or Docker socket
+- CI validates configuration and service startup in addition to existing image gates
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- claiming true first-seen, fix time, or service-level compliance
-- labeling the observed interval as authoritative MTTR
-- median, percentile, severity-weighted, or cross-cohort metrics
-- legacy backfill, retention/deletion APIs, scheduling, or remote storage
+- authentication, authorization, TLS termination, or untrusted-network exposure
+- Docker socket mounting, privileged mode, or host-level image scanning
+- bundled cloud resources, external databases, queues, or object storage
+- production orchestration, scaling, ingress, monitoring, or backup automation
 
 #### Cost outlook
 
-Timing is a read-only local SQLite projection and introduces no runtime infrastructure or external service. Current recurring secscan infrastructure cost remains **$0**.
+Compose uses local Docker resources and introduces no hosted infrastructure or external service. Current recurring secscan infrastructure cost remains **$0**; users provide local compute, storage, and network transfer.
 
 ## Planned feature sprints
 
