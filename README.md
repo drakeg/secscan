@@ -217,6 +217,7 @@ secscan history --history-db ./reports/secscan.db
 secscan show 1 --history-db ./reports/secscan.db
 secscan trends --history-db ./reports/secscan.db --scanner image --target alpine:3.20
 secscan finding-changes --history-db ./reports/secscan.db --scanner image --target alpine:3.20
+secscan finding-timing --history-db ./reports/secscan.db --scanner image --target alpine:3.20 --limit 20
 ```
 
 Use an explicit database path when needed:
@@ -227,7 +228,7 @@ secscan scan image alpine:3.20 \
   --history-db ./state/secscan.db
 ```
 
-`trends` summarizes aggregate changes; `finding-changes` classifies stable fingerprints between the two latest finding-enabled exact-cohort scans. Both can write versioned JSON with `--output`. Skip recording with `--no-history`. See [Local Scan History](docs/HISTORY.md) for migration behavior, limitations, and automated/manual local testing procedures.
+`trends` summarizes aggregate changes; `finding-changes` classifies the latest stable fingerprints; `finding-timing` summarizes bounded observed episodes while excluding censored/open data from its mean. Each can write versioned JSON with `--output`. Skip recording with `--no-history`. See [Local Scan History](docs/HISTORY.md) for interpretation, migration behavior, limitations, and automated/manual testing procedures.
 
 ## Copy reports from a rootless Docker volume
 
