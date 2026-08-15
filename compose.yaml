@@ -1,0 +1,46 @@
+name: secscan
+
+services:
+  service:
+    build:
+      context: .
+    image: secscan:local
+    entrypoint: ["secscan-service"]
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --workers
+      - "${SECSCAN_WORKERS:-2}"
+      - --job-root
+      - /reports/jobs
+    ports:
+      - "127.0.0.1:${SECSCAN_PORT:-8000}:8000"
+    volumes:
+      - secscan-reports:/reports
+      - secscan-cache:/cache
+      - .:/workspace:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import json, urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2)) == {'status': 'ok'}"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  secscan-reports:
+  secscan-cache:
