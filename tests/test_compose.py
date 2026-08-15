@@ -12,6 +12,7 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
     service = compose["services"]["service"]
 
     assert service["entrypoint"] == ["secscan-service"]
+    assert service["command"][-2:] == ["--allowed-input-root", "/workspace"]
     assert service["ports"] == ["127.0.0.1:${SECSCAN_PORT:-8000}:8000"]
     assert service["read_only"] is True
     assert service["cap_drop"] == ["ALL"]

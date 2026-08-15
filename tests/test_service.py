@@ -88,6 +88,86 @@ def test_unknown_job_returns_404(tmp_path: Path) -> None:
     assert client.get("/api/v1/jobs/missing").status_code == 404
 
 
+def test_allowed_input_root_accepts_local_paths_and_image_references(tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    policy = allowed / "policy.yaml"
+    policy.write_text("fail_on: HIGH\n", encoding="utf-8")
+    client = TestClient(
+        create_app(job_root=tmp_path / "jobs", runner=lambda _args: 0, allowed_input_roots=[allowed])
+    )
+
+    local = client.post(
+        "/api/v1/jobs",
+        json={"scanner": "filesystem", "target": str(allowed), "policy": str(policy)},
+    )
+    image = client.post(
+        "/api/v1/jobs",
+        json={"scanner": "image", "target": "alpine:3.20"},
+    )
+
+    assert local.status_code == 202
+    assert image.status_code == 202
+
+
+def test_allowed_input_root_rejects_target_policy_and_baseline_outside_root(tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    client = TestClient(
+        create_app(job_root=tmp_path / "jobs", runner=lambda _args: 0, allowed_input_roots=[allowed])
+    )
+
+    for payload, field in (
+        ({"scanner": "filesystem", "target": str(tmp_path)}, "target"),
+        ({"scanner": "image", "target": "alpine:3.20", "policy": str(tmp_path / "policy.yaml")}, "policy"),
+        ({"scanner": "image", "target": "alpine:3.20", "baseline": str(tmp_path / "base.json")}, "baseline"),
+    ):
+        response = client.post("/api/v1/jobs", json=payload)
+        assert response.status_code == 422
+        assert response.json()["detail"] == f"{field} is outside the configured input roots"
+
+    assert client.get("/api/v1/jobs").json() == []
+
+
+def test_allowed_input_root_rejects_traversal_and_symlink_escapes(tmp_path: Path) -> None:
+    allowed = tmp_path / "allowed"
+    outside = tmp_path / "outside"
+    allowed.mkdir()
+    outside.mkdir()
+    (allowed / "link").symlink_to(outside, target_is_directory=True)
+    client = TestClient(
+        create_app(job_root=tmp_path / "jobs", runner=lambda _args: 0, allowed_input_roots=[allowed])
+    )
+
+    traversal = client.post(
+        "/api/v1/jobs",
+        json={"scanner": "filesystem", "target": str(allowed / ".." / "outside")},
+    )
+    symlink = client.post(
+        "/api/v1/jobs",
+        json={"scanner": "filesystem", "target": str(allowed / "link")},
+    )
+    relative = client.post(
+        "/api/v1/jobs",
+        json={"scanner": "filesystem", "target": "allowed"},
+    )
+
+    assert traversal.status_code == 422
+    assert symlink.status_code == 422
+    assert relative.status_code == 422
+
+
+def test_empty_allowed_input_roots_preserve_trusted_local_behavior(tmp_path: Path) -> None:
+    client = TestClient(create_app(job_root=tmp_path / "jobs", runner=lambda _args: 0))
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={"scanner": "filesystem", "target": str(tmp_path / "anywhere")},
+    )
+
+    assert response.status_code == 202
+
+
 def test_jobs_persist_across_manager_restart(tmp_path: Path) -> None:
     manager = JobManager(tmp_path, lambda _args: 0, max_workers=1)
     submitted = manager.submit(ScanSubmission(scanner="image", target="alpine:3.20"))
