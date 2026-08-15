@@ -279,7 +279,7 @@ docker compose up --build --wait
 curl --fail http://127.0.0.1:8000/healthz
 ```
 
-The stack is localhost-only, non-root, capability-free, and mounts this repository read-only at `/workspace` for filesystem/repository/SBOM testing. Service-controlled local paths are limited to that mount. See [Service Mode](docs/SERVICE_MODE.md) for job submission, input-boundary tests, artifact download, persistence verification, configuration, shutdown, and reset procedures.
+The stack is localhost-only, non-root, capability-free, and mounts this repository read-only at `/workspace` for filesystem/repository/SBOM testing. Service-controlled local paths are limited to that mount, and executed jobs provide SHA-256 artifact manifests. See [Service Mode](docs/SERVICE_MODE.md) for job submission, input-boundary tests, artifact download and verification, persistence checks, configuration, shutdown, and reset procedures.
 
 ## Releases
 

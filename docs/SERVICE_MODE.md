@@ -42,6 +42,26 @@ curl --fail http://127.0.0.1:8000/api/v1/jobs/JOB_ID/artifacts/secscan.json \
 python -m json.tool ./secscan.compose.json
 ```
 
+Download the job's deterministic integrity manifest and verify the normalized report digest:
+
+```bash
+curl --fail http://127.0.0.1:8000/api/v1/jobs/JOB_ID/artifacts/artifacts.json \
+  --output ./artifacts.compose.json
+python -m json.tool ./artifacts.compose.json
+python - ./artifacts.compose.json ./secscan.compose.json <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+expected = next(item["sha256"] for item in manifest["artifacts"] if item["name"] == "secscan.json")
+actual = hashlib.sha256(Path(sys.argv[2]).read_bytes()).hexdigest()
+assert actual == expected, (actual, expected)
+print("secscan.json digest verified")
+PY
+```
+
 The first scan downloads the Trivy vulnerability database and can take longer. Later scans reuse the named cache volume.
 
 Stop containers and the private Compose network while retaining reports, job metadata, and cache:
@@ -132,6 +152,8 @@ This first increment is intended for trusted local networks and single-operator 
 
 Artifact names are allow-listed and each job receives a UUID-scoped output directory. Worker concurrency is bounded by `--workers`.
 
+After scanner execution, the service hashes only existing regular files from its constant artifact allow-list. `artifacts.json` uses schema version 1, stable artifact-name ordering, byte sizes, and lowercase SHA-256 digests. The manifest does not include itself and is written atomically before the terminal job state is persisted. It is integrity evidence for transport or storage verification, not a signature or proof of origin.
+
 ## Persistence
 
 Generated reports remain on disk under the configured job root. Job metadata is stored in `<job-root>/jobs.db` by default. Use `--job-database` to select another SQLite path; keep it on persistent storage when running in a disposable container.
@@ -151,7 +173,7 @@ docker compose config --quiet
 pytest tests/test_compose.py tests/test_service.py tests/test_service_cli.py
 ```
 
-Then run the Compose quick start, health, filesystem job, artifact download, restart-persistence, and shutdown commands above. Confirm `docker compose ps` reports the service as healthy, the submitted job reaches `completed`, `secscan.compose.json` parses successfully, and the job remains queryable after container recreation.
+Then run the Compose quick start, health, filesystem job, report and manifest downloads, digest verification, restart-persistence, and shutdown commands above. Confirm `docker compose ps` reports the service as healthy, the submitted job reaches `completed`, both JSON files parse successfully, the digest matches, and the job remains queryable after container recreation.
 
 Verify the input boundary while Compose is running. An allowed submission returns `202`; a path outside `/workspace` returns `422` and creates no job:
 
