@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
+
+import pytest
 
 from secscan.cli import main
 from secscan.history import HistoryStore
@@ -233,3 +236,126 @@ def test_finding_changes_treats_empty_recorded_scan_as_resolution(
         "resolved": 1,
         "unchanged": 0,
     }
+
+
+def test_finding_timing_separates_censored_measured_and_open_episodes(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "secscan.db"
+    store = HistoryStore(database)
+    finding_a = _finding("CVE-2026-0001", "openssl")
+    finding_b = _finding("CVE-2026-0002", "libxml2")
+    scan_ids = [
+        _record(store, tmp_path, 0, findings=(finding_a,)),
+        _record(store, tmp_path, 0, findings=()),
+        _record(store, tmp_path, 0, findings=(finding_b,)),
+        _record(store, tmp_path, 0, findings=()),
+        _record(store, tmp_path, 0, findings=(finding_b,)),
+    ]
+    timestamps = [
+        "2026-08-14 10:00:00",
+        "2026-08-14 11:00:00",
+        "2026-08-14 12:00:00",
+        "2026-08-14 13:00:00",
+        "2026-08-14 14:00:00",
+    ]
+    with sqlite3.connect(database) as connection:
+        connection.executemany(
+            "UPDATE scans SET created_at = ? WHERE id = ?",
+            zip(timestamps, scan_ids, strict=True),
+        )
+    output = tmp_path / "finding-timing.json"
+
+    assert main(
+        [
+            "finding-timing",
+            "--history-db",
+            str(database),
+            "--scanner",
+            "image",
+            "--target",
+            "alpine:3.20",
+            "--limit",
+            "5",
+            "--output",
+            str(output),
+        ]
+    ) == 0
+
+    document = json.loads(output.read_text(encoding="utf-8"))
+    assert document["schema_version"] == 1
+    assert document["window"]["scan_count"] == 5
+    assert document["summary"] == {
+        "resolved_episode_count": 2,
+        "open_episode_count": 1,
+        "left_censored_episode_count": 1,
+        "measurable_resolved_count": 1,
+        "mean_observed_resolution_seconds": 3600.0,
+    }
+    assert document["resolved_episodes"][0]["left_censored"] is True
+    assert document["resolved_episodes"][0]["observed_resolution_seconds"] is None
+    assert document["resolved_episodes"][1]["observed_resolution_seconds"] == 3600
+    assert document["open_episodes"][0]["finding"]["vulnerability_id"] == "CVE-2026-0002"
+
+
+def test_finding_timing_rejects_invalid_limit(tmp_path: Path, capsys: object) -> None:
+    assert main(
+        [
+            "finding-timing",
+            "--history-db",
+            str(tmp_path / "secscan.db"),
+            "--scanner",
+            "image",
+            "--target",
+            "alpine:3.20",
+            "--limit",
+            "101",
+        ]
+    ) == 1
+    assert "between 2 and 100" in capsys.readouterr().err  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize(
+    ("resolved_at", "message"),
+    [
+        ("not-a-timestamp", "invalid scan history timestamp"),
+        ("2026-08-14 11:00:00", "timestamps must be chronological"),
+    ],
+)
+def test_finding_timing_rejects_invalid_observation_timestamps(
+    tmp_path: Path, capsys: object, resolved_at: str, message: str
+) -> None:
+    database = tmp_path / "secscan.db"
+    store = HistoryStore(database)
+    scan_ids = [
+        _record(store, tmp_path, 0, findings=()),
+        _record(
+            store,
+            tmp_path,
+            0,
+            findings=(_finding("CVE-2026-0001", "openssl"),),
+        ),
+        _record(store, tmp_path, 0, findings=()),
+    ]
+    with sqlite3.connect(database) as connection:
+        connection.executemany(
+            "UPDATE scans SET created_at = ? WHERE id = ?",
+            zip(
+                ["2026-08-14 10:00:00", "2026-08-14 12:00:00", resolved_at],
+                scan_ids,
+                strict=True,
+            ),
+        )
+
+    assert main(
+        [
+            "finding-timing",
+            "--history-db",
+            str(database),
+            "--scanner",
+            "image",
+            "--target",
+            "alpine:3.20",
+        ]
+    ) == 1
+    assert message in capsys.readouterr().err  # type: ignore[attr-defined]
