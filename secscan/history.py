@@ -196,6 +196,13 @@ class HistoryStore:
     def latest_finding_observations(
         self, *, scanner: str, target: str
     ) -> list[tuple[ScanHistoryEntry, tuple[StoredFinding, ...]]]:
+        return self.list_finding_observations(scanner=scanner, target=target, limit=2)
+
+    def list_finding_observations(
+        self, *, scanner: str, target: str, limit: int
+    ) -> list[tuple[ScanHistoryEntry, tuple[StoredFinding, ...]]]:
+        if limit < 1:
+            raise ValueError("finding history limit must be at least 1")
         self.migrate()
         with self._connect() as connection:
             scans = connection.execute(
@@ -203,9 +210,9 @@ class HistoryStore:
                 SELECT * FROM scans
                 WHERE scanner = ? AND target = ? AND findings_recorded = 1
                 ORDER BY id DESC
-                LIMIT 2
+                LIMIT ?
                 """,
-                (scanner, target),
+                (scanner, target, limit),
             ).fetchall()
             scans.reverse()
             observations = []
