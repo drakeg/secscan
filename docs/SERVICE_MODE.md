@@ -66,10 +66,18 @@ docker compose down --volumes
 
 The Compose service binds only to `127.0.0.1`, runs as non-root with all Linux capabilities dropped, uses a read-only root filesystem, and mounts the repository read-only. It does not mount the Docker socket. Do not change the bind address or expose the unauthenticated API to an untrusted network.
 
+Compose also configures `/workspace` as the only allowed local input root. Filesystem, repository, and SBOM targets, plus optional policy and baseline files, must use absolute paths that resolve beneath that mount. Image references are not filesystem paths and remain available. Relative paths, traversal, and symlinks that resolve outside `/workspace` are rejected before a job is recorded.
+
 ### Direct startup
 
 ```bash
 secscan-service --host 0.0.0.0 --port 8000 --workers 2 --job-root ./reports/jobs
+```
+
+Direct startup remains unrestricted for backward compatibility. To apply the same boundary, repeat `--allowed-input-root` for each trusted input tree:
+
+```bash
+secscan-service --allowed-input-root ./source --allowed-input-root ./policies
 ```
 
 Docker example:
@@ -140,7 +148,21 @@ Validate configuration and the automated contract:
 
 ```bash
 docker compose config --quiet
-pytest tests/test_compose.py tests/test_service.py
+pytest tests/test_compose.py tests/test_service.py tests/test_service_cli.py
 ```
 
 Then run the Compose quick start, health, filesystem job, artifact download, restart-persistence, and shutdown commands above. Confirm `docker compose ps` reports the service as healthy, the submitted job reaches `completed`, `secscan.compose.json` parses successfully, and the job remains queryable after container recreation.
+
+Verify the input boundary while Compose is running. An allowed submission returns `202`; a path outside `/workspace` returns `422` and creates no job:
+
+```bash
+curl --fail -X POST http://127.0.0.1:8000/api/v1/jobs \
+  -H 'content-type: application/json' \
+  -d '{"scanner":"filesystem","target":"/workspace","fail_on":"NONE"}'
+
+curl --include -X POST http://127.0.0.1:8000/api/v1/jobs \
+  -H 'content-type: application/json' \
+  -d '{"scanner":"filesystem","target":"/etc"}'
+```
+
+The second response should report that `target` is outside the configured input roots. Run `curl --fail http://127.0.0.1:8000/api/v1/jobs` before and after it if you want to confirm the rejected request was not persisted.

@@ -99,56 +99,57 @@ Delivered transactional finding observations, safe version 1 database migration,
 
 Delivered censored-aware bounded finding episodes and scan-to-scan observed resolution metrics without claiming authoritative MTTR.
 
+### Sprint 23 — Docker Compose Local Evaluation
+
+Delivered a secure, persistent, one-command Docker Compose environment for locally testing the service API and real scanner jobs.
+
 ## Current sprint
 
-### Sprint 23 — Docker Compose Local Evaluation
+### Sprint 24 — Service Local-Input Boundaries
 
 #### Goal
 
-Provide a secure, persistent, one-command Docker Compose environment for locally testing the service API and real scanner jobs.
+Constrain service-controlled local file inputs to explicitly approved roots, with the Docker Compose service limited to its read-only `/workspace` mount.
 
 #### User stories
 
-1. As a local evaluator, I can run `docker compose up --build` and receive a healthy API.
-2. As a tester, I can scan the checked-out repository through read-only `/workspace` and download artifacts.
-3. As an operator, I can restart or recreate the container without losing jobs, reports, or cache.
-4. As a security owner, the default stack remains non-root, localhost-only, capability-free, and socket-free.
+1. As a local evaluator, I can continue to run `docker compose up --build` and scan `/workspace`.
+2. As an operator, I can configure one or more exact roots for service filesystem, repository, SBOM, policy, and baseline inputs.
+3. As a security owner, traversal and symlink paths cannot escape configured input roots.
+4. As a direct-service user, I retain the current trusted-local behavior unless I opt into input-root restrictions.
 
 #### Planned implementation
 
-- add root-level `compose.yaml` with the existing application image and service entrypoint
-- bind the API to host loopback with configurable host port and worker count
-- retain `/reports` and `/cache` in named volumes
-- mount the repository read-only at `/workspace`
-- use a read-only root filesystem, bounded writable tmpfs, dropped capabilities, and no-new-privileges
-- add a standard-library `/healthz` health check
-- validate Compose security and persistence defaults with automated tests
-- exercise Compose configuration and healthy startup in CI
-- document start, health, scan, polling, artifact, logs, restart, shutdown, and destructive reset procedures
+- add repeatable `--allowed-input-root` service options
+- resolve configured roots once during service manager initialization
+- validate local scan targets plus optional policy and baseline paths before recording a job
+- use resolved-path containment so traversal and symlink escapes are rejected
+- configure Compose with `/workspace` as its only allowed input root
+- preserve unrestricted image references and trusted-local direct-service compatibility
+- document allowed and rejected requests plus local automated and Compose test procedures
 
 #### Acceptance criteria
 
-- `docker compose config --quiet` succeeds
-- `docker compose up --build --wait` reaches healthy state
-- health and job-list endpoints respond through `127.0.0.1`
-- a `/workspace` filesystem job completes and its normalized report downloads
-- container recreation retains terminal job metadata and artifacts
-- ordinary `docker compose down` retains volumes; reset requires explicit `--volumes`
-- default Compose configuration requests no privileged mode, capabilities, or Docker socket
-- CI validates configuration and service startup in addition to existing image gates
+- `/workspace` filesystem, repository, and SBOM inputs remain accepted by Compose
+- local target, policy, and baseline paths outside configured roots are rejected before job creation
+- traversal and symlink paths resolving outside an allowed root are rejected
+- image references remain accepted because they are not local paths
+- direct startup without `--allowed-input-root` remains backward compatible
+- rejected submissions do not create job records or output directories
+- automated tests cover CLI propagation, containment, symlink escape, and Compose configuration
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
 - authentication, authorization, TLS termination, or untrusted-network exposure
-- Docker socket mounting, privileged mode, or host-level image scanning
-- bundled cloud resources, external databases, queues, or object storage
-- production orchestration, scaling, ingress, monitoring, or backup automation
+- uploads, remote target retrieval, or content copying into the service
+- per-user or per-scanner authorization rules
+- Docker socket mounting or host-level image scanning
 
 #### Cost outlook
 
-Compose uses local Docker resources and introduces no hosted infrastructure or external service. Current recurring secscan infrastructure cost remains **$0**; users provide local compute, storage, and network transfer.
+Input validation uses local path resolution and introduces no hosted infrastructure or external service. Current and projected recurring infrastructure cost remains **$0**.
 
 ## Planned feature sprints
 

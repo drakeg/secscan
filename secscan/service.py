@@ -3,10 +3,11 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+import os
+from pathlib import Path, PurePath
 import sqlite3
 from threading import Lock
-from typing import Callable, Literal
+from typing import Callable, Literal, Sequence
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Query
@@ -177,10 +178,12 @@ class JobManager:
         runner: ScanRunner,
         max_workers: int = 2,
         database: Path | None = None,
+        allowed_input_roots: Sequence[Path] = (),
     ) -> None:
         if max_workers < 1:
             raise ValueError("max_workers must be at least 1")
         self.root = root.expanduser().resolve()
+        self.allowed_input_roots = tuple(path.expanduser().resolve() for path in allowed_input_roots)
         database_path = database or self.root / "jobs.db"
         self.store = JobStore(database_path.expanduser().resolve())
         self.store.fail_interrupted()
@@ -189,6 +192,7 @@ class JobManager:
         self._lock = Lock()
 
     def submit(self, request: ScanSubmission) -> JobRecord:
+        self._validate_input_paths(request)
         job_id = str(uuid4())
         output_dir = (self.root / job_id).resolve()
         if not output_dir.is_relative_to(self.root):
@@ -205,6 +209,37 @@ class JobManager:
             self.store.save(record)
         self.executor.submit(self._run, job_id, request)
         return record
+
+    def _validate_input_paths(self, request: ScanSubmission) -> None:
+        if not self.allowed_input_roots:
+            return
+        inputs: list[tuple[str, str]] = []
+        if request.scanner in ("filesystem", "repository", "sbom"):
+            inputs.append(("target", request.target))
+        if request.policy is not None:
+            inputs.append(("policy", request.policy))
+        if request.baseline is not None:
+            inputs.append(("baseline", request.baseline))
+        for field, value in inputs:
+            if not self._is_allowed_input_path(value):
+                raise ValueError(f"{field} is outside the configured input roots")
+
+    def _is_allowed_input_path(self, value: str) -> bool:
+        lexical_path = PurePath(value)
+        if not lexical_path.is_absolute():
+            return False
+        for root in self.allowed_input_roots:
+            try:
+                relative = lexical_path.relative_to(PurePath(root))
+            except ValueError:
+                continue
+            safe_parts = tuple(os.path.basename(part) for part in relative.parts)
+            if safe_parts != relative.parts or any(part in ("", ".", "..") for part in safe_parts):
+                continue
+            resolved = root.joinpath(*safe_parts).resolve()
+            if resolved.is_relative_to(root):
+                return True
+        return False
 
     def get(self, job_id: str) -> JobRecord | None:
         with self._lock:
@@ -292,6 +327,7 @@ def create_app(
     max_workers: int = 2,
     job_database: Path | None = None,
     runner: ScanRunner | None = None,
+    allowed_input_roots: Sequence[Path] = (),
 ) -> FastAPI:
     if runner is None:
         from secscan.cli import main
@@ -309,6 +345,7 @@ def create_app(
                     runner,
                     max_workers=max_workers,
                     database=job_database,
+                    allowed_input_roots=allowed_input_roots,
                 )
             return manager
 
@@ -320,7 +357,11 @@ def create_app(
 
     @app.post("/api/v1/jobs", status_code=202)
     def submit_job(request: ScanSubmission) -> dict[str, object]:
-        return asdict(get_manager().submit(request))
+        try:
+            record = get_manager().submit(request)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return asdict(record)
 
     @app.get("/api/v1/jobs")
     def list_jobs(

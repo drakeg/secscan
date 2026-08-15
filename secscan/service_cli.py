@@ -17,6 +17,13 @@ def main() -> None:
         help="SQLite job database (default: <job-root>/jobs.db)",
     )
     parser.add_argument("--workers", type=int, default=2, help="maximum concurrent scan jobs")
+    parser.add_argument(
+        "--allowed-input-root",
+        action="append",
+        type=Path,
+        default=[],
+        help="allow service-controlled local paths beneath this root (repeatable)",
+    )
     args = parser.parse_args()
 
     if args.workers < 1:
@@ -29,6 +36,7 @@ def main() -> None:
             job_root=args.job_root,
             job_database=args.job_database,
             max_workers=args.workers,
+            allowed_input_roots=args.allowed_input_root,
         ),
         host=args.host,
         port=args.port,
