@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 import json
 import os
 import sys
@@ -126,6 +127,17 @@ def build_parser() -> argparse.ArgumentParser:
     finding_changes.add_argument("--scanner", required=True, help="exact recorded scanner name")
     finding_changes.add_argument("--target", required=True, help="exact recorded target")
     finding_changes.add_argument("--output", type=Path, help="write versioned JSON evidence")
+
+    finding_timing = subparsers.add_parser(
+        "finding-timing", help="summarize bounded finding observation episodes"
+    )
+    _add_history_db_argument(finding_timing, default=Path("/reports/secscan.db"))
+    finding_timing.add_argument("--scanner", required=True, help="exact recorded scanner name")
+    finding_timing.add_argument("--target", required=True, help="exact recorded target")
+    finding_timing.add_argument(
+        "--limit", type=int, default=20, help="finding-enabled scans to include (2-100)"
+    )
+    finding_timing.add_argument("--output", type=Path, help="write versioned JSON evidence")
 
     discover = subparsers.add_parser("discover", help="discover approved cloud assets")
     discover_subparsers = discover.add_subparsers(dest="discovery_type", required=True)
@@ -395,6 +407,129 @@ def _run_finding_changes(args: argparse.Namespace) -> int:
     return 0
 
 
+@dataclass
+class _OpenFindingEpisode:
+    finding: StoredFinding
+    first_scan: ScanHistoryEntry
+    last_scan: ScanHistoryEntry
+    left_censored: bool
+
+
+def _scan_reference(scan: ScanHistoryEntry) -> dict[str, object]:
+    return {"id": scan.id, "created_at": scan.created_at}
+
+
+def _timestamp(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"invalid scan history timestamp: {value}") from exc
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def _episode_document(
+    episode: _OpenFindingEpisode, resolved_by: ScanHistoryEntry | None
+) -> dict[str, object]:
+    observed_seconds: int | None = None
+    if resolved_by is not None and not episode.left_censored:
+        observed_seconds = round(
+            (_timestamp(resolved_by.created_at) - _timestamp(episode.first_scan.created_at)).total_seconds()
+        )
+        if observed_seconds < 0:
+            raise ValueError("finding history timestamps must be chronological")
+    return {
+        "finding": asdict(episode.finding),
+        "first_observed_scan": _scan_reference(episode.first_scan),
+        "last_present_scan": _scan_reference(episode.last_scan),
+        "resolved_by_scan": _scan_reference(resolved_by) if resolved_by else None,
+        "left_censored": episode.left_censored,
+        "observed_resolution_seconds": observed_seconds,
+    }
+
+
+def _build_finding_timing(
+    observations: list[tuple[ScanHistoryEntry, tuple[StoredFinding, ...]]],
+    scanner: str,
+    target: str,
+) -> dict[str, object]:
+    if len(observations) < 2:
+        raise ValueError(
+            f"at least 2 finding-level scans are required for scanner={scanner!r} target={target!r}"
+        )
+    timestamps = [_timestamp(scan.created_at) for scan, _ in observations]
+    if any(current < previous for previous, current in zip(timestamps, timestamps[1:])):
+        raise ValueError("finding history timestamps must be chronological")
+    active: dict[str, _OpenFindingEpisode] = {}
+    resolved: list[dict[str, object]] = []
+    for observation_index, (scan, findings) in enumerate(observations):
+        current = _finding_map(findings)
+        for fingerprint in sorted(set(active) - set(current)):
+            resolved.append(_episode_document(active.pop(fingerprint), scan))
+        for fingerprint in sorted(current):
+            if fingerprint in active:
+                active[fingerprint].finding = current[fingerprint]
+                active[fingerprint].last_scan = scan
+            else:
+                active[fingerprint] = _OpenFindingEpisode(
+                    finding=current[fingerprint],
+                    first_scan=scan,
+                    last_scan=scan,
+                    left_censored=observation_index == 0,
+                )
+    open_episodes = [_episode_document(active[key], None) for key in sorted(active)]
+    measurable: list[int] = []
+    for episode in resolved:
+        value = episode["observed_resolution_seconds"]
+        if isinstance(value, int):
+            measurable.append(value)
+    mean_seconds = round(sum(measurable) / len(measurable), 3) if measurable else None
+    return {
+        "schema_version": 1,
+        "scanner": scanner,
+        "target": target,
+        "window": {
+            "scan_count": len(observations),
+            "oldest_scan": _scan_reference(observations[0][0]),
+            "latest_scan": _scan_reference(observations[-1][0]),
+        },
+        "summary": {
+            "resolved_episode_count": len(resolved),
+            "open_episode_count": len(open_episodes),
+            "left_censored_episode_count": sum(
+                bool(episode["left_censored"])
+                for episode in [*resolved, *open_episodes]
+            ),
+            "measurable_resolved_count": len(measurable),
+            "mean_observed_resolution_seconds": mean_seconds,
+        },
+        "resolved_episodes": resolved,
+        "open_episodes": open_episodes,
+    }
+
+
+def _run_finding_timing(args: argparse.Namespace) -> int:
+    if not 2 <= args.limit <= 100:
+        raise ValueError("finding timing limit must be between 2 and 100")
+    observations = HistoryStore(args.history_db).list_finding_observations(
+        scanner=args.scanner, target=args.target, limit=args.limit
+    )
+    timing = _build_finding_timing(observations, args.scanner, args.target)
+    if args.output:
+        _write_json_atomic(timing, args.output)
+        print(f"Finding timing written to {args.output}")
+    else:
+        summary = timing["summary"]
+        assert isinstance(summary, dict)
+        print(
+            f"Finding timing: {args.scanner} {args.target} "
+            f"resolved={summary['resolved_episode_count']} "
+            f"open={summary['open_episode_count']} "
+            f"measurable={summary['measurable_resolved_count']} "
+            f"mean_observed_seconds={summary['mean_observed_resolution_seconds']}"
+        )
+    return 0
+
+
 def _run_scan(args: argparse.Namespace) -> int:
     started = perf_counter()
     registry = build_default_registry()
@@ -606,6 +741,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_trends(args)
         if args.command == "finding-changes":
             return _run_finding_changes(args)
+        if args.command == "finding-timing":
+            return _run_finding_timing(args)
         if args.command == "discover" and args.discovery_type == "ecr":
             return _run_ecr_discovery(args)
         if args.command == "batch" and args.batch_type == "ecr":
