@@ -24,6 +24,7 @@ python -m venv /tmp/secscan-wheel-test
 /tmp/secscan-wheel-test/bin/secscan batch ecr --help >/dev/null
 /tmp/secscan-wheel-test/bin/secscan trends --help >/dev/null
 /tmp/secscan-wheel-test/bin/secscan finding-changes --help >/dev/null
+/tmp/secscan-wheel-test/bin/secscan finding-timing --help >/dev/null
 /tmp/secscan-wheel-test/bin/secscan inventory sbom --help >/dev/null
 /tmp/secscan-wheel-test/bin/secscan compare inventory --help >/dev/null
 /tmp/secscan-wheel-test/bin/secscan check inventory --help >/dev/null
