@@ -91,56 +91,61 @@ Delivered exact version-tag validation, verified Python release artifacts, deter
 
 Delivered exact package/license exceptions with required reasons, expirations, strict identity precedence, and deterministic suppression evidence.
 
+### Sprint 21 — Finding-Level History Transitions
+
+Delivered transactional finding observations, safe version 1 database migration, and deterministic latest-transition evidence for exact cohorts.
+
 ## Current sprint
 
-### Sprint 21 — Finding-Level History Transitions
+### Sprint 22 — Bounded Finding Observation Timing
 
 #### Goal
 
-Persist normalized finding identities with completed scans and compare the two latest observations for one exact scanner/target cohort without inferring remediation time.
+Summarize bounded finding presence episodes and measured scan-to-scan resolution intervals while explicitly separating left-censored and still-open observations from measurable resolved episodes.
 
 #### User stories
 
-1. As an operator, I can see which findings are new, resolved, or unchanged between the latest two matching scans.
-2. As an automation author, I can retain deterministic versioned JSON evidence for that transition.
-3. As an existing user, I can migrate a version 1 history database without losing scan records or inventing missing finding data.
-4. As a security owner, comparisons remain bounded to one exact scanner and target.
+1. As an operator, I can see resolved and open finding episodes across a bounded exact-cohort window.
+2. As an analyst, I can calculate a mean only from episodes whose start and confirmed absence were both observed.
+3. As an auditor, I can identify left-censored episodes that are excluded from timing metrics.
+4. As an automation author, I can retain deterministic versioned JSON with scan references and explicit measurement semantics.
 
 #### Planned implementation
 
-- add ordered SQLite migration version 2
-- mark whether each scan recorded finding-level observations
-- store stable existing finding fingerprints and essential normalized fields transactionally
-- reject duplicate fingerprints and roll back the entire scan record
-- add `secscan finding-changes --scanner ... --target ...`
-- select only the two latest finding-enabled scans in the exact cohort
-- classify new, resolved, and unchanged fingerprints deterministically
+- add `secscan finding-timing --scanner ... --target ... --limit 20`
+- select 2–100 newest finding-enabled scans from one exact cohort and restore chronological order
+- begin an episode when a fingerprint appears after an observed absence
+- resolve an episode at the first later scan where the fingerprint is absent
+- treat reappearance as a new episode
+- mark findings already present in the oldest selected scan as left-censored
+- exclude left-censored and open episodes from the observed-resolution mean
+- emit scan references, episode evidence, counts, and mean observed seconds
 - support concise console output and atomic versioned JSON output
-- document migration, privacy, automated/manual tests, and timing limitations
+- document interpretation, caveats, automated tests, and manual procedures
 
 #### Acceptance criteria
 
-- new successful scans persist their normalized finding identities with scan metadata
-- version 1 databases migrate without treating legacy aggregate records as empty scans
-- duplicate fingerprints fail atomically without leaving a scan row
-- exact cohort selection ignores other scanners and targets
-- two finding-enabled observations are required
-- JSON ordering and classification are deterministic
-- zero-finding observations are valid and can resolve all prior findings
-- existing history, show, trends, scan, report, and exit-code behavior remains compatible
+- exact cohort selection and the 2–100 observation bound are enforced
+- resolved, open, reappeared, and zero-finding transitions are classified correctly
+- oldest-window findings are marked left-censored
+- only fully observed resolved episodes contribute to the mean
+- timestamps are parsed as UTC when SQLite values are timezone-naive
+- reversed or malformed timestamps fail rather than producing misleading durations
+- JSON evidence is deterministic and references its bounded scan window
+- existing history, trends, finding changes, scans, reports, and exit codes remain compatible
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- mean/median time to remediation or first-seen claims
-- correlating across different scanner/target cohorts
-- backfilling legacy scan findings from report paths
-- finding search, retention/deletion APIs, scheduling, or remote storage
+- claiming true first-seen, fix time, or service-level compliance
+- labeling the observed interval as authoritative MTTR
+- median, percentile, severity-weighted, or cross-cohort metrics
+- legacy backfill, retention/deletion APIs, scheduling, or remote storage
 
 #### Cost outlook
 
-SQLite remains the only history dependency. Finding rows increase local disk use but introduce no runtime infrastructure or external service; current recurring secscan infrastructure cost remains **$0**.
+Timing is a read-only local SQLite projection and introduces no runtime infrastructure or external service. Current recurring secscan infrastructure cost remains **$0**.
 
 ## Planned feature sprints
 
@@ -249,7 +254,7 @@ Delivered sequential batches of up to 20 explicitly selected immutable ECR inven
 - vulnerability-to-inventory and other cross-source correlation
 - additional private registry authentication
 - container releases, immutable image digests, signatures, and provenance
-- finding episode timing and mean time to remediation
+- richer remediation analytics after scan cadence and censoring are accounted for
 - additional scanner adapters such as Syft and Grype
 - risk scoring, KEV, and EPSS enrichment
 - EC2 inventory or snapshot-based scanning
