@@ -47,6 +47,19 @@ jobs:
       - name: Verify CLI startup
         run: docker run --rm secscan:ci --version
 
+      - name: Validate Docker Compose configuration
+        run: docker compose config --quiet
+
+      - name: Verify Docker Compose service startup
+        run: |
+          docker tag secscan:ci secscan:local
+          docker compose up --no-build --detach --wait
+          curl --fail --silent http://127.0.0.1:8000/healthz
+
+      - name: Stop Docker Compose service
+        if: always()
+        run: docker compose down
+
       - name: Export image for scanning
         run: docker save secscan:ci --output /tmp/secscan-ci.tar
 
