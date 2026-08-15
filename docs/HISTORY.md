@@ -81,6 +81,23 @@ The report classifies stable fingerprints as `new`, `resolved`, or `unchanged` a
 
 Legacy records are not interpreted as zero-finding scans. secscan cannot know whether their old report paths still exist or are unchanged, so it does not backfill them automatically. This latest-transition report also does not claim first-seen time or mean time to remediation; trustworthy episode timing remains a later increment.
 
+## Summarize observed finding timing
+
+Analyze 2–100 newest finding-enabled scans from one exact cohort:
+
+```bash
+secscan finding-timing \
+  --history-db ./reports/secscan.db \
+  --scanner image \
+  --target alpine:3.20 \
+  --limit 20 \
+  --output ./reports/alpine-finding-timing.json
+```
+
+An episode begins when a fingerprint appears after an observed absence and resolves at the first later scan where it is absent. Reappearance starts another episode. A finding already present in the oldest selected scan is `left_censored`: its actual beginning is unknown, so it is excluded from `mean_observed_resolution_seconds`. Open episodes are also excluded.
+
+The measured duration runs from the first scan that observed the finding to the first scan that confirmed its absence. The actual introduction and remediation occurred somewhere between scans. This is scan-cadence-dependent observation evidence, not authoritative first-seen time, fix time, MTTR, or service-level compliance.
+
 ## Disable recording
 
 Use `--no-history` for an individual scan:
@@ -132,8 +149,12 @@ secscan scan image alpine:3.20 --output-dir ./reports/run-2 --history-db ./repor
 secscan trends --history-db ./reports/secscan.db --scanner image --target alpine:3.20 --limit 20
 secscan trends --history-db ./reports/secscan.db --scanner image --target alpine:3.20 --limit 20 --output ./reports/alpine-trend.json
 secscan finding-changes --history-db ./reports/secscan.db --scanner image --target alpine:3.20 --output ./reports/alpine-finding-changes.json
+secscan finding-timing --history-db ./reports/secscan.db --scanner image --target alpine:3.20 --limit 20 --output ./reports/alpine-finding-timing.json
 python -m json.tool ./reports/alpine-trend.json
 python -m json.tool ./reports/alpine-finding-changes.json
+python -m json.tool ./reports/alpine-finding-timing.json
 ```
 
 Confirm the trend series is chronological and exact-cohort. In finding changes, confirm the scan IDs are the two latest matching observations and manually cross-check new, resolved, and unchanged entries against their `secscan.json` reports. Run a third scan against another target and confirm it does not affect the result. Use `--scanner ecr` with the exact immutable digest URI for authenticated ECR history.
+
+For a controlled timing test, scan two different SBOM revisions from the same input path: copy the first revision into that path and scan it, replace it with the second revision and scan again, then repeat with a revision that removes and later restores one finding. Keep one history database and the exact same target path. Confirm the report creates separate resolved and reappeared episodes, excludes a finding present in the oldest window from the mean, and treats an empty finding scan as a valid absence observation.
