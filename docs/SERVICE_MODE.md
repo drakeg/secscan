@@ -4,6 +4,70 @@ Sprint 9 adds a local long-running API without changing the standalone CLI.
 
 ## Start the service
 
+### Docker Compose quick start
+
+From the repository root, build and run the local service in the foreground:
+
+```bash
+docker compose up --build
+```
+
+Or start it in the background and wait until its health check passes:
+
+```bash
+docker compose up --build --wait
+```
+
+Then verify the API:
+
+```bash
+curl --fail http://127.0.0.1:8000/healthz
+curl --fail http://127.0.0.1:8000/api/v1/jobs
+```
+
+OpenAPI documentation is at <http://127.0.0.1:8000/docs>. The repository is available read-only inside the service at `/workspace`, so a local filesystem smoke scan can be submitted with:
+
+```bash
+curl --fail -X POST http://127.0.0.1:8000/api/v1/jobs \
+  -H 'content-type: application/json' \
+  -d '{"scanner":"filesystem","target":"/workspace","fail_on":"NONE","timeout":300}'
+```
+
+Copy the returned `id`, inspect it until terminal, and download its normalized report:
+
+```bash
+curl --fail http://127.0.0.1:8000/api/v1/jobs/JOB_ID
+curl --fail http://127.0.0.1:8000/api/v1/jobs/JOB_ID/artifacts/secscan.json \
+  --output ./secscan.compose.json
+python -m json.tool ./secscan.compose.json
+```
+
+The first scan downloads the Trivy vulnerability database and can take longer. Later scans reuse the named cache volume.
+
+Stop containers and the private Compose network while retaining reports, job metadata, and cache:
+
+```bash
+docker compose down
+```
+
+Start again with `docker compose up --wait` and query the same job ID to verify persistence. To follow logs, use `docker compose logs --follow service`.
+
+The optional `SECSCAN_PORT` and `SECSCAN_WORKERS` environment variables override the host port and bounded worker count:
+
+```bash
+SECSCAN_PORT=8080 SECSCAN_WORKERS=1 docker compose up --build --wait
+```
+
+Deleting the named volumes permanently removes Compose-managed reports, SQLite job metadata, and the Trivy cache. Use this only when a full reset is intended:
+
+```bash
+docker compose down --volumes
+```
+
+The Compose service binds only to `127.0.0.1`, runs as non-root with all Linux capabilities dropped, uses a read-only root filesystem, and mounts the repository read-only. It does not mount the Docker socket. Do not change the bind address or expose the unauthenticated API to an untrusted network.
+
+### Direct startup
+
 ```bash
 secscan-service --host 0.0.0.0 --port 8000 --workers 2 --job-root ./reports/jobs
 ```
@@ -69,3 +133,14 @@ Completed, failed, and cancelled records remain queryable after restart. Jobs fo
 ## Cost
 
 Service mode uses the existing local scanner, filesystem, and SQLite capabilities. Current and projected recurring infrastructure cost remains **$0**.
+
+## Local validation procedure
+
+Validate configuration and the automated contract:
+
+```bash
+docker compose config --quiet
+pytest tests/test_compose.py tests/test_service.py
+```
+
+Then run the Compose quick start, health, filesystem job, artifact download, restart-persistence, and shutdown commands above. Confirm `docker compose ps` reports the service as healthy, the submitted job reaches `completed`, `secscan.compose.json` parses successfully, and the job remains queryable after container recreation.
