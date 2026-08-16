@@ -7,18 +7,22 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePath
+import secrets
 import sqlite3
 from threading import Lock
-from typing import Callable, Literal, Sequence
+from typing import Any, Awaitable, Callable, Literal, Sequence
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 JobStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 ScanRunner = Callable[[list[str]], int]
 ARTIFACT_MANIFEST_NAME = "artifacts.json"
+MIN_API_TOKEN_LENGTH = 32
+MAX_API_TOKEN_LENGTH = 4096
 ARTIFACT_PATHS = {
     ARTIFACT_MANIFEST_NAME: Path(ARTIFACT_MANIFEST_NAME),
     "trivy.json": Path("trivy.json"),
@@ -366,6 +370,19 @@ def _timestamp() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _validated_api_token(api_token: str | None) -> str | None:
+    if api_token is None or api_token == "":
+        return None
+    if (
+        len(api_token) < MIN_API_TOKEN_LENGTH
+        or len(api_token) > MAX_API_TOKEN_LENGTH
+        or not api_token.isascii()
+        or any(character.isspace() for character in api_token)
+    ):
+        raise ValueError("API token must contain 32-4096 non-whitespace ASCII characters")
+    return api_token
+
+
 def create_app(
     *,
     job_root: Path = Path("/reports/jobs"),
@@ -373,11 +390,13 @@ def create_app(
     job_database: Path | None = None,
     runner: ScanRunner | None = None,
     allowed_input_roots: Sequence[Path] = (),
+    api_token: str | None = None,
 ) -> FastAPI:
     if runner is None:
         from secscan.cli import main
 
         runner = main
+    validated_api_token = _validated_api_token(api_token)
     manager: JobManager | None = None
     manager_lock = Lock()
 
@@ -395,6 +414,46 @@ def create_app(
             return manager
 
     app = FastAPI(title="secscan API", version="1.0.0")
+
+    @app.middleware("http")
+    async def authenticate(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        protected_path = request.url.path.startswith("/api/v1/")
+        if validated_api_token is not None and protected_path:
+            authorization = request.headers.get("authorization", "")
+            scheme, separator, credential = authorization.partition(" ")
+            authenticated = (
+                separator == " "
+                and scheme.lower() == "bearer"
+                and credential.isascii()
+                and secrets.compare_digest(credential, validated_api_token)
+            )
+            if not authenticated:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Not authenticated"},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        return await call_next(request)
+
+    if validated_api_token is not None:
+
+        def authenticated_openapi() -> dict[str, Any]:
+            if app.openapi_schema is not None:
+                return app.openapi_schema
+            schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
+            security_schemes = schema.setdefault("components", {}).setdefault("securitySchemes", {})
+            security_schemes["BearerAuth"] = {"type": "http", "scheme": "bearer"}
+            for path, operations in schema["paths"].items():
+                if path.startswith("/api/v1/"):
+                    for operation in operations.values():
+                        if isinstance(operation, dict):
+                            operation["security"] = [{"BearerAuth": []}]
+            app.openapi_schema = schema
+            return schema
+
+        app.openapi = authenticated_openapi  # type: ignore[method-assign]
 
     @app.get("/healthz")
     def health() -> dict[str, str]:

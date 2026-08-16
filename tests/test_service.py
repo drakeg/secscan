@@ -7,6 +7,7 @@ from threading import Event
 from time import sleep, time
 
 from fastapi.testclient import TestClient
+import pytest
 
 from secscan.service import JobManager, JobRecord, JobStore, ScanSubmission, create_app
 
@@ -14,6 +15,78 @@ from secscan.service import JobManager, JobRecord, JobStore, ScanSubmission, cre
 def test_health_endpoint(tmp_path: Path) -> None:
     client = TestClient(create_app(job_root=tmp_path, runner=lambda _args: 0))
     assert client.get("/healthz").json() == {"status": "ok"}
+
+
+def test_api_token_protects_api_but_not_health_or_documentation(tmp_path: Path) -> None:
+    token = "a" * 32
+    client = TestClient(create_app(job_root=tmp_path, runner=lambda _args: 0, api_token=token))
+
+    assert client.get("/healthz").status_code == 200
+    for path in ("/api/v1/jobs",):
+        missing = client.get(path)
+        incorrect = client.get(path, headers={"Authorization": f"Bearer {'b' * 32}"})
+        malformed = client.get(path, headers={"Authorization": token})
+        for response in (missing, incorrect, malformed):
+            assert response.status_code == 401
+            assert response.json() == {"detail": "Not authenticated"}
+            assert response.headers["www-authenticate"] == "Bearer"
+
+        authenticated = client.get(path, headers={"Authorization": f"Bearer {token}"})
+        assert authenticated.status_code == 200
+
+    assert client.get("/docs").status_code == 200
+    assert client.get("/redoc").status_code == 200
+    openapi = client.get("/openapi.json")
+    assert openapi.status_code == 200
+    assert openapi.json()["components"]["securitySchemes"]["BearerAuth"] == {
+        "type": "http",
+        "scheme": "bearer",
+    }
+    assert openapi.json()["paths"]["/api/v1/jobs"]["get"]["security"] == [{"BearerAuth": []}]
+
+
+def test_empty_api_token_preserves_unauthenticated_behavior(tmp_path: Path) -> None:
+    client = TestClient(create_app(job_root=tmp_path, runner=lambda _args: 0, api_token=""))
+    assert client.get("/api/v1/jobs").status_code == 200
+
+
+def test_api_token_protects_submission_status_and_artifact_download(tmp_path: Path) -> None:
+    token = "a" * 32
+    headers = {"Authorization": f"Bearer {token}"}
+
+    def runner(args: list[str]) -> int:
+        output_dir = Path(args[args.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True)
+        (output_dir / "secscan.json").write_text("{}", encoding="utf-8")
+        return 0
+
+    client = TestClient(create_app(job_root=tmp_path, runner=runner, api_token=token))
+    submitted = client.post(
+        "/api/v1/jobs",
+        json={"scanner": "image", "target": "alpine:3.20"},
+        headers=headers,
+    )
+    assert submitted.status_code == 202
+    job_id = submitted.json()["id"]
+    for _ in range(100):
+        status = client.get(f"/api/v1/jobs/{job_id}", headers=headers)
+        if status.json()["status"] == "completed":
+            break
+        sleep(0.01)
+
+    artifact_path = f"/api/v1/jobs/{job_id}/artifacts/secscan.json"
+    assert client.get(artifact_path).status_code == 401
+    assert client.get(artifact_path, headers=headers).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "token",
+    ["short", "a" * 4097, "a" * 31 + " ", "a" * 31 + "é"],
+)
+def test_invalid_api_token_is_rejected_without_disclosure(tmp_path: Path, token: str) -> None:
+    with pytest.raises(ValueError, match="API token must contain") as exc_info:
+        create_app(job_root=tmp_path, runner=lambda _args: 0, api_token=token)
+    assert token not in str(exc_info.value)
 
 
 def test_job_lifecycle_and_artifact_download(tmp_path: Path) -> None:

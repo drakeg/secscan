@@ -19,6 +19,8 @@ services:
       - /workspace
     ports:
       - "127.0.0.1:${SECSCAN_PORT:-8000}:8000"
+    environment:
+      SECSCAN_API_TOKEN: "${SECSCAN_API_TOKEN:-}"
     volumes:
       - secscan-reports:/reports
       - secscan-cache:/cache

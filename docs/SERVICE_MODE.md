@@ -78,6 +78,34 @@ The optional `SECSCAN_PORT` and `SECSCAN_WORKERS` environment variables override
 SECSCAN_PORT=8080 SECSCAN_WORKERS=1 docker compose up --build --wait
 ```
 
+### Optional local bearer token
+
+The default remains unauthenticated and localhost-only. To require a bearer token for API and documentation routes, generate a temporary token and pass it to Compose:
+
+```bash
+export SECSCAN_API_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+docker compose up --build --wait
+```
+
+The health check and API documentation remain public. API routes require the token:
+
+```bash
+curl --fail http://127.0.0.1:8000/healthz
+curl --fail http://127.0.0.1:8000/openapi.json --output /tmp/secscan-openapi.json
+curl --include http://127.0.0.1:8000/api/v1/jobs
+curl --fail http://127.0.0.1:8000/api/v1/jobs \
+  -H "Authorization: Bearer ${SECSCAN_API_TOKEN}"
+```
+
+The unauthenticated request should return `401` with `WWW-Authenticate: Bearer`; the authenticated request should return the job list. Include the same header when submitting jobs, polling status, or downloading artifacts. The interactive `/docs` page advertises bearer authorization so you can enter the token for its API calls. Stop the stack and remove the token from the shell when finished:
+
+```bash
+docker compose down
+unset SECSCAN_API_TOKEN
+```
+
+Tokens must contain 32–4096 non-whitespace ASCII characters. Compose passes the value as a container environment variable rather than a command argument. A user with access to the local Docker daemon can inspect container configuration and should already be considered fully trusted. This control reduces accidental local access; it does not replace TLS or make the service safe for an untrusted network.
+
 Deleting the named volumes permanently removes Compose-managed reports, SQLite job metadata, and the Trivy cache. Use this only when a full reset is intended:
 
 ```bash
@@ -99,6 +127,8 @@ Direct startup remains unrestricted for backward compatibility. To apply the sam
 ```bash
 secscan-service --allowed-input-root ./source --allowed-input-root ./policies
 ```
+
+Direct startup also reads optional bearer authentication from `SECSCAN_API_TOKEN` using the same validation and route boundaries as Compose.
 
 Docker example:
 
@@ -148,7 +178,7 @@ Cancellation of a running, completed, failed, or already cancelled job returns `
 
 ## Security boundaries
 
-This first increment is intended for trusted local networks and single-operator deployments. It does not provide authentication, authorization, uploads, remote target retrieval, tenant isolation, TLS termination, or distributed workers. Do not expose it directly to an untrusted network.
+This service is intended for trusted local networks and single-operator deployments. Optional bearer authentication is a single shared local secret; it does not provide users, authorization, tenant isolation, TLS termination, token lifecycle management, or distributed workers. Do not expose the service directly to an untrusted network.
 
 Artifact names are allow-listed and each job receives a UUID-scoped output directory. Worker concurrency is bounded by `--workers`.
 
@@ -174,6 +204,8 @@ pytest tests/test_compose.py tests/test_service.py tests/test_service_cli.py
 ```
 
 Then run the Compose quick start, health, filesystem job, report and manifest downloads, digest verification, restart-persistence, and shutdown commands above. Confirm `docker compose ps` reports the service as healthy, the submitted job reaches `completed`, both JSON files parse successfully, the digest matches, and the job remains queryable after container recreation.
+
+Repeat the optional-token startup and three `curl` checks above. Confirm health remains public, the missing-token request returns `401`, the authenticated request succeeds, and `docker compose down` followed by `unset SECSCAN_API_TOKEN` restores a clean shell and stopped stack.
 
 Verify the input boundary while Compose is running. An allowed submission returns `202`; a path outside `/workspace` returns `422` and creates no job:
 
