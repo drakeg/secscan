@@ -107,53 +107,59 @@ Delivered a secure, persistent, one-command Docker Compose environment for local
 
 Delivered configurable service input roots, Compose confinement to `/workspace`, and traversal and symlink-escape rejection before job persistence.
 
+### Sprint 25 — Service Artifact Integrity Manifests
+
+Delivered deterministic service artifact manifests with byte sizes, SHA-256 digests, atomic persistence, and local Compose verification procedures.
+
 ## Current sprint
 
-### Sprint 25 — Service Artifact Integrity Manifests
+### Sprint 26 — Optional Local API Bearer Authentication
 
 #### Goal
 
-Produce a deterministic integrity manifest for every service job that creates downloadable artifacts.
+Add opt-in bearer-token protection for local service API routes without changing the zero-configuration Compose workflow.
 
 #### User stories
 
-1. As a local evaluator, I can download `artifacts.json` after a Compose scan.
-2. As an operator, I can see the exact allow-listed artifacts, sizes, and SHA-256 digests produced by a job.
-3. As a consumer, I can verify a downloaded report using only Python's standard library.
-4. As a security owner, manifests never enumerate unknown files or paths outside the job directory.
+1. As a local operator, I can set `SECSCAN_API_TOKEN` and require a bearer token for API access.
+2. As a Compose evaluator, I can still run `docker compose up --build` without configuring authentication.
+3. As a health monitor, I can reach `/healthz` without credentials while protected routes remain inaccessible.
+4. As a security owner, token comparisons are constant-time and tokens are not persisted in job metadata, artifacts, or application logs.
 
 #### Planned implementation
 
-- add a versioned deterministic `artifacts.json` document to the service artifact allow-list
-- hash only existing regular files from the server-owned artifact map
-- record artifact name, byte size, and lowercase SHA-256 digest in stable name order
-- write the manifest atomically after scanner execution and before terminal job persistence
-- retain manifests with the existing report volume and job directories
-- document download, inspection, digest verification, and Compose test procedures
+- accept an optional API token from `SECSCAN_API_TOKEN`
+- reject configured tokens shorter than 32 characters, longer than 4096 characters, or containing whitespace
+- protect `/api/v1/*` with the Bearer authorization scheme
+- keep OpenAPI documentation public and advertise the bearer scheme so local users can authorize requests in the interactive docs
+- keep `/healthz` public for local Compose health checks
+- use constant-time credential comparison and uniform `401` responses with `WWW-Authenticate: Bearer`
+- preserve unauthenticated behavior when the token is absent or empty
+- document token generation, authenticated Compose startup, API calls, shutdown, and local tests
 
 #### Acceptance criteria
 
-- completed and scanner-failed jobs with artifacts expose `artifacts.json`
-- each entry contains exactly `name`, `size_bytes`, and `sha256`
-- entries are deterministic, sorted, and limited to known artifact names
-- the manifest does not hash or list itself
-- a job that produces no artifacts receives an empty manifest
-- manifest-write failures mark the job failed with an explicit error
-- existing artifact paths, job APIs, scanners, CLI behavior, and Compose startup remain compatible
-- automated tests cover digest accuracy, ordering, empty output, failure behavior, and downloads
+- valid bearer credentials allow job and artifact API access
+- missing, malformed, and incorrect credentials receive the same `401` response
+- `/healthz` and local API documentation remain public with authentication enabled
+- unset or empty configuration preserves all current local behavior
+- invalid configured tokens fail service startup without revealing the token
+- Compose passes the optional token through the environment without adding it to command arguments
+- existing jobs, artifacts, scanners, persistence, CLI behavior, and simple Compose startup remain compatible
+- automated tests cover protected routes, health access, credential failures, validation, and Compose propagation
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- signing, provenance, transparency logs, or remote attestations
-- archival bundles, compression, upload, deletion, or retention policies
-- checksums for non-service CLI output directories
-- authentication, authorization, TLS, or untrusted-network exposure
+- users, roles, permissions, scopes, sessions, token issuance, rotation, or revocation
+- TLS termination, ingress, internet exposure, or multi-tenant isolation
+- secret managers, encrypted configuration, or external identity providers
+- changing the default localhost-only Compose bind
 
 #### Cost outlook
 
-SHA-256 hashing uses Python's standard library and existing local storage. Current and projected recurring infrastructure cost remains **$0**.
+Bearer validation uses Python's standard library and introduces no external identity or secret service. Current and projected recurring infrastructure cost remains **$0**.
 
 ## Planned feature sprints
 

@@ -310,6 +310,8 @@ The service stores job metadata in SQLite and report artifacts in UUID-scoped di
 
 The supported Docker Compose evaluation stack runs this service as the image's non-root user, binds the API only to host loopback, drops all capabilities, makes the container root filesystem read-only, and mounts only named report/cache volumes plus the repository at read-only `/workspace`. Service-side resolved-path validation limits local targets, policies, and baselines to `/workspace`; image references remain non-path inputs. A Python standard-library health check avoids adding runtime tools. Compose never mounts the Docker socket and introduces no separate database, queue, or cloud dependency.
 
+Optional local bearer authentication protects API routes with one operator-supplied shared token while leaving `/healthz` and local API documentation public. The OpenAPI document advertises the bearer scheme for interactive local testing. The service validates token shape at startup and uses constant-time comparison. Compose passes the token through the container environment, not command arguments; local Docker administrators remain trusted. This is defense in depth for a localhost service, not user authorization, tenant isolation, TLS, or an internet-exposure boundary.
+
 ### AWS discovery boundary
 
 AWS discovery is a read-only inventory adapter outside the scanner registry. Explicit YAML configuration bounds account, region, and ECR repository access. The adapter verifies same-account identities or assumes one exact cross-account role, then maps paginated `DescribeImages` metadata into a versioned local JSON artifact. Inventory discovery does not imply image authentication, pulling, or scanning.

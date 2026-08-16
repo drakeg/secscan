@@ -36,3 +36,19 @@ def test_service_cli_propagates_repeated_allowed_input_roots(
     service_cli.main()
 
     assert captured["allowed_input_roots"] == [first, second]
+
+
+def test_service_cli_propagates_api_token(monkeypatch: MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        secscan.service,
+        "create_app",
+        lambda **kwargs: captured.update(kwargs) or object(),
+    )
+    monkeypatch.setattr(service_cli.uvicorn, "run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(sys, "argv", ["secscan-service"])
+    monkeypatch.setenv("SECSCAN_API_TOKEN", "a" * 32)
+
+    service_cli.main()
+
+    assert captured["api_token"] == "a" * 32

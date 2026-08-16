@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import uvicorn
@@ -37,6 +38,7 @@ def main() -> None:
             job_database=args.job_database,
             max_workers=args.workers,
             allowed_input_roots=args.allowed_input_root,
+            api_token=os.environ.get("SECSCAN_API_TOKEN"),
         ),
         host=args.host,
         port=args.port,
