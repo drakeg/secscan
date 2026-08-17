@@ -111,55 +111,60 @@ Delivered configurable service input roots, Compose confinement to `/workspace`,
 
 Delivered deterministic service artifact manifests with byte sizes, SHA-256 digests, atomic persistence, and local Compose verification procedures.
 
+### Sprint 26 — Optional Local API Bearer Authentication
+
+Delivered opt-in shared bearer protection for local API routes with constant-time comparison, public health and documentation routes, and unchanged zero-configuration Compose behavior.
+
 ## Current sprint
 
-### Sprint 26 — Optional Local API Bearer Authentication
+### Sprint 27 — Artifact Discovery and Conditional Downloads
 
 #### Goal
 
-Add opt-in bearer-token protection for local service API routes without changing the zero-configuration Compose workflow.
+Make service artifacts discoverable and efficiently revalidatable through standard HTTP semantics backed by the existing integrity manifest.
 
 #### User stories
 
-1. As a local operator, I can set `SECSCAN_API_TOKEN` and require a bearer token for API access.
-2. As a Compose evaluator, I can still run `docker compose up --build` without configuring authentication.
-3. As a health monitor, I can reach `/healthz` without credentials while protected routes remain inaccessible.
-4. As a security owner, token comparisons are constant-time and tokens are not persisted in job metadata, artifacts, or application logs.
+1. As an API consumer, I can discover a job's artifact manifest at a stable collection endpoint.
+2. As a downloader, I receive a strong ETag derived from the recorded SHA-256 digest.
+3. As an automation client, I can use `HEAD` and `If-None-Match` without downloading an unchanged artifact body.
+4. As a legacy-job consumer, I can still download artifacts that predate manifests.
 
 #### Planned implementation
 
-- accept an optional API token from `SECSCAN_API_TOKEN`
-- reject configured tokens shorter than 32 characters, longer than 4096 characters, or containing whitespace
-- protect `/api/v1/*` with the Bearer authorization scheme
-- keep OpenAPI documentation public and advertise the bearer scheme so local users can authorize requests in the interactive docs
-- keep `/healthz` public for local Compose health checks
-- use constant-time credential comparison and uniform `401` responses with `WWW-Authenticate: Bearer`
-- preserve unauthenticated behavior when the token is absent or empty
-- document token generation, authenticated Compose startup, API calls, shutdown, and local tests
+- add `GET /api/v1/jobs/{job_id}/artifacts` as the stable manifest discovery endpoint
+- add `HEAD` support to individual artifact downloads
+- attach strong quoted ETags using manifest SHA-256 values
+- hash the small manifest itself to provide its ETag without self-listing
+- honor exact, weak, comma-separated, and wildcard `If-None-Match` values with `304`
+- preserve ordinary downloads without ETags when a legacy or invalid manifest is unavailable
+- retain bearer protection automatically through the existing `/api/v1/*` boundary
+- document discovery, header inspection, conditional requests, and local Compose tests
 
 #### Acceptance criteria
 
-- valid bearer credentials allow job and artifact API access
-- missing, malformed, and incorrect credentials receive the same `401` response
-- `/healthz` and local API documentation remain public with authentication enabled
-- unset or empty configuration preserves all current local behavior
-- invalid configured tokens fail service startup without revealing the token
-- Compose passes the optional token through the environment without adding it to command arguments
-- existing jobs, artifacts, scanners, persistence, CLI behavior, and simple Compose startup remain compatible
-- automated tests cover protected routes, health access, credential failures, validation, and Compose propagation
+- the collection endpoint returns the same schema-versioned manifest available as `artifacts.json`
+- manifested artifact `GET` and `HEAD` responses include the same strong ETag
+- successful `HEAD` returns download headers and no response body
+- matching `If-None-Match` requests return `304`, the ETag, and no body
+- non-matching conditions return the normal artifact response
+- unknown jobs and artifacts retain `404` behavior
+- legacy artifacts without a valid manifest remain downloadable without an invented digest
+- optional bearer authentication protects all new endpoints without special cases
+- automated tests cover discovery, ETags, HEAD, conditional variants, legacy fallback, and authentication
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- users, roles, permissions, scopes, sessions, token issuance, rotation, or revocation
-- TLS termination, ingress, internet exposure, or multi-tenant isolation
-- secret managers, encrypted configuration, or external identity providers
-- changing the default localhost-only Compose bind
+- artifact mutation, deletion, archival, compression, upload, or retention policies
+- ranges, resumable downloads, remote storage, CDN integration, or cache infrastructure
+- signatures, provenance, attestations, or proof of origin
+- changing authentication, TLS, or localhost-only Compose boundaries
 
 #### Cost outlook
 
-Bearer validation uses Python's standard library and introduces no external identity or secret service. Current and projected recurring infrastructure cost remains **$0**.
+ETag and conditional-request handling use existing local manifests and Python's standard library. Current and projected recurring infrastructure cost remains **$0**.
 
 ## Planned feature sprints
 

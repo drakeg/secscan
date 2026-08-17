@@ -150,7 +150,9 @@ OpenAPI documentation is available at `/docs` while the service is running.
 - `GET /api/v1/jobs`
 - `GET /api/v1/jobs/{job_id}`
 - `DELETE /api/v1/jobs/{job_id}`
+- `GET /api/v1/jobs/{job_id}/artifacts`
 - `GET /api/v1/jobs/{job_id}/artifacts/{name}`
+- `HEAD /api/v1/jobs/{job_id}/artifacts/{name}`
 
 Submit a scan:
 
@@ -184,6 +186,26 @@ Artifact names are allow-listed and each job receives a UUID-scoped output direc
 
 After scanner execution, the service hashes only existing regular files from its constant artifact allow-list. `artifacts.json` uses schema version 1, stable artifact-name ordering, byte sizes, and lowercase SHA-256 digests. The manifest does not include itself and is written atomically before the terminal job state is persisted. It is integrity evidence for transport or storage verification, not a signature or proof of origin.
 
+The manifest is also discoverable without knowing its filename:
+
+```bash
+curl --fail http://127.0.0.1:8000/api/v1/jobs/JOB_ID/artifacts \
+  --output ./artifacts.discovered.json
+```
+
+Manifested artifact downloads include a strong ETag derived from the recorded SHA-256 digest. Inspect headers without downloading the body, then make a conditional request:
+
+```bash
+curl --fail --head \
+  http://127.0.0.1:8000/api/v1/jobs/JOB_ID/artifacts/secscan.json
+
+curl --include \
+  -H 'If-None-Match: "sha256-DIGEST_FROM_ETAG"' \
+  http://127.0.0.1:8000/api/v1/jobs/JOB_ID/artifacts/secscan.json
+```
+
+A matching condition returns `304 Not Modified` with no body. With bearer authentication enabled, include the same `Authorization` header used for other API calls. Legacy artifacts without a valid manifest remain downloadable but do not receive an invented ETag.
+
 ## Persistence
 
 Generated reports remain on disk under the configured job root. Job metadata is stored in `<job-root>/jobs.db` by default. Use `--job-database` to select another SQLite path; keep it on persistent storage when running in a disposable container.
@@ -204,6 +226,8 @@ pytest tests/test_compose.py tests/test_service.py tests/test_service_cli.py
 ```
 
 Then run the Compose quick start, health, filesystem job, report and manifest downloads, digest verification, restart-persistence, and shutdown commands above. Confirm `docker compose ps` reports the service as healthy, the submitted job reaches `completed`, both JSON files parse successfully, the digest matches, and the job remains queryable after container recreation.
+
+Call the artifact collection endpoint and compare its JSON with the downloaded `artifacts.json`. Use the `HEAD` and conditional commands above with the returned ETag. Confirm `HEAD` has no body and the matching conditional request returns `304` with no body.
 
 Repeat the optional-token startup and three `curl` checks above. Confirm health remains public, the missing-token request returns `401`, the authenticated request succeeds, and `docker compose down` followed by `unset SECSCAN_API_TOKEN` restores a clean shell and stopped stack.
 

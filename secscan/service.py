@@ -301,17 +301,12 @@ class JobManager:
             artifact = self.artifact_path(record, name)
             if artifact is None or not artifact.is_file():
                 continue
-            digest = hashlib.sha256()
-            size_bytes = 0
-            with artifact.open("rb") as artifact_file:
-                for chunk in iter(lambda: artifact_file.read(1024 * 1024), b""):
-                    digest.update(chunk)
-                    size_bytes += len(chunk)
+            digest, size_bytes = _hash_file(artifact)
             artifacts.append(
                 {
                     "name": name,
                     "size_bytes": size_bytes,
-                    "sha256": digest.hexdigest(),
+                    "sha256": digest,
                 }
             )
         manifest = {
@@ -322,6 +317,37 @@ class JobManager:
         temporary = job_dir / ".artifacts.json.tmp"
         temporary.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         temporary.replace(job_dir / ARTIFACT_PATHS[ARTIFACT_MANIFEST_NAME])
+
+    def artifact_etag(self, record: JobRecord, artifact_name: str) -> str | None:
+        artifact = self.artifact_path(record, artifact_name)
+        if artifact is None or not artifact.is_file():
+            return None
+        if artifact_name == ARTIFACT_MANIFEST_NAME:
+            digest, _size_bytes = _hash_file(artifact)
+            return _strong_etag(digest)
+        manifest_path = self.artifact_path(record, ARTIFACT_MANIFEST_NAME)
+        if manifest_path is None or not manifest_path.is_file():
+            return None
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if manifest.get("schema_version") != 1 or manifest.get("job_id") != record.id:
+                return None
+            for item in manifest.get("artifacts", []):
+                if not isinstance(item, dict) or item.get("name") != artifact_name:
+                    continue
+                manifest_digest = item.get("sha256")
+                size_bytes = item.get("size_bytes")
+                if (
+                    isinstance(manifest_digest, str)
+                    and len(manifest_digest) == 64
+                    and all(character in "0123456789abcdef" for character in manifest_digest)
+                    and isinstance(size_bytes, int)
+                    and size_bytes == artifact.stat().st_size
+                ):
+                    return _strong_etag(manifest_digest)
+        except (OSError, UnicodeError, json.JSONDecodeError, AttributeError):
+            return None
+        return None
 
     def _run(self, job_id: str, request: ScanSubmission) -> None:
         with self._lock:
@@ -368,6 +394,34 @@ class JobManager:
 
 def _timestamp() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def _hash_file(path: Path) -> tuple[str, int]:
+    digest = hashlib.sha256()
+    size_bytes = 0
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+            size_bytes += len(chunk)
+    return digest.hexdigest(), size_bytes
+
+
+def _strong_etag(digest: str) -> str:
+    return f'"sha256-{digest}"'
+
+
+def _if_none_match_matches(header: str | None, etag: str) -> bool:
+    if header is None:
+        return False
+    for candidate in header.split(","):
+        candidate = candidate.strip()
+        if candidate == "*":
+            return True
+        if candidate.startswith("W/"):
+            candidate = candidate[2:].strip()
+        if candidate == etag:
+            return True
+    return False
 
 
 def _validated_api_token(api_token: str | None) -> str | None:
@@ -492,8 +546,7 @@ def create_app(
             raise HTTPException(status_code=404, detail="job not found")
         return asdict(record)
 
-    @app.get("/api/v1/jobs/{job_id}/artifacts/{name}")
-    def get_artifact(job_id: str, name: str) -> FileResponse:
+    def artifact_response(job_id: str, name: str, request: Request) -> Response:
         manager = get_manager()
         record = manager.get(job_id)
         if record is None:
@@ -501,7 +554,28 @@ def create_app(
         artifact = manager.artifact_path(record, name)
         if artifact is None or not artifact.is_file():
             raise HTTPException(status_code=404, detail="artifact not found")
-        return FileResponse(artifact)
+        etag = manager.artifact_etag(record, name)
+        headers = {"Cache-Control": "private, no-cache"}
+        if etag is not None:
+            headers["ETag"] = etag
+            if _if_none_match_matches(request.headers.get("if-none-match"), etag):
+                return Response(status_code=304, headers=headers)
+        response = FileResponse(artifact, stat_result=artifact.stat(), headers=headers)
+        if etag is None:
+            del response.headers["etag"]
+        return response
+
+    @app.get("/api/v1/jobs/{job_id}/artifacts")
+    def list_artifacts(job_id: str, request: Request) -> Response:
+        return artifact_response(job_id, ARTIFACT_MANIFEST_NAME, request)
+
+    @app.get("/api/v1/jobs/{job_id}/artifacts/{name}")
+    def get_artifact(job_id: str, name: str, request: Request) -> Response:
+        return artifact_response(job_id, name, request)
+
+    @app.head("/api/v1/jobs/{job_id}/artifacts/{name}")
+    def head_artifact(job_id: str, name: str, request: Request) -> Response:
+        return artifact_response(job_id, name, request)
 
     return app
 

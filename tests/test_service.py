@@ -77,6 +77,8 @@ def test_api_token_protects_submission_status_and_artifact_download(tmp_path: Pa
     artifact_path = f"/api/v1/jobs/{job_id}/artifacts/secscan.json"
     assert client.get(artifact_path).status_code == 401
     assert client.get(artifact_path, headers=headers).status_code == 200
+    assert client.get(f"/api/v1/jobs/{job_id}/artifacts").status_code == 401
+    assert client.get(f"/api/v1/jobs/{job_id}/artifacts", headers=headers).status_code == 200
 
 
 @pytest.mark.parametrize(
@@ -126,6 +128,67 @@ def test_job_lifecycle_and_artifact_download(tmp_path: Path) -> None:
             }
         ],
     }
+    expected_etag = f'"sha256-{manifest["artifacts"][0]["sha256"]}"'
+    assert artifact.headers["etag"] == expected_etag
+    assert artifact.headers["cache-control"] == "private, no-cache"
+
+    discovered = client.get(f"/api/v1/jobs/{job_id}/artifacts")
+    assert discovered.status_code == 200
+    assert discovered.json() == manifest
+    assert discovered.headers["etag"].startswith('"sha256-')
+
+    head = client.head(f"/api/v1/jobs/{job_id}/artifacts/secscan.json")
+    assert head.status_code == 200
+    assert head.content == b""
+    assert head.headers["etag"] == expected_etag
+    assert int(head.headers["content-length"]) == len(report_bytes)
+
+    for condition in (
+        expected_etag,
+        f"W/{expected_etag}",
+        f'"other", {expected_etag}',
+        "*",
+    ):
+        conditional = client.get(
+            f"/api/v1/jobs/{job_id}/artifacts/secscan.json",
+            headers={"If-None-Match": condition},
+        )
+        assert conditional.status_code == 304
+        assert conditional.content == b""
+        assert conditional.headers["etag"] == expected_etag
+
+    changed = client.get(
+        f"/api/v1/jobs/{job_id}/artifacts/secscan.json",
+        headers={"If-None-Match": '"different"'},
+    )
+    assert changed.status_code == 200
+    assert changed.content == report_bytes
+
+
+def test_legacy_artifact_without_manifest_remains_downloadable_without_etag(tmp_path: Path) -> None:
+    job_id = "legacy-job"
+    output_dir = tmp_path / job_id
+    output_dir.mkdir()
+    (output_dir / "secscan.json").write_text("{}", encoding="utf-8")
+    JobStore(tmp_path / "jobs.db").save(
+        JobRecord(
+            id=job_id,
+            status="completed",
+            scanner="image",
+            target="alpine:3.20",
+            output_dir=str(output_dir),
+            created_at="2026-08-16T00:00:00+00:00",
+            completed_at="2026-08-16T00:00:01+00:00",
+            exit_code=0,
+        )
+    )
+    client = TestClient(create_app(job_root=tmp_path, runner=lambda _args: 0))
+
+    artifact = client.get(f"/api/v1/jobs/{job_id}/artifacts/secscan.json")
+    assert artifact.status_code == 200
+    assert artifact.json() == {}
+    assert "etag" not in artifact.headers
+    assert client.get(f"/api/v1/jobs/{job_id}/artifacts").status_code == 404
 
 
 def test_policy_failure_is_completed_job(tmp_path: Path) -> None:
@@ -234,6 +297,8 @@ def test_service_allows_spdx_artifact_download(tmp_path: Path) -> None:
 def test_unknown_job_returns_404(tmp_path: Path) -> None:
     client = TestClient(create_app(job_root=tmp_path, runner=lambda _args: 0))
     assert client.get("/api/v1/jobs/missing").status_code == 404
+    assert client.get("/api/v1/jobs/missing/artifacts").status_code == 404
+    assert client.get("/api/v1/jobs/missing/artifacts/secscan.json").status_code == 404
 
 
 def test_allowed_input_root_accepts_local_paths_and_image_references(tmp_path: Path) -> None:
