@@ -1,4 +1,4 @@
-FROM aquasec/trivy:0.73.0 AS trivy
+FROM aquasec/trivy:0.74.0 AS trivy
 
 FROM python:3.14.7-slim-bookworm AS builder
 WORKDIR /build
