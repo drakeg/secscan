@@ -33,6 +33,9 @@ where = ["."]
 include = ["secscan*"]
 namespaces = false
 
+[tool.setuptools.package-data]
+secscan = ["web_assets/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
