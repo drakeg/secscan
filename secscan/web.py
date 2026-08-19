@@ -20,6 +20,3 @@ def mount_web_ui(app: FastAPI) -> FastAPI:
 def create_web_app(**service_options: Any) -> FastAPI:
     """Create the secscan API and mount the browser UI at the site root."""
     return mount_web_ui(create_app(**service_options))
-
-
-app = create_web_app()
