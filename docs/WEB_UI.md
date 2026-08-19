@@ -4,13 +4,31 @@ The `secscan-service` command serves both the REST API and a browser interface.
 
 ## Local testing with Docker Compose
 
+Docker Compose automatically reads a `.env` file from the repository root. Start by copying the provided example:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` for the local instance you want to run. The available settings are:
+
+```dotenv
+SECSCAN_COMPOSE_PROJECT=secscan-local
+SECSCAN_PORT=8000
+SECSCAN_WORKSPACE=.
+SECSCAN_WORKERS=2
+SECSCAN_API_TOKEN=
+```
+
+`.env` is ignored by Git so local paths, ports, and tokens are not committed. `.env.example` contains safe defaults and is intended to stay in the repository.
+
 From the repository root, build and start the service:
 
 ```bash
 docker compose up --build --wait
 ```
 
-Open `http://127.0.0.1:8000/` in a browser. The REST API remains available beneath `/api/v1`, interactive API documentation remains available at `/docs`, and the repository is mounted read-only inside the container as `/workspace`.
+Open `http://127.0.0.1:8000/` in a browser, or use the port configured in `SECSCAN_PORT`. The REST API remains available beneath `/api/v1`, interactive API documentation remains available at `/docs`, and the configured workspace is mounted read-only inside the container as `/workspace`.
 
 A simple end-to-end GUI test is:
 
@@ -20,48 +38,53 @@ A simple end-to-end GUI test is:
 4. Start the scan.
 5. Open the completed job and inspect/filter the findings and generated artifacts.
 
-To scan a different local directory through the GUI, set `SECSCAN_WORKSPACE` before starting Compose:
+To scan a different local directory through the GUI, set an absolute path in `.env`:
 
-```bash
-SECSCAN_WORKSPACE=/absolute/path/to/project docker compose up --build --wait
+```dotenv
+SECSCAN_WORKSPACE=/absolute/path/to/project
 ```
 
 That directory is still mounted read-only at `/workspace`; only `/reports` and `/cache` are writable persistent volumes.
 
-The HTTP port and worker count can also be changed without editing Compose:
+The HTTP port and worker count can also be changed in `.env` without editing Compose:
 
-```bash
-SECSCAN_PORT=8080 SECSCAN_WORKERS=4 docker compose up --build --wait
+```dotenv
+SECSCAN_PORT=8080
+SECSCAN_WORKERS=4
 ```
+
+Environment variables supplied directly on the command line still override `.env` when you need a one-off setting.
 
 ### Run multiple local secscan instances at once
 
 Each Compose instance needs both a unique host port and a unique Compose project name. `SECSCAN_PORT` controls the browser/API port, while `SECSCAN_COMPOSE_PROJECT` isolates that instance's containers, network, report volume, and cache volume.
 
-For example, run one project on port 8001:
+For example, one checkout could use:
 
-```bash
-SECSCAN_COMPOSE_PROJECT=secscan-project-a \
-SECSCAN_PORT=8001 \
-SECSCAN_WORKSPACE=/absolute/path/to/project-a \
-docker compose up --build --wait
+```dotenv
+SECSCAN_COMPOSE_PROJECT=secscan-project-a
+SECSCAN_PORT=8001
+SECSCAN_WORKSPACE=/absolute/path/to/project-a
+SECSCAN_WORKERS=2
+SECSCAN_API_TOKEN=
 ```
 
-Then, from another terminal or checkout, run another on port 8002:
+A second checkout could use:
 
-```bash
-SECSCAN_COMPOSE_PROJECT=secscan-project-b \
-SECSCAN_PORT=8002 \
-SECSCAN_WORKSPACE=/absolute/path/to/project-b \
-docker compose up --build --wait
+```dotenv
+SECSCAN_COMPOSE_PROJECT=secscan-project-b
+SECSCAN_PORT=8002
+SECSCAN_WORKSPACE=/absolute/path/to/project-b
+SECSCAN_WORKERS=2
+SECSCAN_API_TOKEN=
 ```
 
-The GUIs are then available independently at `http://127.0.0.1:8001/` and `http://127.0.0.1:8002/`, with separate scan history, reports, and vulnerability caches.
+Run `docker compose up --build --wait` in each checkout. The GUIs are then available independently at `http://127.0.0.1:8001/` and `http://127.0.0.1:8002/`, with separate scan history, reports, and vulnerability caches.
 
-Use the same project variable when stopping a specific instance:
+Use the same `.env` file when stopping a specific instance:
 
 ```bash
-SECSCAN_COMPOSE_PROJECT=secscan-project-a docker compose down
+docker compose down
 ```
 
 If `SECSCAN_API_TOKEN` is configured, enter the same token using the GUI's **API token** button. The browser stores it only in `sessionStorage` for that tab.
@@ -77,11 +100,10 @@ docker compose --profile tools run --rm cli \
   --fail-on HIGH
 ```
 
-For another local source tree:
+For another local source tree, set `SECSCAN_WORKSPACE` in `.env` and run:
 
 ```bash
-SECSCAN_WORKSPACE=/absolute/path/to/project \
-  docker compose --profile tools run --rm cli \
+docker compose --profile tools run --rm cli \
   scan repository /workspace \
   --output-dir /reports/manual-repository
 ```
