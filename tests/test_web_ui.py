@@ -26,8 +26,12 @@ def test_web_assets_are_served(tmp_path: Path) -> None:
 
     assert stylesheet.status_code == 200
     assert "app-shell" in stylesheet.text
+    assert "finding-table" in stylesheet.text
     assert script.status_code == 200
     assert "/api/v1/jobs" in script.text
+    assert "finding-search" in script.text
+    assert "secscan.diff.json" in script.text
+    assert "Resolved findings" in script.text
 
 
 def test_web_wrapper_preserves_health_and_api_routes(tmp_path: Path) -> None:

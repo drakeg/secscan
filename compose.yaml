@@ -1,4 +1,9 @@
-name: secscan
+name: ${SECSCAN_COMPOSE_PROJECT:-secscan}
+
+x-secscan-volumes: &secscan-volumes
+  - secscan-reports:/reports
+  - secscan-cache:/cache
+  - ${SECSCAN_WORKSPACE:-.}:/workspace:ro
 
 services:
   service:
@@ -21,10 +26,7 @@ services:
       - "127.0.0.1:${SECSCAN_PORT:-8000}:8000"
     environment:
       SECSCAN_API_TOKEN: "${SECSCAN_API_TOKEN:-}"
-    volumes:
-      - secscan-reports:/reports
-      - secscan-cache:/cache
-      - .:/workspace:ro
+    volumes: *secscan-volumes
     read_only: true
     tmpfs:
       - /tmp:size=512m,mode=1777
@@ -44,6 +46,21 @@ services:
       timeout: 3s
       retries: 12
       start_period: 10s
+
+  cli:
+    profiles: ["tools"]
+    build:
+      context: .
+    image: secscan:local
+    entrypoint: ["secscan"]
+    volumes: *secscan-volumes
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   secscan-reports:

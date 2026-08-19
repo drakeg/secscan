@@ -11,6 +11,7 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
     )
     service = compose["services"]["service"]
 
+    assert compose["name"] == "${SECSCAN_COMPOSE_PROJECT:-secscan}"
     assert service["entrypoint"] == ["secscan-service"]
     assert service["command"][-2:] == ["--allowed-input-root", "/workspace"]
     assert service["ports"] == ["127.0.0.1:${SECSCAN_PORT:-8000}:8000"]
@@ -21,6 +22,6 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
     assert service["tmpfs"] == ["/tmp:size=512m,mode=1777"]
     assert "secscan-reports:/reports" in service["volumes"]
     assert "secscan-cache:/cache" in service["volumes"]
-    assert ".:/workspace:ro" in service["volumes"]
+    assert "${SECSCAN_WORKSPACE:-.}:/workspace:ro" in service["volumes"]
     assert service["healthcheck"]["test"][:3] == ["CMD", "python", "-c"]
     assert set(compose["volumes"]) == {"secscan-reports", "secscan-cache"}
