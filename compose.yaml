@@ -1,4 +1,4 @@
-name: secscan
+name: ${SECSCAN_COMPOSE_PROJECT:-secscan}
 
 x-secscan-volumes: &secscan-volumes
   - secscan-reports:/reports
