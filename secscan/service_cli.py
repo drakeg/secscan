@@ -8,7 +8,7 @@ import uvicorn
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="secscan-service", description="Run the secscan REST API")
+    parser = argparse.ArgumentParser(prog="secscan-service", description="Run the secscan web UI and REST API")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--job-root", type=Path, default=Path("/reports/jobs"))
@@ -30,10 +30,10 @@ def main() -> None:
     if args.workers < 1:
         parser.error("--workers must be at least 1")
 
-    from secscan.service import create_app
+    from secscan.web import create_web_app
 
     uvicorn.run(
-        create_app(
+        create_web_app(
             job_root=args.job_root,
             job_database=args.job_database,
             max_workers=args.workers,
