@@ -30,16 +30,18 @@ def main() -> None:
     if args.workers < 1:
         parser.error("--workers must be at least 1")
 
-    from secscan.web import create_web_app
+    from secscan.service import create_app
+    from secscan.web import mount_web_ui
 
+    app = create_app(
+        job_root=args.job_root,
+        job_database=args.job_database,
+        max_workers=args.workers,
+        allowed_input_roots=args.allowed_input_root,
+        api_token=os.environ.get("SECSCAN_API_TOKEN"),
+    )
     uvicorn.run(
-        create_web_app(
-            job_root=args.job_root,
-            job_database=args.job_database,
-            max_workers=args.workers,
-            allowed_input_roots=args.allowed_input_root,
-            api_token=os.environ.get("SECSCAN_API_TOKEN"),
-        ),
+        mount_web_ui(app),
         host=args.host,
         port=args.port,
     )
