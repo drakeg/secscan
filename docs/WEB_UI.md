@@ -34,6 +34,36 @@ The HTTP port and worker count can also be changed without editing Compose:
 SECSCAN_PORT=8080 SECSCAN_WORKERS=4 docker compose up --build --wait
 ```
 
+### Run multiple local secscan instances at once
+
+Each Compose instance needs both a unique host port and a unique Compose project name. `SECSCAN_PORT` controls the browser/API port, while `SECSCAN_COMPOSE_PROJECT` isolates that instance's containers, network, report volume, and cache volume.
+
+For example, run one project on port 8001:
+
+```bash
+SECSCAN_COMPOSE_PROJECT=secscan-project-a \
+SECSCAN_PORT=8001 \
+SECSCAN_WORKSPACE=/absolute/path/to/project-a \
+docker compose up --build --wait
+```
+
+Then, from another terminal or checkout, run another on port 8002:
+
+```bash
+SECSCAN_COMPOSE_PROJECT=secscan-project-b \
+SECSCAN_PORT=8002 \
+SECSCAN_WORKSPACE=/absolute/path/to/project-b \
+docker compose up --build --wait
+```
+
+The GUIs are then available independently at `http://127.0.0.1:8001/` and `http://127.0.0.1:8002/`, with separate scan history, reports, and vulnerability caches.
+
+Use the same project variable when stopping a specific instance:
+
+```bash
+SECSCAN_COMPOSE_PROJECT=secscan-project-a docker compose down
+```
+
 If `SECSCAN_API_TOKEN` is configured, enter the same token using the GUI's **API token** button. The browser stores it only in `sessionStorage` for that tab.
 
 ### Compare the GUI with the CLI
