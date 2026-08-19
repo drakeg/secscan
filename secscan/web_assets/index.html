@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>secscan</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">S</span><div><strong>secscan</strong><small>Security workspace</small></div></div>
+      <nav>
+        <button class="nav-item active" data-view="dashboard">Dashboard</button>
+        <button class="nav-item" data-view="new-scan">New scan</button>
+        <button class="nav-item" data-view="scans">Scans</button>
+      </nav>
+      <div class="sidebar-footer">
+        <button id="api-token-button" class="secondary full">API token</button>
+        <a class="secondary full link-button" href="/docs" target="_blank" rel="noreferrer">API docs</a>
+      </div>
+    </aside>
+    <main>
+      <header class="topbar">
+        <div><p class="eyebrow">Workspace</p><h1 id="page-title">Dashboard</h1></div>
+        <div class="health"><span id="health-dot" class="health-dot"></span><span id="health-label">Checking scanner…</span></div>
+      </header>
+      <section id="flash" class="flash hidden"></section>
+
+      <section id="dashboard" class="view active">
+        <div class="metric-grid">
+          <article class="metric"><span>Queued</span><strong id="metric-queued">0</strong></article>
+          <article class="metric"><span>Running</span><strong id="metric-running">0</strong></article>
+          <article class="metric"><span>Completed</span><strong id="metric-completed">0</strong></article>
+          <article class="metric"><span>Failed</span><strong id="metric-failed">0</strong></article>
+        </div>
+        <div class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">Activity</p><h2>Recent scans</h2></div><button class="primary" data-view-target="new-scan">Run a scan</button></div>
+          <div id="recent-scans"></div>
+        </div>
+      </section>
+
+      <section id="new-scan" class="view">
+        <div class="panel narrow">
+          <div class="panel-heading"><div><p class="eyebrow">Scanner</p><h2>Start a security scan</h2></div></div>
+          <form id="scan-form">
+            <label>Scanner type<select id="scanner" required><option value="image">Container image</option><option value="filesystem">Filesystem</option><option value="repository">Repository</option><option value="sbom">SBOM</option></select></label>
+            <label>Target<input id="target" required placeholder="alpine:3.20"></label>
+            <div class="form-grid">
+              <label>Fail on<select id="fail-on"><option value="">Use default</option><option>NONE</option><option>UNKNOWN</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></label>
+              <label>Timeout (seconds)<input id="timeout" type="number" min="1" max="86400" value="600"></label>
+            </div>
+            <label>Policy path <span class="muted">optional</span><input id="policy" placeholder="/workspace/policy.yaml"></label>
+            <label>Baseline report path <span class="muted">optional</span><input id="baseline" placeholder="/workspace/reports/secscan.json"></label>
+            <div class="actions"><button type="submit" class="primary">Start scan</button></div>
+          </form>
+        </div>
+      </section>
+
+      <section id="scans" class="view">
+        <div class="panel">
+          <div class="panel-heading"><div><p class="eyebrow">History</p><h2>Scan jobs</h2></div><button id="refresh-scans" class="secondary">Refresh</button></div>
+          <div id="all-scans"></div>
+        </div>
+      </section>
+
+      <section id="job-detail" class="view">
+        <button id="back-to-scans" class="back-button">← Back to scans</button>
+        <div id="job-content"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="token-dialog">
+    <form method="dialog" id="token-form">
+      <h2>API token</h2>
+      <p>If this service is configured with <code>SECSCAN_API_TOKEN</code>, enter it here. It is stored only in this browser tab.</p>
+      <input id="api-token" type="password" autocomplete="off" placeholder="Bearer token">
+      <div class="actions"><button value="cancel" class="secondary">Cancel</button><button id="save-token" value="default" class="primary">Save token</button></div>
+    </form>
+  </dialog>
+  <script src="/app.js"></script>
+</body>
+</html>
