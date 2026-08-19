@@ -42,7 +42,7 @@ def main() -> None:
         api_token=os.environ.get("SECSCAN_API_TOKEN"),
     )
     if isinstance(app, FastAPI):
-        mount_web_ui(app)
+        mount_web_ui(app, job_root=args.job_root, job_database=args.job_database)
     uvicorn.run(
         app,
         host=args.host,
