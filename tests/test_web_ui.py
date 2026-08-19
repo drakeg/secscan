@@ -32,6 +32,11 @@ def test_web_assets_are_served(tmp_path: Path) -> None:
     assert "finding-search" in script.text
     assert "secscan.diff.json" in script.text
     assert "Resolved findings" in script.text
+    assert "scheduleDetailRefresh" in script.text
+    assert '["queued","running"]' in script.text
+    assert "setTimeout" in script.text
+    assert "2000" in script.text
+    assert "stopDetailPolling" in script.text
 
 
 def test_web_wrapper_preserves_health_and_api_routes(tmp_path: Path) -> None:
