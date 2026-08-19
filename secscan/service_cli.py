@@ -4,6 +4,7 @@ import argparse
 import os
 from pathlib import Path
 
+from fastapi import FastAPI
 import uvicorn
 
 
@@ -40,8 +41,10 @@ def main() -> None:
         allowed_input_roots=args.allowed_input_root,
         api_token=os.environ.get("SECSCAN_API_TOKEN"),
     )
+    if isinstance(app, FastAPI):
+        mount_web_ui(app)
     uvicorn.run(
-        mount_web_ui(app),
+        app,
         host=args.host,
         port=args.port,
     )
