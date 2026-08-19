@@ -4,11 +4,12 @@ import argparse
 import os
 from pathlib import Path
 
+from fastapi import FastAPI
 import uvicorn
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(prog="secscan-service", description="Run the secscan REST API")
+    parser = argparse.ArgumentParser(prog="secscan-service", description="Run the secscan web UI and REST API")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--job-root", type=Path, default=Path("/reports/jobs"))
@@ -31,15 +32,19 @@ def main() -> None:
         parser.error("--workers must be at least 1")
 
     from secscan.service import create_app
+    from secscan.web import mount_web_ui
 
+    app = create_app(
+        job_root=args.job_root,
+        job_database=args.job_database,
+        max_workers=args.workers,
+        allowed_input_roots=args.allowed_input_root,
+        api_token=os.environ.get("SECSCAN_API_TOKEN"),
+    )
+    if isinstance(app, FastAPI):
+        mount_web_ui(app)
     uvicorn.run(
-        create_app(
-            job_root=args.job_root,
-            job_database=args.job_database,
-            max_workers=args.workers,
-            allowed_input_roots=args.allowed_input_root,
-            api_token=os.environ.get("SECSCAN_API_TOKEN"),
-        ),
+        app,
         host=args.host,
         port=args.port,
     )
