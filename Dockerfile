@@ -6,7 +6,7 @@ RUN mkdir -p /out \
 
 FROM golang:1.25-bookworm AS nuclei-builder
 RUN mkdir -p /out \
-    && GOBIN=/out go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.11.0
+    && GOBIN=/out go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.11.1
 
 FROM python:3.14.7-slim-bookworm AS builder
 WORKDIR /build
