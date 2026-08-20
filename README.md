@@ -102,7 +102,27 @@ Scan a checked-out source repository with Trivy repository mode:
 secscan scan repository . --output-dir ./reports --fail-on HIGH
 ```
 
-With Docker, mount the repository read-only:
+Remote public repositories can be scanned directly with an HTTPS Git URL:
+
+```bash
+secscan scan repository https://github.com/example/project.git \
+  --output-dir ./reports \
+  --fail-on HIGH
+```
+
+Private `github.com` repositories use the server-side `SECSCAN_GITHUB_TOKEN` environment variable. Keep the scan target credential-free:
+
+```bash
+export SECSCAN_GITHUB_TOKEN='github_pat_your_token_here'
+secscan scan repository https://github.com/example/private-project.git \
+  --output-dir ./reports \
+  --fail-on HIGH
+unset SECSCAN_GITHUB_TOKEN
+```
+
+For Docker Compose, copy `.env.example` to `.env` and set `SECSCAN_GITHUB_TOKEN` there. Prefer a fine-grained GitHub token with **Contents: Read-only** access scoped only to the repositories secscan needs. Never place a token in the repository URL or commit a populated `.env` file.
+
+With Docker, local repositories remain read-only mounts:
 
 ```bash
 docker run --rm \
@@ -114,7 +134,7 @@ docker run --rm \
     --fail-on HIGH
 ```
 
-Remote cloning and repository credentials are not handled in this increment. See [Repository Scanning](docs/REPOSITORY_SCANNING.md).
+See [Repository Scanning](docs/REPOSITORY_SCANNING.md) for remote-clone behavior and [GitHub Repository Authentication](docs/GITHUB_AUTH.md) for token setup, permissions, Docker Compose/CLI usage, security details, and troubleshooting.
 
 ## SBOM scanning
 
@@ -275,11 +295,15 @@ secscan --help
 Build and start a healthy local API with persistent reports, job metadata, and scanner cache:
 
 ```bash
+cp .env.example .env
+# Optional for private github.com repositories:
+# SECSCAN_GITHUB_TOKEN=github_pat_your_token_here
+
 docker compose up --build --wait
 curl --fail http://127.0.0.1:8000/healthz
 ```
 
-The stack is localhost-only, non-root, capability-free, and mounts this repository read-only at `/workspace` for filesystem/repository/SBOM testing. Service-controlled local paths are limited to that mount, executed jobs provide discoverable SHA-256 artifact manifests and conditional downloads, and an optional local bearer token can protect API access. See [Service Mode](docs/SERVICE_MODE.md) for job submission, authentication tests, input-boundary tests, artifact discovery and verification, persistence checks, configuration, shutdown, and reset procedures.
+The stack is localhost-only, non-root, capability-free, and mounts this repository read-only at `/workspace` for filesystem/repository/SBOM testing. Service-controlled local paths are limited to that mount, executed jobs provide discoverable SHA-256 artifact manifests and conditional downloads, and optional environment variables can protect API access and authenticate private GitHub clones. See [Web GUI](docs/WEB_UI.md), [GitHub Repository Authentication](docs/GITHUB_AUTH.md), and [Service Mode](docs/SERVICE_MODE.md) for configuration and testing procedures.
 
 ## Releases
 
@@ -287,12 +311,14 @@ Stable `vMAJOR.MINOR.PATCH` tags trigger guarded GitHub release packaging when t
 
 ## Current boundaries
 
-The built-in scanners support public and explicitly inventoried ECR container images, including bounded sequential batches, plus local filesystem paths, checked-out source repositories, and CycloneDX or SPDX 2.2/2.3 JSON SBOM files. Supported SBOMs can produce, compare, and apply exact declared-license policy to local normalized inventories. YAML scan policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history, supports exact-cohort severity trends, and persists service job metadata. AWS discovery inventories explicitly approved ECR repositories. Richer license governance, dependency-graph analysis, finding-level remediation timing, general private registry authentication, remote repository cloning, additional SBOM encodings, scheduled AWS scanning, and contextual risk scoring remain later increments.
+The built-in scanners support public and explicitly inventoried ECR container images, including bounded sequential batches, plus local filesystem paths, local/remote source repositories, and CycloneDX or SPDX 2.2/2.3 JSON SBOM files. Public HTTPS GitHub, GitLab, Azure DevOps, and compatible Git repositories can be scanned remotely; private `github.com` repositories can use server-side `SECSCAN_GITHUB_TOKEN` authentication. Private GitLab/Azure DevOps authentication and provider OAuth/App integrations remain later increments. Supported SBOMs can produce, compare, and apply exact declared-license policy to local normalized inventories. YAML scan policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history, supports exact-cohort severity trends, and persists service job metadata. AWS discovery inventories explicitly approved ECR repositories. Richer license governance, dependency-graph analysis, scheduled AWS scanning, tenant credential storage, and contextual risk scoring remain later increments.
 
 ## Security notes
 
 - Container image scanning does not require mounting the Docker socket.
 - Filesystem, repository, and SBOM targets, policy files, and baseline files should be mounted read-only.
+- Never put Git credentials in repository URLs; use server-side provider configuration such as `SECSCAN_GITHUB_TOKEN`.
+- Keep `.env` out of source control and use narrowly scoped, read-only GitHub credentials.
 - Suppressions require a reason and expiration date.
 - Baseline, comparison, history, SBOM, and report artifacts should be treated as security-sensitive inventory.
 - The secscan image defaults to non-root UID `10001`.
@@ -309,9 +335,11 @@ The built-in scanners support public and explicitly inventoried ECR container im
 - [Local scan history](docs/HISTORY.md)
 - [AWS ECR asset discovery and local testing](docs/AWS_ECR_DISCOVERY.md)
 - [Repository scanning](docs/REPOSITORY_SCANNING.md)
+- [GitHub repository authentication](docs/GITHUB_AUTH.md)
+- [Web GUI and Docker Compose testing](docs/WEB_UI.md)
 - [SBOM scanning](docs/SBOM_SCANNING.md)
 - [Release artifacts and testing](docs/RELEASES.md)
-- [Service mode and Docker Compose testing](docs/SERVICE_MODE.md)
+- [Service mode and REST API](docs/SERVICE_MODE.md)
 - [Definition of done](docs/DEFINITION_OF_DONE.md)
 
 ## License
