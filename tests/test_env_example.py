@@ -14,6 +14,7 @@ def test_env_example_covers_local_compose_settings() -> None:
         "SECSCAN_WORKSPACE",
         "SECSCAN_WORKERS",
         "SECSCAN_API_TOKEN",
+        "SECSCAN_GITHUB_TOKEN",
     ):
         assert f"{name}=" in env_example
 
