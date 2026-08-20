@@ -2,7 +2,7 @@ FROM aquasec/trivy:0.74.0 AS trivy
 
 FROM golang:1.25-bookworm AS gitleaks-builder
 RUN mkdir -p /out \
-    && GOBIN=/out go install github.com/gitleaks/gitleaks/v8@v8.30.1
+    && GOBIN=/out go install github.com/zricethezav/gitleaks/v8@v8.30.1
 
 FROM python:3.14.7-slim-bookworm AS builder
 WORKDIR /build
