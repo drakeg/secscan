@@ -18,7 +18,10 @@ LABEL org.opencontainers.image.title="secscan" \
 
 COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 COPY --from=builder /wheels /wheels
-RUN pip install --no-cache-dir /wheels/secscan-*.whl \
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y git ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir /wheels/secscan-*.whl \
     && python -c "import secscan, secscan.aws, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.sbom" \
     && rm -rf /wheels \
     && useradd --create-home --uid 10001 secscan \

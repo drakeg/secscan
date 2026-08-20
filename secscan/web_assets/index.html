@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>secscan</title>
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/dashboard.css">
   <link rel="stylesheet" href="/delete_scans.css">
 </head>
 <body>
@@ -35,6 +36,27 @@
           <article class="metric"><span>Completed</span><strong id="metric-completed">0</strong></article>
           <article class="metric"><span>Failed</span><strong id="metric-failed">0</strong></article>
         </div>
+
+        <div class="security-metric-grid">
+          <article class="security-metric critical"><span>Critical vulnerabilities</span><strong id="vuln-critical">0</strong></article>
+          <article class="security-metric high"><span>High vulnerabilities</span><strong id="vuln-high">0</strong></article>
+          <article class="security-metric medium"><span>Medium vulnerabilities</span><strong id="vuln-medium">0</strong></article>
+          <article class="security-metric low"><span>Low vulnerabilities</span><strong id="vuln-low">0</strong></article>
+        </div>
+
+        <div class="security-dashboard-grid">
+          <div class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">Current posture</p><h2>Vulnerability mix</h2></div></div>
+            <div id="severity-mix"><div class="empty">Complete a scan to see vulnerability totals.</div></div>
+            <p class="dashboard-note">Totals use the latest completed report for each unique scan target, so historical rescans are not double-counted.</p>
+          </div>
+          <div class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">Fix first</p><h2>Most urgent targets</h2></div></div>
+            <div id="priority-targets"><div class="empty">Complete a scan to see prioritized targets.</div></div>
+            <p class="dashboard-note">Targets are ranked by Critical findings first, then High, Medium, and total findings.</p>
+          </div>
+        </div>
+
         <div class="panel">
           <div class="panel-heading"><div><p class="eyebrow">Activity</p><h2>Recent scans</h2></div><button class="primary" data-view-target="new-scan">Run a scan</button></div>
           <div id="recent-scans"></div>
@@ -46,7 +68,7 @@
           <div class="panel-heading"><div><p class="eyebrow">Scanner</p><h2>Start a security scan</h2></div></div>
           <form id="scan-form">
             <label>Scanner type<select id="scanner" required><option value="image">Container image</option><option value="filesystem">Filesystem</option><option value="repository">Repository</option><option value="sbom">SBOM</option></select></label>
-            <label>Target<input id="target" required placeholder="alpine:3.20"></label>
+            <label>Target<input id="target" required placeholder="alpine:3.20"><span id="target-help" class="remote-repo-help"></span></label>
             <div class="form-grid">
               <label>Fail on<select id="fail-on"><option value="">Use default</option><option>NONE</option><option>UNKNOWN</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></label>
               <label>Timeout (seconds)<input id="timeout" type="number" min="1" max="86400" value="600"></label>
@@ -81,6 +103,7 @@
     </form>
   </dialog>
   <script src="/app.js"></script>
+  <script src="/dashboard.js"></script>
   <script src="/delete_scans.js"></script>
 </body>
 </html>

@@ -18,6 +18,8 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from secscan.scanners.repository import is_remote_repository_url, validate_remote_repository_url
+
 JobStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 ScanRunner = Callable[[list[str]], int]
 ARTIFACT_MANIFEST_NAME = "artifacts.json"
@@ -219,10 +221,15 @@ class JobManager:
         return record
 
     def _validate_input_paths(self, request: ScanSubmission) -> None:
+        remote_repository = request.scanner == "repository" and is_remote_repository_url(request.target)
+        if remote_repository:
+            validate_remote_repository_url(request.target)
         if not self.allowed_input_roots:
             return
         inputs: list[tuple[str, str]] = []
-        if request.scanner in ("filesystem", "repository", "sbom"):
+        if request.scanner in ("filesystem", "sbom") or (
+            request.scanner == "repository" and not remote_repository
+        ):
             inputs.append(("target", request.target))
         if request.policy is not None:
             inputs.append(("policy", request.policy))

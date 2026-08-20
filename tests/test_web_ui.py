@@ -17,6 +17,10 @@ def test_web_ui_is_served_at_root(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert "secscan" in response.text
     assert "Start a security scan" in response.text
+    assert "Most urgent targets" in response.text
+    assert "Critical vulnerabilities" in response.text
+    assert "dashboard.js" in response.text
+    assert "dashboard.css" in response.text
     assert "delete_scans.js" in response.text
     assert "delete_scans.css" in response.text
     assert response.headers["content-type"].startswith("text/html")
@@ -27,6 +31,8 @@ def test_web_assets_are_served(tmp_path: Path) -> None:
 
     stylesheet = client.get("/styles.css")
     script = client.get("/app.js")
+    dashboard_script = client.get("/dashboard.js")
+    dashboard_styles = client.get("/dashboard.css")
     delete_script = client.get("/delete_scans.js")
     delete_styles = client.get("/delete_scans.css")
 
@@ -43,6 +49,14 @@ def test_web_assets_are_served(tmp_path: Path) -> None:
     assert "setTimeout" in script.text
     assert "2000" in script.text
     assert "stopDetailPolling" in script.text
+    assert dashboard_script.status_code == 200
+    assert "latestPostureJobs" in dashboard_script.text
+    assert "priority-targets" in dashboard_script.text
+    assert "vuln-chip critical" in dashboard_script.text
+    assert "https://github.com/org/repository.git" in dashboard_script.text
+    assert dashboard_styles.status_code == 200
+    assert ".security-dashboard-grid" in dashboard_styles.text
+    assert ".priority-bar" in dashboard_styles.text
     assert delete_script.status_code == 200
     assert "/history" in delete_script.text
     assert "window.confirm" in delete_script.text
