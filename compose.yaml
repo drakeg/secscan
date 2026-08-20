@@ -26,6 +26,7 @@ services:
       - "127.0.0.1:${SECSCAN_PORT:-8000}:8000"
     environment:
       SECSCAN_API_TOKEN: "${SECSCAN_API_TOKEN:-}"
+      SECSCAN_GITHUB_TOKEN: "${SECSCAN_GITHUB_TOKEN:-}"
     volumes: *secscan-volumes
     read_only: true
     tmpfs:
@@ -53,6 +54,8 @@ services:
       context: .
     image: secscan:local
     entrypoint: ["secscan"]
+    environment:
+      SECSCAN_GITHUB_TOKEN: "${SECSCAN_GITHUB_TOKEN:-}"
     volumes: *secscan-volumes
     read_only: true
     tmpfs:

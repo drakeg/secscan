@@ -115,6 +115,62 @@ def test_remote_repository_is_shallow_cloned_and_cleaned_up(monkeypatch) -> None
     assert not cloned_paths[0].exists()
 
 
+def test_github_token_is_process_local_and_not_in_clone_arguments(monkeypatch) -> None:
+    token = "github_pat_test_secret_value"
+    scanner = RepositoryScanner()
+    request = ScanRequest(
+        scanner_name="repository",
+        target="https://github.com/example/private-project.git",
+        timeout_seconds=30,
+    )
+
+    monkeypatch.setenv("SECSCAN_GITHUB_TOKEN", token)
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert token not in " ".join(args)
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        assert environment["GIT_CONFIG_COUNT"] == "1"
+        assert environment["GIT_CONFIG_KEY_0"] == "http.https://github.com/.extraheader"
+        assert environment["GIT_CONFIG_VALUE_0"].startswith("Authorization: Basic ")
+        assert token not in environment["GIT_CONFIG_VALUE_0"]
+        checkout = Path(args[-1])
+        checkout.mkdir(parents=True)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr("secscan.scanners.repository.subprocess.run", fake_run)
+    monkeypatch.setattr("secscan.scanners.repository.scan_repository", lambda *_args, **_kwargs: {"Results": []})
+    monkeypatch.setattr(scanner, "_engine_version", lambda: "Trivy test")
+
+    result = scanner.scan(request)
+
+    assert result.request.target == request.target
+    assert token not in result.request.target
+
+
+def test_git_clone_error_redacts_github_token(monkeypatch) -> None:
+    token = "github_pat_test_secret_value"
+    scanner = RepositoryScanner()
+    request = ScanRequest(
+        scanner_name="repository",
+        target="https://github.com/example/private-project.git",
+        timeout_seconds=30,
+    )
+    monkeypatch.setenv("SECSCAN_GITHUB_TOKEN", token)
+
+    def fake_run(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(args, 128, "", f"fatal: authentication failed for {token}")
+
+    monkeypatch.setattr("secscan.scanners.repository.subprocess.run", fake_run)
+
+    with pytest.raises(ValueError) as exc_info:
+        scanner.scan(request)
+
+    message = str(exc_info.value)
+    assert token not in message
+    assert "[REDACTED]" in message
+
+
 @pytest.mark.parametrize(
     ("target", "message"),
     [

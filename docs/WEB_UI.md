@@ -18,9 +18,12 @@ SECSCAN_PORT=8000
 SECSCAN_WORKSPACE=.
 SECSCAN_WORKERS=2
 SECSCAN_API_TOKEN=
+SECSCAN_GITHUB_TOKEN=
 ```
 
 `.env` is ignored by Git so local paths, ports, and tokens are not committed. `.env.example` contains safe defaults and is intended to stay in the repository.
+
+`SECSCAN_GITHUB_TOKEN` is optional. When set, it is available only to the server/container and enables cloning private `github.com` repositories. Prefer a fine-grained token with read-only Contents access and scope it only to repositories secscan needs. Do not enter Git credentials in the browser or repository URL.
 
 From the repository root, build and start the service:
 
@@ -34,10 +37,11 @@ A simple end-to-end GUI test is:
 
 1. Open **New scan**.
 2. Select **Filesystem** or **Repository**.
-3. For a local scan use `/workspace`; for a remote repository use a public HTTPS Git URL such as `https://github.com/example/project.git`.
-4. Start the scan.
-5. Open the completed job and inspect/filter the findings and generated artifacts.
-6. Return to the Dashboard and confirm the latest target posture appears in the severity totals and priority chart.
+3. For a local scan use `/workspace`; for a remote repository use an HTTPS Git URL such as `https://github.com/example/project.git`.
+4. For a private GitHub repository, set `SECSCAN_GITHUB_TOKEN` in `.env` before starting Compose; the target remains the normal credential-free GitHub URL.
+5. Start the scan.
+6. Open the completed job and inspect/filter the findings and generated artifacts.
+7. Return to the Dashboard and confirm the latest target posture appears in the severity totals and priority chart.
 
 Remote repository scans are shallow-cloned into temporary storage. In the default Compose configuration `/tmp` is a 512 MB tmpfs, providing a practical storage boundary for temporary checkouts. Remote URLs must use HTTPS and must not contain embedded credentials, query strings, or fragments.
 
@@ -70,6 +74,7 @@ SECSCAN_PORT=8001
 SECSCAN_WORKSPACE=/absolute/path/to/project-a
 SECSCAN_WORKERS=2
 SECSCAN_API_TOKEN=
+SECSCAN_GITHUB_TOKEN=
 ```
 
 A second checkout could use:
@@ -80,6 +85,7 @@ SECSCAN_PORT=8002
 SECSCAN_WORKSPACE=/absolute/path/to/project-b
 SECSCAN_WORKERS=2
 SECSCAN_API_TOKEN=
+SECSCAN_GITHUB_TOKEN=
 ```
 
 Run `docker compose up --build --wait` in each checkout. The GUIs are then available independently at `http://127.0.0.1:8001/` and `http://127.0.0.1:8002/`, with separate scan history, reports, and vulnerability caches.
@@ -90,11 +96,11 @@ Use the same `.env` file when stopping a specific instance:
 docker compose down
 ```
 
-If `SECSCAN_API_TOKEN` is configured, enter the same token using the GUI's **API token** button. The browser stores it only in `sessionStorage` for that tab.
+If `SECSCAN_API_TOKEN` is configured, enter the same token using the GUI's **API token** button. The browser stores it only in `sessionStorage` for that tab. `SECSCAN_GITHUB_TOKEN` is different: it stays server-side and is never entered into the browser UI.
 
 ### Compare the GUI with the CLI
 
-Compose also includes an opt-in `cli` profile using the same locally built image, cache, reports volume, and read-only workspace. This is useful when validating that the GUI and CLI produce the same scanner behavior.
+Compose also includes an opt-in `cli` profile using the same locally built image, cache, reports volume, read-only workspace, and optional GitHub token. This is useful when validating that the GUI and CLI produce the same scanner behavior.
 
 ```bash
 docker compose --profile tools run --rm cli \
@@ -111,7 +117,7 @@ docker compose --profile tools run --rm cli \
   --output-dir /reports/manual-repository
 ```
 
-A public remote repository can be compared from the same image without a source mount:
+A public or authenticated GitHub repository can be compared from the same image using the same credential-free target URL:
 
 ```bash
 docker compose --profile tools run --rm cli \
@@ -144,8 +150,9 @@ The Dashboard is intended to answer what needs attention first rather than simpl
 - see current Critical, High, Medium, and Low vulnerability totals on the front-page dashboard
 - visualize current vulnerability mix and the most urgent targets to fix first
 - browse recent and historical scan jobs with per-scan severity counts
-- submit image, filesystem, local repository, public remote repository, and SBOM scans
-- use public HTTPS GitHub, GitLab, Azure DevOps, and compatible Git URLs for repository scans
+- submit image, filesystem, local repository, remote repository, and SBOM scans
+- use HTTPS GitHub, GitLab, Azure DevOps, and compatible Git URLs for public repository scans
+- use server-side `SECSCAN_GITHUB_TOKEN` authentication for private `github.com` repository scans
 - configure the policy threshold, timeout, policy path, and baseline path
 - inspect normalized severity counts from `secscan.json`
 - search findings by vulnerability ID, package, title, target, or version
@@ -156,16 +163,16 @@ The Dashboard is intended to answer what needs attention first rather than simpl
 - delete completed/failed/cancelled scan history and artifacts with confirmation
 - use an existing `SECSCAN_API_TOKEN` without persisting it beyond the current browser tab
 
-Local path scans remain constrained by the service's `--allowed-input-root` configuration. The default Compose configuration exposes only the selected workspace beneath `/workspace`. Validated public HTTPS repository URLs are handled separately and are not treated as local filesystem paths.
+Local path scans remain constrained by the service's `--allowed-input-root` configuration. The default Compose configuration exposes only the selected workspace beneath `/workspace`. Validated HTTPS repository URLs are handled separately and are not treated as local filesystem paths.
 
 ## Architecture
 
 The browser UI remains a thin client over the existing service API and normalized artifacts. Scanner execution, job persistence, local path validation, artifact validation, and API authentication remain in `secscan.service`.
 
-Remote repository URLs are validated at the service boundary, then the repository scanner performs a non-interactive shallow Git clone into temporary storage and feeds that checkout through the existing local repository/Trivy path. The temporary checkout is removed after each scanner operation. Private credentials are intentionally not accepted in repository URLs.
+Remote repository URLs are validated at the service boundary, then the repository scanner performs a non-interactive shallow Git clone into temporary storage and feeds that checkout through the existing local repository/Trivy path. The temporary checkout is removed after each scanner operation. GitHub credentials are read only from the server environment, injected into the clone process as process-local Git configuration, and never added to job targets or command-line arguments.
 
 `secscan.web.create_web_app()` creates the existing service application and mounts packaged static assets at `/` after the API routes. The web layer also exposes lightweight dashboard summaries and safe stored-scan deletion helpers while leaving scanner behavior in the core service/scanner modules.
 
 The local Compose environment deliberately retains restrictive defaults: the service binds to loopback, the workspace is read-only, capabilities are dropped, `no-new-privileges` is enabled, the container root filesystem is read-only, and `/tmp` is bounded. These constraints should remain the baseline as secscan evolves toward a hosted multi-tenant service.
 
-This increment does not add SaaS tenancy, user accounts, billing, private repository authentication, OAuth/App integrations, or tenant credential storage. Those concerns should be introduced behind explicit organization/user/integration models rather than embedded into scan job targets.
+This increment does not add SaaS tenancy, user accounts, billing, GitHub App/OAuth installation flows, GitLab/Azure DevOps private credentials, or tenant credential storage. Those concerns should be introduced behind explicit organization/user/integration models rather than embedded into scan job targets.

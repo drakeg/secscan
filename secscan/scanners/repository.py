@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+from base64 import b64encode
 from contextlib import contextmanager
+from dataclasses import dataclass
 import os
 import subprocess
 from pathlib import Path
 import tempfile
-from typing import Iterator
-from urllib.parse import urlsplit
+from typing import Iterator, Protocol
+from urllib.parse import SplitResult, urlsplit
 
 from secscan.normalize import normalize_trivy
 from secscan.scanners.base import ScanRequest, ScanResult, Scanner, ScannerCapability
 from secscan.trivy import generate_repository_cyclonedx, scan_repository
+
+
+GITHUB_TOKEN_ENV = "SECSCAN_GITHUB_TOKEN"
 
 
 def is_remote_repository_url(target: str) -> bool:
@@ -19,7 +24,7 @@ def is_remote_repository_url(target: str) -> bool:
 
 
 def validate_remote_repository_url(target: str) -> str:
-    """Validate a public HTTPS Git repository URL without embedded credentials."""
+    """Validate an HTTPS Git repository URL without embedded credentials."""
     parsed = urlsplit(target)
     if parsed.scheme.lower() != "https":
         raise ValueError("remote repository URLs must use HTTPS")
@@ -34,13 +39,63 @@ def validate_remote_repository_url(target: str) -> str:
     return target
 
 
+class RepositoryAuthProvider(Protocol):
+    """Provide process-local Git authentication for one repository host."""
+
+    def configure(self, remote: SplitResult, environment: dict[str, str]) -> tuple[str, ...]: ...
+
+
+@dataclass(frozen=True)
+class GitHubEnvironmentAuthProvider:
+    """Use a server-side GitHub token without persisting it in Git configuration."""
+
+    token_env: str = GITHUB_TOKEN_ENV
+
+    def configure(self, remote: SplitResult, environment: dict[str, str]) -> tuple[str, ...]:
+        if (remote.hostname or "").lower() != "github.com":
+            return ()
+        token = os.environ.get(self.token_env, "")
+        if not token:
+            return ()
+        if token != token.strip() or any(character.isspace() for character in token):
+            raise ValueError(f"{self.token_env} must not contain whitespace")
+
+        credential = b64encode(f"x-access-token:{token}".encode()).decode("ascii")
+        environment["GIT_CONFIG_COUNT"] = "1"
+        environment["GIT_CONFIG_KEY_0"] = "http.https://github.com/.extraheader"
+        environment["GIT_CONFIG_VALUE_0"] = f"Authorization: Basic {credential}"
+        return (token, credential)
+
+
+_AUTH_PROVIDERS: tuple[RepositoryAuthProvider, ...] = (GitHubEnvironmentAuthProvider(),)
+
+
+def _redact_secret(value: str, secrets: tuple[str, ...]) -> str:
+    redacted = value
+    for secret in secrets:
+        if secret:
+            redacted = redacted.replace(secret, "[REDACTED]")
+    return redacted
+
+
+def _clone_environment(remote: SplitResult) -> tuple[dict[str, str], tuple[str, ...]]:
+    environment = os.environ.copy()
+    environment["GIT_TERMINAL_PROMPT"] = "0"
+    environment["GIT_CONFIG_NOSYSTEM"] = "1"
+    environment["GIT_CONFIG_GLOBAL"] = os.devnull
+    secrets: list[str] = []
+    for provider in _AUTH_PROVIDERS:
+        secrets.extend(provider.configure(remote, environment))
+    return environment, tuple(secrets)
+
+
 class RepositoryScanner(Scanner):
     @property
     def capability(self) -> ScannerCapability:
         return ScannerCapability(
             name="repository",
             description="scan a local or remote source repository",
-            target_help="repository path or public HTTPS Git URL",
+            target_help="repository path or HTTPS Git URL",
         )
 
     def scan(self, request: ScanRequest) -> ScanResult:
@@ -69,13 +124,11 @@ class RepositoryScanner(Scanner):
             yield cls._validated_local_target(target)
             return
 
-        remote = validate_remote_repository_url(target)
+        remote_url = validate_remote_repository_url(target)
+        remote = urlsplit(remote_url)
+        environment, secrets = _clone_environment(remote)
         with tempfile.TemporaryDirectory(prefix="secscan-repository-") as temporary:
             checkout = Path(temporary) / "repository"
-            environment = os.environ.copy()
-            environment["GIT_TERMINAL_PROMPT"] = "0"
-            environment["GIT_CONFIG_NOSYSTEM"] = "1"
-            environment["GIT_CONFIG_GLOBAL"] = os.devnull
             try:
                 completed = subprocess.run(
                     [
@@ -88,7 +141,7 @@ class RepositoryScanner(Scanner):
                         "--single-branch",
                         "--no-tags",
                         "--",
-                        remote,
+                        remote_url,
                         str(checkout),
                     ],
                     check=False,
@@ -104,6 +157,7 @@ class RepositoryScanner(Scanner):
             if completed.returncode != 0:
                 detail = (completed.stderr or completed.stdout).strip().splitlines()
                 message = detail[-1] if detail else "git clone failed"
+                message = _redact_secret(message, secrets)
                 raise ValueError(f"unable to clone remote repository: {message}")
             yield cls._validated_local_target(str(checkout))
 
