@@ -32,6 +32,7 @@ def build_default_registry() -> ScannerRegistry:
     from secscan.scanners.filesystem import FilesystemScanner
     from secscan.scanners.full_repository import FullRepositoryScanner
     from secscan.scanners.image import ImageScanner
+    from secscan.scanners.network import NetworkScanner
     from secscan.scanners.repository import RepositoryScanner
     from secscan.scanners.sbom import SBOMScanner
 
@@ -51,6 +52,7 @@ def build_default_registry() -> ScannerRegistry:
             DefaultRepositoryScanner(),
             RepositoryScanner(),
             FullRepositoryScanner(),
+            NetworkScanner(),
             SBOMScanner(),
         ]
     )
