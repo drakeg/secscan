@@ -24,12 +24,13 @@ function latestPostureJobs(){
   const seen=new Set();
   const current=[];
   for(const job of state.jobs){
-    if(!terminalStatuses.has(job.status))continue;
+    if(job.status!=="completed")continue;
+    const counts=severityCache.get(job.id);
+    if(!counts)continue;
     const key=`${job.scanner}:${job.target}`;
     if(seen.has(key))continue;
     seen.add(key);
-    const counts=severityCache.get(job.id);
-    if(counts)current.push({...job,counts});
+    current.push({...job,counts});
   }
   return current;
 }
@@ -57,7 +58,6 @@ function renderSecurityDashboard(){
   }
 }
 
-const originalScanTableForDashboard=scanTable;
 scanTable=function(jobs){
   if(!jobs.length)return'<div class="empty">No scans yet. Run your first scan to get started.</div>';
   return `<div style="overflow:auto"><table class="scan-table"><thead><tr><th>Target</th><th>Scanner</th><th>Status</th><th>Vulnerabilities</th><th>Created</th><th></th></tr></thead><tbody>${jobs.map(job=>`<tr><td class="target-cell" title="${escapeHtml(job.target)}">${escapeHtml(job.target)}</td><td>${escapeHtml(job.scanner)}</td><td><span class="status ${escapeHtml(job.status)}">${escapeHtml(job.status)}</span></td><td class="vuln-cell">${terminalStatuses.has(job.status)?compactSeverityChips(severityCache.get(job.id)):'<span class="muted">Scanning…</span>'}</td><td>${escapeHtml(formatDate(job.created_at))}</td><td><a class="row-link" data-job-id="${escapeHtml(job.id)}">View</a></td></tr>`).join("")}</tbody></table></div>`;
