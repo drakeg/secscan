@@ -74,10 +74,14 @@ class RepositoryScanner(Scanner):
             checkout = Path(temporary) / "repository"
             environment = os.environ.copy()
             environment["GIT_TERMINAL_PROMPT"] = "0"
+            environment["GIT_CONFIG_NOSYSTEM"] = "1"
+            environment["GIT_CONFIG_GLOBAL"] = os.devnull
             try:
                 completed = subprocess.run(
                     [
                         "git",
+                        "-c",
+                        "credential.helper=",
                         "clone",
                         "--depth",
                         "1",
