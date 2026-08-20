@@ -5,7 +5,6 @@ from pathlib import Path
 import re
 import socket
 import subprocess
-import tempfile
 import xml.etree.ElementTree as ET
 
 from secscan.models import Finding
@@ -92,7 +91,8 @@ def _nuclei_findings(jsonl: str, target: str) -> list[Finding]:
             raise ValueError("Nuclei returned invalid JSONL") from exc
         if not isinstance(item, dict):
             continue
-        info = item.get("info") if isinstance(item.get("info"), dict) else {}
+        raw_info = item.get("info")
+        info = raw_info if isinstance(raw_info, dict) else {}
         template_id = str(item.get("template-id") or item.get("templateID") or "NUCLEI")
         name = str(info.get("name") or template_id)
         severity = str(info.get("severity") or "unknown").upper()
