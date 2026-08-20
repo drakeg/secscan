@@ -79,10 +79,12 @@ def test_remote_repository_is_shallow_cloned_and_cleaned_up(monkeypatch) -> None
         checkout = Path(args[-1])
         checkout.mkdir(parents=True)
         (checkout / "requirements.txt").write_text("example==1.0\n", encoding="utf-8")
-        assert kwargs["shell"] if "shell" in kwargs else True
+        assert "shell" not in kwargs
         environment = kwargs["env"]
         assert isinstance(environment, dict)
         assert environment["GIT_TERMINAL_PROMPT"] == "0"
+        assert environment["GIT_CONFIG_NOSYSTEM"] == "1"
+        assert environment["GIT_CONFIG_GLOBAL"]
         return subprocess.CompletedProcess(args, 0, "", "")
 
     def fake_scan(target: Path, **_kwargs: object) -> dict[str, object]:
@@ -97,15 +99,17 @@ def test_remote_repository_is_shallow_cloned_and_cleaned_up(monkeypatch) -> None
     scanner.scan(request)
 
     assert clone_commands
-    assert clone_commands[0][:7] == [
+    assert clone_commands[0][:9] == [
         "git",
+        "-c",
+        "credential.helper=",
         "clone",
         "--depth",
         "1",
         "--single-branch",
         "--no-tags",
+        "--",
     ]
-    assert "--" in clone_commands[0]
     assert clone_commands[0][-2] == request.target
     assert len(cloned_paths) == 1
     assert not cloned_paths[0].exists()
