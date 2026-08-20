@@ -37,7 +37,7 @@ The initial network target intentionally accepts **one hostname or one IP addres
 
 Nuclei is invoked with Interactsh disabled for this initial mode. Nmap runs service detection without requiring privileged container capabilities.
 
-The Docker image stores the reviewed template corpus at `/opt/nuclei-templates` and passes that path explicitly on every scan. Automatic engine and template update checks are disabled, so a running image does not silently replace its assessment logic. Updating templates requires changing the Docker version argument, reviewing the upstream release, rebuilding, and passing the full repository and container validation gates. The upstream `templates-checksum.txt` and a secscan version marker are retained in the image for inspection.
+The Docker image stores the reviewed template corpus at `/opt/nuclei-templates` and passes that path explicitly on every scan. The build pins both the human-readable release tag and its reviewed full Git commit SHA. It fetches the tag, verifies that the tag still resolves to that exact commit, and fails closed if they differ. Automatic engine and template update checks are disabled, so a running image does not silently replace its assessment logic. Updating templates requires reviewing the upstream release, changing both Docker arguments, rebuilding, and passing the full repository and container validation gates. The upstream `templates-checksum.txt`, secscan version marker, and secscan commit marker are retained in the image for inspection.
 
 Network scans still make outbound requests to the authorized target. Image builds need access to GitHub to retrieve the pinned official corpus; ordinary scan startup does not need to install templates.
 
@@ -56,7 +56,7 @@ Build the image, start the opt-in private-network HTTP fixture, confirm the bund
 ```bash
 docker compose --profile network-test up --build --detach --wait network-fixture
 docker compose --profile tools run --rm --entrypoint sh cli -c \
-  'nuclei -version && cat /opt/nuclei-templates/.secscan-template-version && test -s /opt/nuclei-templates/templates-checksum.txt'
+  'nuclei -version && cat /opt/nuclei-templates/.secscan-template-version && cat /opt/nuclei-templates/.secscan-template-commit && test -s /opt/nuclei-templates/templates-checksum.txt'
 docker compose --profile tools run --rm cli \
   scan network network-fixture \
   --output-dir /reports/network-compose \
@@ -64,7 +64,7 @@ docker compose --profile tools run --rm cli \
 docker compose --profile network-test down
 ```
 
-The fixture has no published host port, runs without capabilities on the private Compose network, and exists only when its profile is selected. Confirm the version marker prints `v10.4.7`, the scan creates `secscan.json`, and the logs do not report downloading or updating templates. Repeating the scan with the same image uses the same corpus. The ordinary `docker compose up --build` path remains unchanged and does not start the fixture.
+The fixture has no published host port, runs without capabilities on the private Compose network, and exists only when its profile is selected. Confirm the version marker prints `v10.4.7`, the commit marker prints `83234ce456da3e90dda86dfbc5e605e64a846df3`, the scan creates `secscan.json`, and the logs do not report downloading or updating templates. Repeating the scan with the same image uses the same corpus. The ordinary `docker compose up --build` path remains unchanged and does not start the fixture.
 
 ## Roadmap
 

@@ -270,7 +270,7 @@ Only trusted built-in plugins are registered. Arbitrary plugin loading remains o
 ### Supply chain
 
 - base images and scanner versions are pinned
-- the container bundles a reviewed, version-pinned Nuclei template corpus and disables runtime update checks
+- the container bundles a reviewed Nuclei template corpus bound to both a release tag and full Git commit SHA, fails closed if they differ, and disables runtime update checks
 - Python wheels are built and inspected
 - CI actions are version-pinned
 - release images are scanned
@@ -327,4 +327,4 @@ The SBOM scanner recognizes CycloneDX JSON and SPDX 2.2/2.3 JSON from mutually e
 
 ### Network assessment boundary
 
-The network scanner accepts one resolvable hostname or IP address and invokes Nmap and Nuclei through fixed argument lists. The image pins both the Nuclei binary and official template corpus; Nuclei receives the read-only bundled path explicitly with automatic update checks disabled. This makes the assessment corpus an image-build dependency rather than mutable runtime state. Interactsh, CIDRs, target lists, arbitrary scanner arguments, and web/API submission remain outside this boundary. Network assessment actively connects to the supplied system and is only for targets the operator is authorized to test.
+The network scanner accepts one resolvable hostname or IP address and invokes Nmap and Nuclei through fixed argument lists. The image pins the Nuclei binary and binds the official template release tag to one full reviewed Git commit SHA; the build fails if the tag resolves elsewhere. Nuclei receives the read-only bundled path explicitly with automatic update checks disabled. This makes the assessment corpus a fail-closed image-build dependency rather than mutable runtime state. Interactsh, CIDRs, target lists, arbitrary scanner arguments, and web/API submission remain outside this boundary. Network assessment actively connects to the supplied system and is only for targets the operator is authorized to test.

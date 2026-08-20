@@ -6,12 +6,19 @@ RUN mkdir -p /out \
 
 FROM golang:1.26-bookworm AS nuclei-builder
 ARG NUCLEI_TEMPLATES_VERSION=v10.4.7
+ARG NUCLEI_TEMPLATES_COMMIT=83234ce456da3e90dda86dfbc5e605e64a846df3
 RUN mkdir -p /out \
     && GOBIN=/out go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.11.1 \
-    && git clone --depth 1 --branch "${NUCLEI_TEMPLATES_VERSION}" \
-        https://github.com/projectdiscovery/nuclei-templates.git /nuclei-templates \
+    && git init /nuclei-templates \
+    && git -C /nuclei-templates remote add origin \
+        https://github.com/projectdiscovery/nuclei-templates.git \
+    && git -C /nuclei-templates fetch --depth 1 origin \
+        "refs/tags/${NUCLEI_TEMPLATES_VERSION}" \
+    && test "$(git -C /nuclei-templates rev-parse 'FETCH_HEAD^{commit}')" = "${NUCLEI_TEMPLATES_COMMIT}" \
+    && git -C /nuclei-templates checkout --detach "${NUCLEI_TEMPLATES_COMMIT}" \
     && rm -rf /nuclei-templates/.git \
-    && printf '%s\n' "${NUCLEI_TEMPLATES_VERSION}" > /nuclei-templates/.secscan-template-version
+    && printf '%s\n' "${NUCLEI_TEMPLATES_VERSION}" > /nuclei-templates/.secscan-template-version \
+    && printf '%s\n' "${NUCLEI_TEMPLATES_COMMIT}" > /nuclei-templates/.secscan-template-commit
 
 FROM python:3.14.7-slim-bookworm AS builder
 WORKDIR /build
@@ -26,6 +33,7 @@ FROM python:3.14.7-slim-bookworm
 
 ARG SECSCAN_VERSION=0.1.0
 ARG NUCLEI_TEMPLATES_VERSION=v10.4.7
+ARG NUCLEI_TEMPLATES_COMMIT=83234ce456da3e90dda86dfbc5e605e64a846df3
 LABEL org.opencontainers.image.title="secscan" \
       org.opencontainers.image.description="Container-first security scanner" \
       org.opencontainers.image.version="${SECSCAN_VERSION}"
@@ -52,6 +60,7 @@ RUN apt-get update \
     && nmap --version \
     && nuclei -version \
     && test "$(cat /opt/nuclei-templates/.secscan-template-version)" = "${NUCLEI_TEMPLATES_VERSION}" \
+    && test "$(cat /opt/nuclei-templates/.secscan-template-commit)" = "${NUCLEI_TEMPLATES_COMMIT}" \
     && test -s /opt/nuclei-templates/templates-checksum.txt \
     && rm -rf /wheels \
     && useradd --create-home --uid 10001 secscan \
