@@ -13,6 +13,10 @@ from secscan.scanners.repository import RepositoryScanner
 from secscan.trivy import generate_repository_cyclonedx, scan_repository
 
 
+def _as_dict(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def _severity(value: object, *, default: str = "UNKNOWN") -> str:
     normalized = str(value or "").upper()
     if normalized in {"CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN"}:
@@ -64,16 +68,19 @@ def _tool_version(command: list[str]) -> str:
     return output[0] if output else "unknown"
 
 
-def _semgrep_findings(payload: Any) -> list[Finding]:
+def _semgrep_findings(payload: object) -> list[Finding]:
     if not isinstance(payload, dict):
         return []
     findings: list[Finding] = []
-    for item in payload.get("results", []):
+    results = payload.get("results")
+    if not isinstance(results, list):
+        return findings
+    for item in results:
         if not isinstance(item, dict):
             continue
-        extra = item.get("extra") if isinstance(item.get("extra"), dict) else {}
-        start = item.get("start") if isinstance(item.get("start"), dict) else {}
-        metadata = extra.get("metadata") if isinstance(extra.get("metadata"), dict) else {}
+        extra = _as_dict(item.get("extra"))
+        start = _as_dict(item.get("start"))
+        metadata = _as_dict(extra.get("metadata"))
         path = str(item.get("path") or "unknown")
         line = start.get("line")
         target = f"{path}:{line}" if isinstance(line, int) else path
@@ -98,7 +105,7 @@ def _semgrep_findings(payload: Any) -> list[Finding]:
     return findings
 
 
-def _gitleaks_findings(payload: Any) -> list[Finding]:
+def _gitleaks_findings(payload: object) -> list[Finding]:
     if not isinstance(payload, list):
         return []
     findings: list[Finding] = []
@@ -126,7 +133,7 @@ def _gitleaks_findings(payload: Any) -> list[Finding]:
     return findings
 
 
-def _checkov_documents(payload: Any) -> Iterable[dict[str, Any]]:
+def _checkov_documents(payload: object) -> Iterable[dict[str, Any]]:
     if isinstance(payload, dict):
         yield payload
     elif isinstance(payload, list):
@@ -135,12 +142,15 @@ def _checkov_documents(payload: Any) -> Iterable[dict[str, Any]]:
                 yield item
 
 
-def _checkov_findings(payload: Any) -> list[Finding]:
+def _checkov_findings(payload: object) -> list[Finding]:
     findings: list[Finding] = []
     for document in _checkov_documents(payload):
-        results = document.get("results") if isinstance(document.get("results"), dict) else {}
+        results = _as_dict(document.get("results"))
         framework = str(document.get("check_type") or document.get("framework") or "iac")
-        for item in results.get("failed_checks", []):
+        failed_checks = results.get("failed_checks")
+        if not isinstance(failed_checks, list):
+            continue
+        for item in failed_checks:
             if not isinstance(item, dict):
                 continue
             check_id = str(item.get("check_id") or "CHECKOV")
