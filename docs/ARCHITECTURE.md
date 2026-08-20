@@ -270,6 +270,7 @@ Only trusted built-in plugins are registered. Arbitrary plugin loading remains o
 ### Supply chain
 
 - base images and scanner versions are pinned
+- the container bundles a reviewed, version-pinned Nuclei template corpus and disables runtime update checks
 - Python wheels are built and inspected
 - CI actions are version-pinned
 - release images are scanned
@@ -323,3 +324,7 @@ Bounded ECR batching is a sequential CLI orchestrator over that bridge. It valid
 Historical reports are read-only projections over scan history. Aggregate trends use a bounded exact cohort. History migration version 2 transactionally stores stable normalized finding fingerprints for new scans; legacy rows are explicitly marked as lacking observations. `finding-changes` compares the two latest finding-enabled records. `finding-timing` builds bounded presence episodes, marks oldest-window observations as left-censored, and measures only scan-to-scan observed resolution intervals. It does not claim exact first-seen, fix time, or authoritative MTTR.
 
 The SBOM scanner recognizes CycloneDX JSON and SPDX 2.2/2.3 JSON from mutually exclusive top-level format markers. Both formats use the same Trivy SBOM vulnerability adapter and normalized pipeline. The validated source document is copied byte-for-byte to a format-specific constant artifact path; service downloads explicitly allow-list both names.
+
+### Network assessment boundary
+
+The network scanner accepts one resolvable hostname or IP address and invokes Nmap and Nuclei through fixed argument lists. The image pins both the Nuclei binary and official template corpus; Nuclei receives the read-only bundled path explicitly with automatic update checks disabled. This makes the assessment corpus an image-build dependency rather than mutable runtime state. Interactsh, CIDRs, target lists, arbitrary scanner arguments, and web/API submission remain outside this boundary. Network assessment actively connects to the supplied system and is only for targets the operator is authorized to test.

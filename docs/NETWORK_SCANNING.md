@@ -7,7 +7,7 @@
 A network assessment combines two engines:
 
 - **Nmap** discovers exposed TCP services and performs light service/version detection across the top 1000 ports.
-- **Nuclei** runs signed/community vulnerability templates against the supplied host and normalizes matched vulnerabilities into the standard secscan finding model. The container currently pins Nuclei v3.11.1, which includes the patched `kin-openapi` dependency required by secscan's container vulnerability gate.
+- **Nuclei** runs signed/community vulnerability templates against the supplied host and normalizes matched vulnerabilities into the standard secscan finding model. The container pins Nuclei v3.11.1 and the official `nuclei-templates` v10.4.7 corpus. Nuclei v3.11.1 includes the patched `kin-openapi` dependency required by secscan's container vulnerability gate.
 
 The resulting `secscan.json` can therefore be compared, filtered, subjected to policy, and displayed alongside repository/container findings.
 
@@ -37,6 +37,10 @@ The initial network target intentionally accepts **one hostname or one IP addres
 
 Nuclei is invoked with Interactsh disabled for this initial mode. Nmap runs service detection without requiring privileged container capabilities.
 
+The Docker image stores the reviewed template corpus at `/opt/nuclei-templates` and passes that path explicitly on every scan. Automatic engine and template update checks are disabled, so a running image does not silently replace its assessment logic. Updating templates requires changing the Docker version argument, reviewing the upstream release, rebuilding, and passing the full repository and container validation gates. The upstream `templates-checksum.txt` and a secscan version marker are retained in the image for inspection.
+
+Network scans still make outbound requests to the authorized target. Image builds need access to GitHub to retrieve the pinned official corpus; ordinary scan startup does not need to install templates.
+
 Only assess hosts and networks you own or have explicit authorization to test.
 
 ## Finding semantics
@@ -44,6 +48,23 @@ Only assess hosts and networks you own or have explicit authorization to test.
 Nmap-discovered open services are recorded as informational/Low exposure findings such as `OPEN-TCP-22`. They are not automatically treated as exploitable vulnerabilities; they make externally reachable attack surface visible in the same dashboard.
 
 Nuclei matches retain their template severity (Critical, High, Medium, Low, or Unknown) and template identifier.
+
+## Local validation
+
+Build the image, start the opt-in private-network HTTP fixture, confirm the bundled versions, and scan only that fixture:
+
+```bash
+docker compose --profile network-test up --build --detach --wait network-fixture
+docker compose --profile tools run --rm --entrypoint sh cli -c \
+  'nuclei -version && cat /opt/nuclei-templates/.secscan-template-version && test -s /opt/nuclei-templates/templates-checksum.txt'
+docker compose --profile tools run --rm cli \
+  scan network network-fixture \
+  --output-dir /reports/network-compose \
+  --fail-on NONE
+docker compose --profile network-test down
+```
+
+The fixture has no published host port, runs without capabilities on the private Compose network, and exists only when its profile is selected. Confirm the version marker prints `v10.4.7`, the scan creates `secscan.json`, and the logs do not report downloading or updating templates. Repeating the scan with the same image uses the same corpus. The ordinary `docker compose up --build` path remains unchanged and does not start the fixture.
 
 ## Roadmap
 

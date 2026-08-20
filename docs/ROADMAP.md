@@ -115,56 +115,61 @@ Delivered deterministic service artifact manifests with byte sizes, SHA-256 dige
 
 Delivered opt-in shared bearer protection for local API routes with constant-time comparison, public health and documentation routes, and unchanged zero-configuration Compose behavior.
 
+### Sprint 27 — Artifact Discovery and Conditional Downloads
+
+Delivered stable artifact-manifest discovery, manifest-backed strong ETags, `HEAD` downloads, conditional revalidation, and legacy-artifact compatibility.
+
+### Local Web and Broader Assessment Increments
+
+Delivered the first local web GUI, richer searchable results and dashboard summaries, configurable Compose evaluation, safe terminal-job deletion, public and private GitHub repository scanning, comprehensive Trivy/Semgrep/Gitleaks/Checkov repository assessment, and single-host Nmap/Nuclei network assessment.
+
 ## Current sprint
 
-### Sprint 27 — Artifact Discovery and Conditional Downloads
+### Sprint 28 — Deterministic Nuclei Templates
 
 #### Goal
 
-Make service artifacts discoverable and efficiently revalidatable through standard HTTP semantics backed by the existing integrity manifest.
+Make containerized network assessments reproducible and independently runnable by bundling one reviewed Nuclei template release instead of relying on implicit runtime template downloads.
 
 #### User stories
 
-1. As an API consumer, I can discover a job's artifact manifest at a stable collection endpoint.
-2. As a downloader, I receive a strong ETag derived from the recorded SHA-256 digest.
-3. As an automation client, I can use `HEAD` and `If-None-Match` without downloading an unchanged artifact body.
-4. As a legacy-job consumer, I can still download artifacts that predate manifests.
+1. As an operator, I can identify the exact Nuclei engine and template versions used by the image.
+2. As a local evaluator, I can run the documented Compose network command without an implicit template installation step.
+3. As a maintainer, I can review template-corpus upgrades as explicit Docker dependency changes.
+4. As a security-conscious user, I can see the outbound-network and authorized-target boundaries for active assessment.
 
 #### Planned implementation
 
-- add `GET /api/v1/jobs/{job_id}/artifacts` as the stable manifest discovery endpoint
-- add `HEAD` support to individual artifact downloads
-- attach strong quoted ETags using manifest SHA-256 values
-- hash the small manifest itself to provide its ETag without self-listing
-- honor exact, weak, comma-separated, and wildcard `If-None-Match` values with `304`
-- preserve ordinary downloads without ETags when a legacy or invalid manifest is unavailable
-- retain bearer protection automatically through the existing `/api/v1/*` boundary
-- document discovery, header inspection, conditional requests, and local Compose tests
+- pin an official `nuclei-templates` release in the Docker build
+- copy the reviewed corpus into a read-only runtime path
+- invoke Nuclei with that exact explicit template directory and disabled update checks
+- validate the bundled version marker and template checksum manifest during image construction
+- add source-level regression tests for the version pin, runtime path, and command construction
+- document template provenance, upgrade procedure, outbound requests, and local Compose validation
+- keep the initial single-host CLI boundary unchanged
 
 #### Acceptance criteria
 
-- the collection endpoint returns the same schema-versioned manifest available as `artifacts.json`
-- manifested artifact `GET` and `HEAD` responses include the same strong ETag
-- successful `HEAD` returns download headers and no response body
-- matching `If-None-Match` requests return `304`, the ETag, and no body
-- non-matching conditions return the normal artifact response
-- unknown jobs and artifacts retain `404` behavior
-- legacy artifacts without a valid manifest remain downloadable without an invented digest
-- optional bearer authentication protects all new endpoints without special cases
-- automated tests cover discovery, ETags, HEAD, conditional variants, legacy fallback, and authentication
+- the image contains the documented template release and its upstream checksum manifest
+- Nuclei receives the absolute bundled template path on every network assessment
+- update checks remain disabled so scans do not silently change the installed corpus
+- a clean Compose image reports the expected Nuclei and template versions
+- a real authorized Compose network scan completes without downloading templates at runtime
+- automated tests cover Docker packaging and exact command construction
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- artifact mutation, deletion, archival, compression, upload, or retention policies
-- ranges, resumable downloads, remote storage, CDN integration, or cache infrastructure
-- signatures, provenance, attestations, or proof of origin
-- changing authentication, TLS, or localhost-only Compose boundaries
+- exposing network scans through the web service or API
+- CIDRs, target lists, discovery expansion, scheduling, or background reassessment
+- custom/private templates, template editing, or runtime template updates
+- authenticated Linux, Windows, EC2, web/API DAST, or cloud-configuration assessment
+- signatures or provenance beyond Nuclei's existing official-template verification
 
 #### Cost outlook
 
-ETag and conditional-request handling use existing local manifests and Python's standard library. Current and projected recurring infrastructure cost remains **$0**.
+Templates are bundled at image-build time and scans use existing local Docker resources. Current and projected recurring infrastructure cost remains **$0**; operators remain responsible for ordinary build bandwidth and authorized scan traffic.
 
 ## Planned feature sprints
 
@@ -278,7 +283,7 @@ Delivered sequential batches of up to 20 explicitly selected immutable ECR inven
 - risk scoring, KEV, and EPSS enrichment
 - EC2 inventory or snapshot-based scanning
 - ECS and EKS workload association
-- web dashboard and multi-user access
+- multi-user access and tenant isolation
 - Jira, Slack, ServiceNow, SIEM, and GitHub integrations
 - signed policy bundles and enterprise governance
 
