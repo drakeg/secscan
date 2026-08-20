@@ -35,6 +35,22 @@ def build_default_registry() -> ScannerRegistry:
     from secscan.scanners.repository import RepositoryScanner
     from secscan.scanners.sbom import SBOMScanner
 
+    class DefaultRepositoryScanner(FullRepositoryScanner):
+        @property
+        def capability(self) -> ScannerCapability:
+            return ScannerCapability(
+                name="repository",
+                description="full repository security scan with Trivy, Semgrep, Gitleaks, and Checkov",
+                target_help="repository path or HTTPS Git URL",
+            )
+
     return ScannerRegistry(
-        [ImageScanner(), FilesystemScanner(), RepositoryScanner(), FullRepositoryScanner(), SBOMScanner()]
+        [
+            ImageScanner(),
+            FilesystemScanner(),
+            DefaultRepositoryScanner(),
+            RepositoryScanner(),
+            FullRepositoryScanner(),
+            SBOMScanner(),
+        ]
     )
