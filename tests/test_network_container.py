@@ -15,3 +15,16 @@ def test_container_bundles_network_assessment_engines() -> None:
     assert "/opt/nuclei-templates/templates-checksum.txt" in dockerfile
     assert "nmap --version" in dockerfile
     assert "nuclei -version" in dockerfile
+
+
+def test_container_scan_skips_the_nuclei_secret_detector_definition() -> None:
+    workflow = (
+        Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml"
+    ).read_text(encoding="utf-8")
+
+    # The official template is itself a secret-detection rule. Trivy otherwise
+    # treats its GCP credential regex as a credential while scanning the image.
+    assert (
+        "--skip-files "
+        "/opt/nuclei-templates/http/global-matchers/secrets-patterns-rules.yaml"
+    ) in workflow

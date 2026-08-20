@@ -73,4 +73,5 @@ jobs:
             --input /scan/secscan-ci.tar \
             --exit-code 1 \
             --ignore-unfixed \
+            --skip-files /opt/nuclei-templates/http/global-matchers/secrets-patterns-rules.yaml \
             --severity CRITICAL
