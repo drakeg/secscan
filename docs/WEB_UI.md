@@ -34,9 +34,12 @@ A simple end-to-end GUI test is:
 
 1. Open **New scan**.
 2. Select **Filesystem** or **Repository**.
-3. Use `/workspace` as the target.
+3. For a local scan use `/workspace`; for a remote repository use a public HTTPS Git URL such as `https://github.com/example/project.git`.
 4. Start the scan.
 5. Open the completed job and inspect/filter the findings and generated artifacts.
+6. Return to the Dashboard and confirm the latest target posture appears in the severity totals and priority chart.
+
+Remote repository scans are shallow-cloned into temporary storage. In the default Compose configuration `/tmp` is a 512 MB tmpfs, providing a practical storage boundary for temporary checkouts. Remote URLs must use HTTPS and must not contain embedded credentials, query strings, or fragments.
 
 To scan a different local directory through the GUI, set an absolute path in `.env`:
 
@@ -108,6 +111,14 @@ docker compose --profile tools run --rm cli \
   --output-dir /reports/manual-repository
 ```
 
+A public remote repository can be compared from the same image without a source mount:
+
+```bash
+docker compose --profile tools run --rm cli \
+  scan repository https://github.com/example/project.git \
+  --output-dir /reports/manual-remote-repository
+```
+
 Stop the local service with:
 
 ```bash
@@ -116,11 +127,25 @@ docker compose down
 
 Use `docker compose down -v` only when you intentionally want to remove the persistent scan reports and vulnerability database cache as well.
 
+## Dashboard behavior
+
+The Dashboard is intended to answer what needs attention first rather than simply count historical findings.
+
+- Critical, High, Medium, and Low headline totals use the latest completed report for each unique scanner/target pair.
+- The vulnerability-mix chart shows the aggregate severity distribution of those latest reports.
+- **Most urgent targets** ranks targets by Critical findings first, then High, Medium, and total findings.
+- Historical rescans of the same target are not double-counted in current-posture charts.
+- Scan-history rows show compact Critical/High/Medium/Low counts for each completed report.
+- The browser retrieves a lightweight `/api/v1/jobs/{job_id}/summary` response rather than downloading every full report for dashboard rendering.
+
 ## Current GUI capabilities
 
 - view queued, running, completed, and failed job counts
-- browse recent and historical scan jobs
-- submit image, filesystem, repository, and SBOM scans
+- see current Critical, High, Medium, and Low vulnerability totals on the front-page dashboard
+- visualize current vulnerability mix and the most urgent targets to fix first
+- browse recent and historical scan jobs with per-scan severity counts
+- submit image, filesystem, local repository, public remote repository, and SBOM scans
+- use public HTTPS GitHub, GitLab, Azure DevOps, and compatible Git URLs for repository scans
 - configure the policy threshold, timeout, policy path, and baseline path
 - inspect normalized severity counts from `secscan.json`
 - search findings by vulnerability ID, package, title, target, or version
@@ -128,16 +153,19 @@ Use `docker compose down -v` only when you intentionally want to remove the pers
 - open advisory URLs directly from finding rows
 - visualize baseline comparison totals and browse new, resolved, and unchanged findings
 - download generated scan artifacts
+- delete completed/failed/cancelled scan history and artifacts with confirmation
 - use an existing `SECSCAN_API_TOKEN` without persisting it beyond the current browser tab
 
-Local path scans remain constrained by the service's `--allowed-input-root` configuration. The default Compose configuration exposes only the selected workspace beneath `/workspace`.
+Local path scans remain constrained by the service's `--allowed-input-root` configuration. The default Compose configuration exposes only the selected workspace beneath `/workspace`. Validated public HTTPS repository URLs are handled separately and are not treated as local filesystem paths.
 
 ## Architecture
 
-The browser UI remains a thin client over the existing service API and normalized artifacts. Scanner execution, job persistence, path validation, artifact validation, and API authentication remain in `secscan.service`.
+The browser UI remains a thin client over the existing service API and normalized artifacts. Scanner execution, job persistence, local path validation, artifact validation, and API authentication remain in `secscan.service`.
 
-`secscan.web.create_web_app()` creates the existing service application and mounts packaged static assets at `/` after the API routes. This keeps the REST API stable and avoids maintaining separate scanner behavior for the CLI and GUI.
+Remote repository URLs are validated at the service boundary, then the repository scanner performs a non-interactive shallow Git clone into temporary storage and feeds that checkout through the existing local repository/Trivy path. The temporary checkout is removed after each scanner operation. Private credentials are intentionally not accepted in repository URLs.
 
-The local Compose environment deliberately retains restrictive defaults: the service binds to loopback, the workspace is read-only, capabilities are dropped, `no-new-privileges` is enabled, and the container root filesystem is read-only. These constraints should remain the baseline as secscan evolves toward a hosted multi-tenant service.
+`secscan.web.create_web_app()` creates the existing service application and mounts packaged static assets at `/` after the API routes. The web layer also exposes lightweight dashboard summaries and safe stored-scan deletion helpers while leaving scanner behavior in the core service/scanner modules.
 
-This increment does not add SaaS tenancy, user accounts, billing, or remote repository credentials. Those concerns should be introduced behind explicit organization/user/integration models rather than embedded into the local job model.
+The local Compose environment deliberately retains restrictive defaults: the service binds to loopback, the workspace is read-only, capabilities are dropped, `no-new-privileges` is enabled, the container root filesystem is read-only, and `/tmp` is bounded. These constraints should remain the baseline as secscan evolves toward a hosted multi-tenant service.
+
+This increment does not add SaaS tenancy, user accounts, billing, private repository authentication, OAuth/App integrations, or tenant credential storage. Those concerns should be introduced behind explicit organization/user/integration models rather than embedded into scan job targets.
