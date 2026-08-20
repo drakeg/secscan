@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 import pytest
 
 from secscan.scanners.base import ScanRequest
 from secscan.scanners.registry import build_default_registry
-from secscan.scanners.repository import RepositoryScanner
+from secscan.scanners.repository import RepositoryScanner, validate_remote_repository_url
 
 
 def test_default_registry_contains_repository_scanner() -> None:
@@ -61,3 +62,64 @@ def test_repository_scanner_normalizes_results(monkeypatch, tmp_path: Path) -> N
     assert len(result.findings) == 1
     assert result.findings[0].vulnerability_id == "CVE-TEST-REPO"
     assert result.scanner["name"] == "trivy"
+
+
+def test_remote_repository_is_shallow_cloned_and_cleaned_up(monkeypatch) -> None:
+    scanner = RepositoryScanner()
+    request = ScanRequest(
+        scanner_name="repository",
+        target="https://github.com/example/project.git",
+        timeout_seconds=30,
+    )
+    cloned_paths: list[Path] = []
+    clone_commands: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        clone_commands.append(args)
+        checkout = Path(args[-1])
+        checkout.mkdir(parents=True)
+        (checkout / "requirements.txt").write_text("example==1.0\n", encoding="utf-8")
+        assert kwargs["shell"] if "shell" in kwargs else True
+        environment = kwargs["env"]
+        assert isinstance(environment, dict)
+        assert environment["GIT_TERMINAL_PROMPT"] == "0"
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    def fake_scan(target: Path, **_kwargs: object) -> dict[str, object]:
+        cloned_paths.append(target)
+        assert target.is_dir()
+        return {"Results": []}
+
+    monkeypatch.setattr("secscan.scanners.repository.subprocess.run", fake_run)
+    monkeypatch.setattr("secscan.scanners.repository.scan_repository", fake_scan)
+    monkeypatch.setattr(scanner, "_engine_version", lambda: "Trivy test")
+
+    scanner.scan(request)
+
+    assert clone_commands
+    assert clone_commands[0][:7] == [
+        "git",
+        "clone",
+        "--depth",
+        "1",
+        "--single-branch",
+        "--no-tags",
+    ]
+    assert "--" in clone_commands[0]
+    assert clone_commands[0][-2] == request.target
+    assert len(cloned_paths) == 1
+    assert not cloned_paths[0].exists()
+
+
+@pytest.mark.parametrize(
+    ("target", "message"),
+    [
+        ("http://github.com/example/project.git", "must use HTTPS"),
+        ("https://user:token@github.com/example/project.git", "embedded credentials"),
+        ("https://github.com/example/project.git?token=secret", "query strings"),
+        ("https://github.com", "repository path"),
+    ],
+)
+def test_remote_repository_url_validation_rejects_unsafe_urls(target: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        validate_remote_repository_url(target)
