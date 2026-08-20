@@ -10,12 +10,17 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
         (Path(__file__).parents[1] / "compose.yaml").read_text(encoding="utf-8")
     )
     service = compose["services"]["service"]
+    cli = compose["services"]["cli"]
 
     assert compose["name"] == "${SECSCAN_COMPOSE_PROJECT:-secscan}"
     assert service["entrypoint"] == ["secscan-service"]
     assert service["command"][-2:] == ["--allowed-input-root", "/workspace"]
     assert service["ports"] == ["127.0.0.1:${SECSCAN_PORT:-8000}:8000"]
-    assert service["environment"] == {"SECSCAN_API_TOKEN": "${SECSCAN_API_TOKEN:-}"}
+    assert service["environment"] == {
+        "SECSCAN_API_TOKEN": "${SECSCAN_API_TOKEN:-}",
+        "SECSCAN_GITHUB_TOKEN": "${SECSCAN_GITHUB_TOKEN:-}",
+    }
+    assert cli["environment"] == {"SECSCAN_GITHUB_TOKEN": "${SECSCAN_GITHUB_TOKEN:-}"}
     assert service["read_only"] is True
     assert service["cap_drop"] == ["ALL"]
     assert service["security_opt"] == ["no-new-privileges:true"]
