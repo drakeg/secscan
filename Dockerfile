@@ -4,7 +4,7 @@ FROM golang:1.25-bookworm AS gitleaks-builder
 RUN mkdir -p /out \
     && GOBIN=/out go install github.com/zricethezav/gitleaks/v8@v8.30.1
 
-FROM golang:1.25-bookworm AS nuclei-builder
+FROM golang:1.26-bookworm AS nuclei-builder
 RUN mkdir -p /out \
     && GOBIN=/out go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.11.1
 
