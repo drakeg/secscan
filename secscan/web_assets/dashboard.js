@@ -9,8 +9,8 @@ function compactSeverityChips(counts){
 async function loadSeverityForJob(job){
   if(!terminalStatuses.has(job.status)||severityCache.has(job.id))return;
   try{
-    const report=await api(`/api/v1/jobs/${encodeURIComponent(job.id)}/artifacts/secscan.json`);
-    severityCache.set(job.id,severityCounts(report||{}));
+    const summary=await api(`/api/v1/jobs/${encodeURIComponent(job.id)}/summary`);
+    severityCache.set(job.id,summary.severity||null);
   }catch{
     severityCache.set(job.id,null);
   }
