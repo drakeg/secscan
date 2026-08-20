@@ -33,9 +33,11 @@ For Docker Compose, copy `.env.example` to `.env` and set:
 SECSCAN_GITHUB_TOKEN=github_pat_your_token_here
 ```
 
-Prefer a fine-grained GitHub token with read-only **Contents** access and scope it only to repositories secscan needs to inspect.
+Prefer a fine-grained GitHub token with read-only **Contents** access and scope it only to repositories secscan needs to inspect. Do not commit the populated `.env` file.
 
 The token is not added to the repository URL, scan request, job database, report, or Git command arguments. It is converted to a GitHub authorization header and supplied only through the environment of the short-lived `git clone` process. Secscan also disables interactive prompts, credential helpers, and system/global Git configuration for remote clones. Clone errors are defensively redacted before they can be stored on a failed job.
+
+For complete setup instructions, recommended token permissions, Docker Compose and CLI examples, security details, and authentication troubleshooting, see [GitHub Repository Authentication](GITHUB_AUTH.md).
 
 GitLab, Azure DevOps, and generic HTTPS Git repositories remain public-only in this increment. Their future private-repository support should plug into the same provider authentication boundary rather than changing scan-job payloads.
 
@@ -64,6 +66,7 @@ export SECSCAN_GITHUB_TOKEN=github_pat_your_token_here
 secscan scan repository https://github.com/example/private-project.git \
   --output-dir ./reports \
   --fail-on HIGH
+unset SECSCAN_GITHUB_TOKEN
 ```
 
 The scanner uses Trivy repository mode and produces the same normalized JSON, HTML, CycloneDX, policy, baseline, and history outputs as the image and filesystem scanners.
