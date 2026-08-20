@@ -136,6 +136,19 @@ docker run --rm \
 
 See [Repository Scanning](docs/REPOSITORY_SCANNING.md) for remote-clone behavior and [GitHub Repository Authentication](docs/GITHUB_AUTH.md) for token setup, permissions, Docker Compose/CLI usage, security details, and troubleshooting.
 
+## Network assessment
+
+Assess one hostname or IP address that you own or are explicitly authorized to test:
+
+```bash
+docker compose --profile tools run --rm cli \
+  scan network AUTHORIZED_HOSTNAME_OR_IP \
+  --output-dir /reports/network-compose \
+  --fail-on NONE
+```
+
+The image bundles pinned Nmap, Nuclei, and official Nuclei template versions; scans do not install or update templates at runtime. URLs, CIDRs, target lists, arbitrary scanner flags, and web/API network submissions are not supported. See [Network Scanning](docs/NETWORK_SCANNING.md) for safety boundaries and local validation.
+
 ## SBOM scanning
 
 Scan an existing CycloneDX or SPDX 2.2/2.3 JSON SBOM:
@@ -337,6 +350,7 @@ The built-in scanners support public and explicitly inventoried ECR container im
 - [Repository scanning](docs/REPOSITORY_SCANNING.md)
 - [GitHub repository authentication](docs/GITHUB_AUTH.md)
 - [Web GUI and Docker Compose testing](docs/WEB_UI.md)
+- [Agentless network assessment and local testing](docs/NETWORK_SCANNING.md)
 - [SBOM scanning](docs/SBOM_SCANNING.md)
 - [Release artifacts and testing](docs/RELEASES.md)
 - [Service mode and REST API](docs/SERVICE_MODE.md)

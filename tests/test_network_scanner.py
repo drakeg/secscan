@@ -5,7 +5,13 @@ import subprocess
 import pytest
 
 from secscan.scanners.base import ScanRequest
-from secscan.scanners.network import NetworkScanner, _nmap_findings, _nuclei_findings, validate_network_target
+from secscan.scanners.network import (
+    NUCLEI_TEMPLATES_PATH,
+    NetworkScanner,
+    _nmap_findings,
+    _nuclei_findings,
+    validate_network_target,
+)
 
 
 def test_nmap_open_service_is_normalized() -> None:
@@ -61,5 +67,7 @@ def test_network_scanner_invokes_nmap_and_nuclei(monkeypatch: pytest.MonkeyPatch
     assert result.findings == ()
     assert commands[0][0] == "nmap"
     assert commands[1][0] == "nuclei"
+    assert commands[1][commands[1].index("-templates") + 1] == NUCLEI_TEMPLATES_PATH
+    assert "-disable-update-check" in commands[1]
     assert "--" in commands[0]
     assert commands[0][-1] == "host.example.com"

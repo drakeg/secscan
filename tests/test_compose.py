@@ -11,6 +11,7 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
     )
     service = compose["services"]["service"]
     cli = compose["services"]["cli"]
+    network_fixture = compose["services"]["network-fixture"]
 
     assert compose["name"] == "${SECSCAN_COMPOSE_PROJECT:-secscan}"
     assert service["entrypoint"] == ["secscan-service"]
@@ -29,4 +30,11 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
     assert "secscan-cache:/cache" in service["volumes"]
     assert "${SECSCAN_WORKSPACE:-.}:/workspace:ro" in service["volumes"]
     assert service["healthcheck"]["test"][:3] == ["CMD", "python", "-c"]
+    assert network_fixture["profiles"] == ["network-test"]
+    assert network_fixture["entrypoint"] == ["python", "-m", "http.server"]
+    assert network_fixture["command"] == ["8080", "--bind", "0.0.0.0", "--directory", "/tmp"]
+    assert network_fixture["read_only"] is True
+    assert network_fixture["cap_drop"] == ["ALL"]
+    assert network_fixture["security_opt"] == ["no-new-privileges:true"]
+    assert "ports" not in network_fixture
     assert set(compose["volumes"]) == {"secscan-reports", "secscan-cache"}

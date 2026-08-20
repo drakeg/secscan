@@ -5,21 +5,27 @@ RUN mkdir -p /out \
     && GOBIN=/out go install github.com/zricethezav/gitleaks/v8@v8.30.1
 
 FROM golang:1.26-bookworm AS nuclei-builder
+ARG NUCLEI_TEMPLATES_VERSION=v10.4.7
 RUN mkdir -p /out \
-    && GOBIN=/out go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.11.1
+    && GOBIN=/out go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.11.1 \
+    && git clone --depth 1 --branch "${NUCLEI_TEMPLATES_VERSION}" \
+        https://github.com/projectdiscovery/nuclei-templates.git /nuclei-templates \
+    && rm -rf /nuclei-templates/.git \
+    && printf '%s\n' "${NUCLEI_TEMPLATES_VERSION}" > /nuclei-templates/.secscan-template-version
 
 FROM python:3.14.7-slim-bookworm AS builder
 WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY secscan ./secscan
 COPY scripts/verify_wheel.py ./scripts/verify_wheel.py
-RUN python -c "from pathlib import Path; required={'secscan/__init__.py','secscan/aws.py','secscan/cli.py','secscan/compare.py','secscan/history.py','secscan/models.py','secscan/normalize.py','secscan/policy.py','secscan/report.py','secscan/trivy.py','secscan/scanners/__init__.py','secscan/scanners/base.py','secscan/scanners/registry.py','secscan/scanners/image.py','secscan/scanners/filesystem.py','secscan/scanners/repository.py','secscan/scanners/full_repository.py','secscan/scanners/network.py','secscan/scanners/sbom.py'}; missing={path for path in required if not Path(path).is_file()}; assert not missing, f'missing source modules: {sorted(missing)}'; print('verified source tree:', ', '.join(sorted(required)))" \
+RUN python -c "from pathlib import Path; required={'secscan/__init__.py','secscan/aws.py','secscan/cli.py','secscan/compare.py','secscan/history.py','secscan/models.py','secscan/normalize.py','secscan/policy.py','secscan/report.py','secscan/trivy.py','secscan/web.py','secscan/web_assets/__init__.py','secscan/web_assets/index.html','secscan/scanners/__init__.py','secscan/scanners/base.py','secscan/scanners/registry.py','secscan/scanners/image.py','secscan/scanners/filesystem.py','secscan/scanners/repository.py','secscan/scanners/full_repository.py','secscan/scanners/network.py','secscan/scanners/sbom.py'}; missing={path for path in required if not Path(path).is_file()}; assert not missing, f'missing source modules: {sorted(missing)}'; print('verified source tree:', ', '.join(sorted(required)))" \
     && pip wheel --no-deps --wheel-dir /wheels . \
     && python scripts/verify_wheel.py /wheels/secscan-*.whl
 
 FROM python:3.14.7-slim-bookworm
 
 ARG SECSCAN_VERSION=0.1.0
+ARG NUCLEI_TEMPLATES_VERSION=v10.4.7
 LABEL org.opencontainers.image.title="secscan" \
       org.opencontainers.image.description="Container-first security scanner" \
       org.opencontainers.image.version="${SECSCAN_VERSION}"
@@ -27,6 +33,7 @@ LABEL org.opencontainers.image.title="secscan" \
 COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 COPY --from=gitleaks-builder /out/gitleaks /usr/local/bin/gitleaks
 COPY --from=nuclei-builder /out/nuclei /usr/local/bin/nuclei
+COPY --from=nuclei-builder /nuclei-templates /opt/nuclei-templates
 COPY --from=builder /wheels /wheels
 RUN apt-get update \
     && apt-get install --no-install-recommends -y git ca-certificates nmap \
@@ -44,6 +51,8 @@ RUN apt-get update \
     && checkov --version \
     && nmap --version \
     && nuclei -version \
+    && test "$(cat /opt/nuclei-templates/.secscan-template-version)" = "${NUCLEI_TEMPLATES_VERSION}" \
+    && test -s /opt/nuclei-templates/templates-checksum.txt \
     && rm -rf /wheels \
     && useradd --create-home --uid 10001 secscan \
     && mkdir -p /reports /cache \

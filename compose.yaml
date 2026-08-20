@@ -65,6 +65,30 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  network-fixture:
+    profiles: ["network-test"]
+    build:
+      context: .
+    image: secscan:local
+    entrypoint: ["python", "-m", "http.server"]
+    command: ["8080", "--bind", "0.0.0.0", "--directory", "/tmp"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8080', timeout=2).status == 200"
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
 volumes:
   secscan-reports:
   secscan-cache:

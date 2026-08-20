@@ -12,6 +12,7 @@ from secscan.scanners.base import ScanRequest, ScanResult, Scanner, ScannerCapab
 
 
 _HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,252}$")
+NUCLEI_TEMPLATES_PATH = "/opt/nuclei-templates"
 
 
 def validate_network_target(target: str) -> str:
@@ -146,6 +147,8 @@ class NetworkScanner(Scanner):
                 "nuclei",
                 "-u",
                 target,
+                "-templates",
+                NUCLEI_TEMPLATES_PATH,
                 "-jsonl",
                 "-silent",
                 "-disable-update-check",
