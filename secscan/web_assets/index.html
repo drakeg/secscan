@@ -67,7 +67,7 @@
         <div class="panel narrow">
           <div class="panel-heading"><div><p class="eyebrow">Scanner</p><h2>Start a security scan</h2></div></div>
           <form id="scan-form">
-            <label>Scanner type<select id="scanner" required><option value="image">Container image</option><option value="filesystem">Filesystem</option><option value="repository">Repository</option><option value="sbom">SBOM</option></select></label>
+            <label>Scanner type<select id="scanner" required><option value="image">Container image</option><option value="filesystem">Filesystem</option><option value="repository">Repository — Full security scan</option><option value="sbom">SBOM</option></select></label>
             <label>Target<input id="target" required placeholder="alpine:3.20"><span id="target-help" class="remote-repo-help"></span></label>
             <div class="form-grid">
               <label>Fail on<select id="fail-on"><option value="">Use default</option><option>NONE</option><option>UNKNOWN</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></label>

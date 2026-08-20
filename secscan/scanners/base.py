@@ -48,3 +48,6 @@ class Scanner(ABC):
 
     def sbom_artifact_name(self, request: ScanRequest) -> str:
         return "secscan.cdx.json"
+
+    def raw_artifact_name(self, request: ScanRequest) -> str:
+        return "trivy.json"

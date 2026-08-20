@@ -93,8 +93,8 @@ class RepositoryScanner(Scanner):
     @property
     def capability(self) -> ScannerCapability:
         return ScannerCapability(
-            name="repository",
-            description="scan a local or remote source repository",
+            name="repository-trivy",
+            description="run the legacy Trivy-only repository scan",
             target_help="repository path or HTTPS Git URL",
         )
 
