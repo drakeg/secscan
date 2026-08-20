@@ -7,7 +7,7 @@
 A network assessment combines two engines:
 
 - **Nmap** discovers exposed TCP services and performs light service/version detection across the top 1000 ports.
-- **Nuclei** runs signed/community vulnerability templates against the supplied host and normalizes matched vulnerabilities into the standard secscan finding model.
+- **Nuclei** runs signed/community vulnerability templates against the supplied host and normalizes matched vulnerabilities into the standard secscan finding model. The container currently pins Nuclei v3.11.1.
 
 The resulting `secscan.json` can therefore be compared, filtered, subjected to policy, and displayed alongside repository/container findings.
 
