@@ -1,0 +1,12 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+def test_container_bundles_network_assessment_engines() -> None:
+    dockerfile = (Path(__file__).parents[1] / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "nmap" in dockerfile
+    assert "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.11.0" in dockerfile
+    assert "nmap --version" in dockerfile
+    assert "nuclei -version" in dockerfile
