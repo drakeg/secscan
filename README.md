@@ -147,7 +147,7 @@ docker compose --profile tools run --rm cli \
   --fail-on NONE
 ```
 
-The image bundles pinned Nmap, Nuclei, and official Nuclei template versions; scans do not install or update templates at runtime. URLs, CIDRs, target lists, arbitrary scanner flags, and web/API network submissions are not supported. See [Network Scanning](docs/NETWORK_SCANNING.md) for safety boundaries and local validation.
+The image bundles pinned Nmap and Nuclei versions plus an official Nuclei template release bound to a reviewed full Git commit; scans do not install or update templates at runtime. URLs, CIDRs, target lists, arbitrary scanner flags, and web/API network submissions are not supported. See [Network Scanning](docs/NETWORK_SCANNING.md) for provenance, safety boundaries, and local validation.
 
 ## SBOM scanning
 

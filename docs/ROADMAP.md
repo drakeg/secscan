@@ -123,53 +123,52 @@ Delivered stable artifact-manifest discovery, manifest-backed strong ETags, `HEA
 
 Delivered the first local web GUI, richer searchable results and dashboard summaries, configurable Compose evaluation, safe terminal-job deletion, public and private GitHub repository scanning, comprehensive Trivy/Semgrep/Gitleaks/Checkov repository assessment, and single-host Nmap/Nuclei network assessment.
 
+### Sprint 28 — Deterministic Nuclei Templates
+
+Delivered an official version-pinned Nuclei template corpus in the container, an explicit read-only runtime path with updates disabled, an opt-in private Compose fixture, and documented local validation.
+
 ## Current sprint
 
-### Sprint 28 — Deterministic Nuclei Templates
+### Sprint 29 — Immutable Nuclei Template Provenance
 
 #### Goal
 
-Make containerized network assessments reproducible and independently runnable by bundling one reviewed Nuclei template release instead of relying on implicit runtime template downloads.
+Close the remaining movable-tag supply-chain gap by binding the documented Nuclei template release to one reviewed full Git commit SHA.
 
 #### User stories
 
-1. As an operator, I can identify the exact Nuclei engine and template versions used by the image.
-2. As a local evaluator, I can run the documented Compose network command without an implicit template installation step.
-3. As a maintainer, I can review template-corpus upgrades as explicit Docker dependency changes.
-4. As a security-conscious user, I can see the outbound-network and authorized-target boundaries for active assessment.
+1. As an operator, I can identify both the release label and immutable source commit used by the image.
+2. As a maintainer, I get a failed image build if the upstream tag no longer resolves to the reviewed commit.
+3. As a local evaluator, I can verify provenance markers with the existing Compose tooling.
 
 #### Planned implementation
 
-- pin an official `nuclei-templates` release in the Docker build
-- copy the reviewed corpus into a read-only runtime path
-- invoke Nuclei with that exact explicit template directory and disabled update checks
-- validate the bundled version marker and template checksum manifest during image construction
-- add source-level regression tests for the version pin, runtime path, and command construction
-- document template provenance, upgrade procedure, outbound requests, and local Compose validation
-- keep the initial single-host CLI boundary unchanged
+- pin the full Git commit currently referenced by `v10.4.7`
+- fetch the release tag and fail the build unless it resolves to the reviewed commit
+- check out the verified commit detached and remove Git metadata from the runtime corpus
+- retain version and commit markers in the final image
+- update automated assertions and local Compose provenance checks
 
 #### Acceptance criteria
 
-- the image contains the documented template release and its upstream checksum manifest
-- Nuclei receives the absolute bundled template path on every network assessment
-- update checks remain disabled so scans do not silently change the installed corpus
-- a clean Compose image reports the expected Nuclei and template versions
-- a real authorized Compose network scan completes without downloading templates at runtime
-- automated tests cover Docker packaging and exact command construction
+- the Docker build contains the full reviewed commit SHA rather than relying on a tag alone
+- a moved or mismatched tag fails image construction before the corpus reaches the runtime stage
+- a clean Compose image reports the expected release and commit markers
+- the existing authorized private-fixture scan still completes without runtime template downloads
+- automated tests cover the tag-to-commit verification and retained provenance marker
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- exposing network scans through the web service or API
-- CIDRs, target lists, discovery expansion, scheduling, or background reassessment
-- custom/private templates, template editing, or runtime template updates
-- authenticated Linux, Windows, EC2, web/API DAST, or cloud-configuration assessment
-- signatures or provenance beyond Nuclei's existing official-template verification
+- changing the template release or Nuclei engine version
+- vendoring the template corpus in the secscan repository
+- custom/private templates, runtime updates, signing, or third-party attestations
+- expanding scan targets, scanners, service endpoints, or the web UI
 
 #### Cost outlook
 
-Templates are bundled at image-build time and scans use existing local Docker resources. Current and projected recurring infrastructure cost remains **$0**; operators remain responsible for ordinary build bandwidth and authorized scan traffic.
+Commit verification occurs during the existing image build and adds no service or infrastructure. Current and projected recurring infrastructure cost remains **$0**.
 
 ## Planned feature sprints
 
