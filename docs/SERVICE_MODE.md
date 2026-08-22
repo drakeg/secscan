@@ -78,6 +78,8 @@ The optional `SECSCAN_PORT` and `SECSCAN_WORKERS` environment variables override
 SECSCAN_PORT=8080 SECSCAN_WORKERS=1 docker compose up --build --wait
 ```
 
+To evaluate a published release rather than building the current checkout, set `SECSCAN_IMAGE` to the exact `name@sha256:digest` value from that release's `CONTAINER_IMAGE` asset, pull it, and start with `--no-build`. The complete authenticated-pull, service/CLI version, digest, restart, and cleanup procedure is documented in [Release Artifacts](RELEASES.md). Local `secscan:local` builds remain the default.
+
 ### Optional trusted-LAN access
 
 Compose remains bound to `127.0.0.1` by default. To test from another system on the same trusted network, copy `.env.example` to `.env`, generate a bearer token, and set `SECSCAN_BIND_ADDRESS` to the secscan host's exact private address. For example:

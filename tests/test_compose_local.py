@@ -13,6 +13,8 @@ def test_compose_supports_configurable_parallel_local_instances_and_cli_profile(
     cli = compose["services"]["cli"]
 
     assert compose["name"] == "${SECSCAN_COMPOSE_PROJECT:-secscan}"
+    assert service["image"] == "${SECSCAN_IMAGE:-secscan:local}"
+    assert cli["image"] == service["image"]
     assert "${SECSCAN_WORKSPACE:-.}:/workspace:ro" in service["volumes"]
     assert service["ports"] == [
         "${SECSCAN_BIND_ADDRESS:-127.0.0.1}:${SECSCAN_PORT:-8000}:8000"
