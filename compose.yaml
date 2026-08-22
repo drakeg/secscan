@@ -9,7 +9,7 @@ services:
   service:
     build:
       context: .
-    image: secscan:local
+    image: ${SECSCAN_IMAGE:-secscan:local}
     entrypoint: ["secscan-service"]
     command:
       - --host
@@ -52,7 +52,7 @@ services:
     profiles: ["tools"]
     build:
       context: .
-    image: secscan:local
+    image: ${SECSCAN_IMAGE:-secscan:local}
     entrypoint: ["secscan"]
     environment:
       SECSCAN_GITHUB_TOKEN: "${SECSCAN_GITHUB_TOKEN:-}"

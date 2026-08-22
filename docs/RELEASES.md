@@ -107,6 +107,34 @@ gh attestation verify "oci://$container_image" --repo drakeg/secscan
 
 Confirm the reported repository digest matches `CONTAINER_IMAGE` and GitHub verifies the attestation against this repository. If the package is private, authenticate to GHCR with a token that has read-package access before pulling.
 
+### Run the immutable release with Compose
+
+Copy the exact line from `CONTAINER_IMAGE` into the repository's `.env` file:
+
+```dotenv
+SECSCAN_IMAGE=ghcr.io/drakeg/secscan@sha256:REPLACE_WITH_RELEASE_DIGEST
+```
+
+If the package is private, log in to GHCR first without storing the token in `.env`. Then pull the selected digest and start Compose with local builds disabled:
+
+```bash
+docker compose pull service cli
+docker compose up --no-build --wait
+curl --fail http://127.0.0.1:8000/healthz
+docker compose exec service secscan --version
+docker compose run --rm --no-deps cli --version
+```
+
+Confirm both version commands match the release, `docker compose images` reports the expected digest, and the health request succeeds. Recreate the service and repeat the checks to verify the digest selection remains stable:
+
+```bash
+docker compose up --no-build --wait --force-recreate
+docker compose images
+curl --fail http://127.0.0.1:8000/healthz
+```
+
+Do not omit `--no-build` on the trusted-release path: the Compose file intentionally retains its local build definition for normal development. When finished, run `docker compose down` and remove `SECSCAN_IMAGE` from `.env` to restore the default local-build workflow. Named report and cache volumes remain unless `docker compose down --volumes` is deliberately used.
+
 ## Failure and recovery
 
 - If validation fails, correct the project version or choose the correct new tag. Do not move a published release tag.

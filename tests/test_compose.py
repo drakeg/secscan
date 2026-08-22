@@ -14,6 +14,8 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
     network_fixture = compose["services"]["network-fixture"]
 
     assert compose["name"] == "${SECSCAN_COMPOSE_PROJECT:-secscan}"
+    assert service["image"] == "${SECSCAN_IMAGE:-secscan:local}"
+    assert cli["image"] == service["image"]
     assert service["entrypoint"] == ["secscan-service"]
     assert service["command"][-2:] == ["--allowed-input-root", "/workspace"]
     assert service["ports"] == [
@@ -33,6 +35,7 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
     assert "${SECSCAN_WORKSPACE:-.}:/workspace:ro" in service["volumes"]
     assert service["healthcheck"]["test"][:3] == ["CMD", "python", "-c"]
     assert network_fixture["profiles"] == ["network-test"]
+    assert network_fixture["image"] == "secscan:local"
     assert network_fixture["entrypoint"] == ["python", "-m", "http.server"]
     assert network_fixture["command"] == ["8080", "--bind", "0.0.0.0", "--directory", "/tmp"]
     assert network_fixture["read_only"] is True

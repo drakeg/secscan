@@ -135,50 +135,54 @@ Delivered a fail-closed binding between the documented Nuclei template release a
 
 Delivered an explicit private-address Compose binding override while retaining the loopback default, with bearer-token, firewall, second-device, and cleanup procedures.
 
+### Sprint 31 — Verifiable GHCR Container Releases
+
+Delivered exact-version Linux/AMD64 GHCR publication, an immutable digest release asset, GitHub build provenance, and local verification and cost controls.
+
 ## Current sprint
 
-### Sprint 31 — Verifiable GHCR Container Releases
+### Sprint 32 — Digest-Pinned Compose Consumption
 
 #### Goal
 
-Publish the existing release image to GitHub Container Registry with an immutable digest record and GitHub build provenance.
+Allow operators to run an explicitly selected GHCR release digest through the supported Compose service without weakening the local-build default.
 
 #### User stories
 
-1. As an operator, I can pull the container built from an exact stable release tag.
-2. As a security-conscious user, I can identify and pin the published image by digest.
-3. As a maintainer, I can verify the image's GitHub build provenance and reproduce the local validation procedure.
+1. As an operator, I can use the release's `CONTAINER_IMAGE` value directly with Compose.
+2. As a security-conscious user, I can prevent Compose from substituting a local rebuild for the selected digest.
+3. As a local evaluator, I retain the existing `docker compose up --build` workflow when no release image is selected.
 
 #### Planned implementation
 
-- extend the existing guarded stable-tag release workflow to authenticate to GHCR
-- publish one Linux/AMD64 image with the exact semantic version tag and OCI labels
-- record the fully qualified image digest as a GitHub Release asset
-- generate GitHub build provenance for the published registry digest
-- document pull, digest-pin, attestation, container smoke-test, and failure-recovery procedures
-- add automated assertions for workflow permissions, tags, digest recording, and attestation inputs
+- add a shared `SECSCAN_IMAGE` Compose interpolation for the service and CLI
+- retain `secscan:local` and local builds as the zero-configuration default
+- document copying the exact `CONTAINER_IMAGE` digest into `.env`
+- require an explicit pull followed by `docker compose up --no-build --wait` for release use
+- document authenticated pulls for private packages, health, version, CLI, digest, restart, and cleanup checks
+- add automated assertions for the default, shared image contract, and environment example
 
 #### Acceptance criteria
 
-- the existing exact `vMAJOR.MINOR.PATCH` release guard and Python artifacts remain intact
-- GHCR receives only the exact release-version image tag; no `latest`, major, or minor alias is published
-- `CONTAINER_IMAGE` records the pullable `ghcr.io/...@sha256:...` reference
-- GitHub provenance identifies the same fully qualified image name and digest and is pushed to GHCR
-- the workflow grants package, identity-token, and attestation writes only to the release job
-- automated tests validate the release workflow's security and immutable-reference contract
+- `docker compose up --build --wait` still builds and runs `secscan:local` by default
+- service and CLI use the same configured `name@sha256:digest` release image
+- the documented release path pulls first and uses `--no-build`
+- Compose security, persistence, workspace, authentication, LAN-binding, and health defaults remain unchanged
+- the network test fixture remains locally built and cannot be replaced by the release-image variable
+- automated tests validate the environment example and Compose image contract
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- multi-architecture builds, Docker Hub, PyPI, deployment, hosting, or registry retention automation
-- key-managed signing, a private transparency service, or non-GitHub provenance systems
-- mutable `latest`, major, minor, branch, or pull-request image tags
-- changes to scanner behavior, service endpoints, Compose runtime defaults, or version numbering
+- automatic latest-release discovery, tag-to-digest resolution, registry login, or token storage
+- multi-architecture publication, deployment, hosting, or orchestration beyond the existing Compose stack
+- accepting mutable tags as the documented trusted-release path
+- changes to scanners, APIs, volumes, network exposure, or release publication
 
 #### Cost outlook
 
-The workflow uses existing GitHub Actions, Releases, Packages, and artifact attestations. GitHub currently documents Container registry storage and bandwidth as free; the repository owner should retain a zero-dollar Packages budget and recheck that policy before release. Current and projected recurring secscan infrastructure cost remains **$0**.
+Digest-pinned consumption reuses the existing Compose stack and published package. Current and projected recurring secscan infrastructure cost remains **$0**; users remain responsible for network transfer and any future registry-policy changes.
 
 ## Planned feature sprints
 
