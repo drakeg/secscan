@@ -15,6 +15,7 @@ Then edit `.env` for the local instance you want to run. The available settings 
 ```dotenv
 SECSCAN_COMPOSE_PROJECT=secscan-local
 SECSCAN_PORT=8000
+SECSCAN_BIND_ADDRESS=127.0.0.1
 SECSCAN_WORKSPACE=.
 SECSCAN_WORKERS=2
 SECSCAN_API_TOKEN=
@@ -31,7 +32,7 @@ From the repository root, build and start the service:
 docker compose up --build --wait
 ```
 
-Open `http://127.0.0.1:8000/` in a browser, or use the port configured in `SECSCAN_PORT`. The REST API remains available beneath `/api/v1`, interactive API documentation remains available at `/docs`, and the configured workspace is mounted read-only inside the container as `/workspace`.
+Open `http://127.0.0.1:8000/` in a browser, or use the address and port configured in `SECSCAN_BIND_ADDRESS` and `SECSCAN_PORT`. Loopback remains the default. For testing from another trusted LAN system, set the host's exact private IP, configure a strong `SECSCAN_API_TOKEN`, restrict the port with the host firewall, and follow the host/second-device procedure in [Service Mode](SERVICE_MODE.md). The REST API remains available beneath `/api/v1`, interactive API documentation remains available at `/docs`, and the configured workspace is mounted read-only inside the container as `/workspace`.
 
 A simple end-to-end GUI test is:
 
@@ -173,6 +174,6 @@ Remote repository URLs are validated at the service boundary, then the repositor
 
 `secscan.web.create_web_app()` creates the existing service application and mounts packaged static assets at `/` after the API routes. The web layer also exposes lightweight dashboard summaries and safe stored-scan deletion helpers while leaving scanner behavior in the core service/scanner modules.
 
-The local Compose environment deliberately retains restrictive defaults: the service binds to loopback, the workspace is read-only, capabilities are dropped, `no-new-privileges` is enabled, the container root filesystem is read-only, and `/tmp` is bounded. These constraints should remain the baseline as secscan evolves toward a hosted multi-tenant service.
+The local Compose environment deliberately retains restrictive defaults: the service binds to loopback unless LAN access is explicitly configured, the workspace is read-only, capabilities are dropped, `no-new-privileges` is enabled, the container root filesystem is read-only, and `/tmp` is bounded. A non-loopback bind does not add TLS, user accounts, or tenant isolation and must not be treated as an internet-exposure mode.
 
 This increment does not add SaaS tenancy, user accounts, billing, GitHub App/OAuth installation flows, GitLab/Azure DevOps private credentials, or tenant credential storage. Those concerns should be introduced behind explicit organization/user/integration models rather than embedded into scan job targets.

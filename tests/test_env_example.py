@@ -10,6 +10,7 @@ def test_env_example_covers_local_compose_settings() -> None:
 
     for name in (
         "SECSCAN_COMPOSE_PROJECT",
+        "SECSCAN_BIND_ADDRESS",
         "SECSCAN_PORT",
         "SECSCAN_WORKSPACE",
         "SECSCAN_WORKERS",

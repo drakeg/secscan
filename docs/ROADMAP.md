@@ -127,48 +127,52 @@ Delivered the first local web GUI, richer searchable results and dashboard summa
 
 Delivered an official version-pinned Nuclei template corpus in the container, an explicit read-only runtime path with updates disabled, an opt-in private Compose fixture, and documented local validation.
 
+### Sprint 29 — Immutable Nuclei Template Provenance
+
+Delivered a fail-closed binding between the documented Nuclei template release and one reviewed full Git commit SHA, with runtime provenance markers and Compose verification.
+
 ## Current sprint
 
-### Sprint 29 — Immutable Nuclei Template Provenance
+### Sprint 30 — Opt-in Trusted-LAN Access
 
 #### Goal
 
-Close the remaining movable-tag supply-chain gap by binding the documented Nuclei template release to one reviewed full Git commit SHA.
+Allow operators to test the local web interface from another system on the same trusted network without weakening the default localhost-only deployment.
 
 #### User stories
 
-1. As an operator, I can identify both the release label and immutable source commit used by the image.
-2. As a maintainer, I get a failed image build if the upstream tag no longer resolves to the reviewed commit.
-3. As a local evaluator, I can verify provenance markers with the existing Compose tooling.
+1. As an operator, I can bind the Compose-published port to the host's private address.
+2. As a security-conscious user, I retain loopback-only behavior unless I explicitly opt in.
+3. As a local evaluator, I have exact host and second-device test procedures, including bearer-token checks.
 
 #### Planned implementation
 
-- pin the full Git commit currently referenced by `v10.4.7`
-- fetch the release tag and fail the build unless it resolves to the reviewed commit
-- check out the verified commit detached and remove Git metadata from the runtime corpus
-- retain version and commit markers in the final image
-- update automated assertions and local Compose provenance checks
+- add a `SECSCAN_BIND_ADDRESS` Compose variable with a `127.0.0.1` default
+- document exact-private-IP and all-interface LAN binding options
+- require strong bearer-token and host-firewall guidance for non-loopback use
+- add host and second-device browser, health, authenticated API, and shutdown checks
+- cover the safe default and configurable interpolation with automated tests
 
 #### Acceptance criteria
 
-- the Docker build contains the full reviewed commit SHA rather than relying on a tag alone
-- a moved or mismatched tag fails image construction before the corpus reaches the runtime stage
-- a clean Compose image reports the expected release and commit markers
-- the existing authorized private-fixture scan still completes without runtime template downloads
-- automated tests cover the tag-to-commit verification and retained provenance marker
+- `docker compose up --build` remains bound to `127.0.0.1` by default
+- setting `SECSCAN_BIND_ADDRESS` publishes the configured host address without changing the container listener
+- the documented LAN procedure uses a generated API token and recommends a subnet-limited firewall rule
+- another trusted LAN system can load the GUI and authenticate API requests through the host's private address
+- automated tests validate the environment example and Compose port contract
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- changing the template release or Nuclei engine version
-- vendoring the template corpus in the secscan repository
-- custom/private templates, runtime updates, signing, or third-party attestations
-- expanding scan targets, scanners, service endpoints, or the web UI
+- internet exposure, TLS termination, reverse-proxy configuration, or public DNS
+- user accounts, authorization roles, tenant isolation, or token lifecycle management
+- automatic firewall changes or private-IP discovery
+- changes to scanners, service endpoints, persistence, or the web interface
 
 #### Cost outlook
 
-Commit verification occurs during the existing image build and adds no service or infrastructure. Current and projected recurring infrastructure cost remains **$0**.
+LAN binding uses the existing host, container, and local network. Current and projected recurring infrastructure cost remains **$0**.
 
 ## Planned feature sprints
 

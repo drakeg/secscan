@@ -23,7 +23,7 @@ services:
       - --allowed-input-root
       - /workspace
     ports:
-      - "127.0.0.1:${SECSCAN_PORT:-8000}:8000"
+      - "${SECSCAN_BIND_ADDRESS:-127.0.0.1}:${SECSCAN_PORT:-8000}:8000"
     environment:
       SECSCAN_API_TOKEN: "${SECSCAN_API_TOKEN:-}"
       SECSCAN_GITHUB_TOKEN: "${SECSCAN_GITHUB_TOKEN:-}"
