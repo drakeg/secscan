@@ -139,50 +139,54 @@ Delivered an explicit private-address Compose binding override while retaining t
 
 Delivered exact-version Linux/AMD64 GHCR publication, an immutable digest release asset, GitHub build provenance, and local verification and cost controls.
 
+### Sprint 32 — Digest-Pinned Compose Consumption
+
+Delivered a shared release-digest override for the Compose service and CLI with explicit pull/no-build procedures while retaining local builds as the default.
+
 ## Current sprint
 
-### Sprint 32 — Digest-Pinned Compose Consumption
+### Sprint 33 — Multi-Architecture GHCR Releases
 
 #### Goal
 
-Allow operators to run an explicitly selected GHCR release digest through the supported Compose service without weakening the local-build default.
+Publish one immutable GHCR release manifest that supports native Linux AMD64 and ARM64 hosts.
 
 #### User stories
 
-1. As an operator, I can use the release's `CONTAINER_IMAGE` value directly with Compose.
-2. As a security-conscious user, I can prevent Compose from substituting a local rebuild for the selected digest.
-3. As a local evaluator, I retain the existing `docker compose up --build` workflow when no release image is selected.
+1. As an operator, the same release digest selects a native image on common Intel/AMD and ARM Linux hosts.
+2. As an Apple Silicon evaluator, I can use the published release without AMD64 emulation.
+3. As a maintainer, I can verify both required platforms are present beneath the attested index digest.
 
 #### Planned implementation
 
-- add a shared `SECSCAN_IMAGE` Compose interpolation for the service and CLI
-- retain `secscan:local` and local builds as the zero-configuration default
-- document copying the exact `CONTAINER_IMAGE` digest into `.env`
-- require an explicit pull followed by `docker compose up --no-build --wait` for release use
-- document authenticated pulls for private packages, health, version, CLI, digest, restart, and cleanup checks
-- add automated assertions for the default, shared image contract, and environment example
+- register ARM64 emulation before the release Buildx setup
+- build and push `linux/amd64` and `linux/arm64` variants under one OCI index
+- retain the exact-version-only tag policy, separate GitHub provenance, and immutable index digest asset
+- document native local validation and post-release manifest inspection for both platforms
+- document platform-specific pull and smoke tests on compatible hosts
+- extend release-workflow tests to enforce QEMU setup ordering and the exact platform allow-list
 
 #### Acceptance criteria
 
-- `docker compose up --build --wait` still builds and runs `secscan:local` by default
-- service and CLI use the same configured `name@sha256:digest` release image
-- the documented release path pulls first and uses `--no-build`
-- Compose security, persistence, workspace, authentication, LAN-binding, and health defaults remain unchanged
-- the network test fixture remains locally built and cannot be replaced by the release-image variable
-- automated tests validate the environment example and Compose image contract
+- the release workflow publishes exactly `linux/amd64` and `linux/arm64`
+- `CONTAINER_IMAGE` records the multi-platform index digest rather than one platform manifest
+- the attestation subject remains the fully qualified image name and the same index digest
+- the exact-version tag policy still emits no `latest`, major, minor, branch, or pull-request aliases
+- existing AMD64 CI and native ARM64 local builds validate both architecture paths
+- automated tests validate emulation setup, ordering, platforms, and unchanged digest/attestation wiring
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- automatic latest-release discovery, tag-to-digest resolution, registry login, or token storage
-- multi-architecture publication, deployment, hosting, or orchestration beyond the existing Compose stack
-- accepting mutable tags as the documented trusted-release path
-- changes to scanners, APIs, volumes, network exposure, or release publication
+- additional architectures, Windows images, architecture-specific tags, or separate per-platform releases
+- deployment, hosting, automatic registry discovery, retention automation, or mutable tag aliases
+- changes to scanner versions, Nuclei templates, application behavior, Compose, or release numbering
+- guaranteeing native execution for third-party tools on platforms outside the two-image allow-list
 
 #### Cost outlook
 
-Digest-pinned consumption reuses the existing Compose stack and published package. Current and projected recurring secscan infrastructure cost remains **$0**; users remain responsible for network transfer and any future registry-policy changes.
+The public repository uses existing standard GitHub-hosted release capacity and the currently free Container registry. Current and projected recurring secscan infrastructure cost remains **$0**; maintainers should retain zero-dollar budgets and recheck GitHub policy before release.
 
 ## Planned feature sprints
 

@@ -274,11 +274,11 @@ Only trusted built-in plugins are registered. Arbitrary plugin loading remains o
 - Python wheels are built and inspected
 - CI actions are version-pinned
 - release images are scanned
-- stable releases publish one exact-version Linux/AMD64 GHCR image, record its immutable digest, and attach GitHub build provenance
+- stable releases publish one exact-version Linux AMD64/ARM64 GHCR index, record its immutable digest, and attach GitHub build provenance
 
 ## Release artifact boundary
 
-Stable version tags invoke a dedicated least-privilege workflow. A standard-library script verifies that the immutable tag name exactly matches `project.version` and creates a deterministic checksum manifest from explicit regular-file inputs. The workflow runs repository preflight, builds and verifies Python artifacts, publishes one exact-version Linux/AMD64 image to GHCR, records its fully qualified digest as a release asset, attaches GitHub provenance to the same registry digest, and then creates the GitHub Release. The workflow publishes no mutable convenience aliases and grants package, identity-token, and attestation writes only to the release job. Key-managed signing, multi-architecture images, other registries, deployment, and package-index publication remain outside this boundary.
+Stable version tags invoke a dedicated least-privilege workflow. A standard-library script verifies that the immutable tag name exactly matches `project.version` and creates a deterministic checksum manifest from explicit regular-file inputs. The workflow runs repository preflight, builds and verifies Python artifacts, publishes exactly Linux AMD64 and ARM64 variants as one exact-version GHCR index, records the fully qualified index digest as a release asset, attaches GitHub provenance to the same registry digest, and then creates the GitHub Release. The workflow publishes no mutable or architecture-specific aliases and grants package, identity-token, and attestation writes only to the release job. Key-managed signing, other architectures or registries, deployment, and package-index publication remain outside this boundary.
 
 ## Coding and design standards
 
