@@ -17,7 +17,13 @@ jobs:
     name: Verify and publish release artifacts
     runs-on: ubuntu-latest
     permissions:
+      attestations: write
       contents: write
+      id-token: write
+      packages: write
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ghcr.io/${{ github.repository }}
     steps:
       - name: Check out tagged source
         uses: actions/checkout@v7
@@ -45,6 +51,51 @@ jobs:
 
       - name: Generate SHA-256 checksums
         run: python scripts/release_artifacts.py checksums release-dist/SHA256SUMS release-dist/secscan-*.whl release-dist/secscan-*.tar.gz
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Generate container metadata
+        id: metadata
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=false
+          tags: |
+            type=semver,pattern={{version}}
+
+      - name: Build and publish container image
+        id: container
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          build-args: |
+            SECSCAN_VERSION=${{ steps.metadata.outputs.version }}
+
+      - name: Record immutable container reference
+        env:
+          CONTAINER_DIGEST: ${{ steps.container.outputs.digest }}
+        run: printf '%s@%s\n' "$IMAGE_NAME" "$CONTAINER_DIGEST" > release-dist/CONTAINER_IMAGE
+
+      - name: Attest container build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.container.outputs.digest }}
+          push-to-registry: true
 
       - name: Create GitHub Release
         env:
