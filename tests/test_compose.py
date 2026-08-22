@@ -16,7 +16,9 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
     assert compose["name"] == "${SECSCAN_COMPOSE_PROJECT:-secscan}"
     assert service["entrypoint"] == ["secscan-service"]
     assert service["command"][-2:] == ["--allowed-input-root", "/workspace"]
-    assert service["ports"] == ["127.0.0.1:${SECSCAN_PORT:-8000}:8000"]
+    assert service["ports"] == [
+        "${SECSCAN_BIND_ADDRESS:-127.0.0.1}:${SECSCAN_PORT:-8000}:8000"
+    ]
     assert service["environment"] == {
         "SECSCAN_API_TOKEN": "${SECSCAN_API_TOKEN:-}",
         "SECSCAN_GITHUB_TOKEN": "${SECSCAN_GITHUB_TOKEN:-}",

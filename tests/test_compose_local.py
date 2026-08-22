@@ -14,7 +14,9 @@ def test_compose_supports_configurable_parallel_local_instances_and_cli_profile(
 
     assert compose["name"] == "${SECSCAN_COMPOSE_PROJECT:-secscan}"
     assert "${SECSCAN_WORKSPACE:-.}:/workspace:ro" in service["volumes"]
-    assert service["ports"] == ["127.0.0.1:${SECSCAN_PORT:-8000}:8000"]
+    assert service["ports"] == [
+        "${SECSCAN_BIND_ADDRESS:-127.0.0.1}:${SECSCAN_PORT:-8000}:8000"
+    ]
     assert cli["profiles"] == ["tools"]
     assert cli["entrypoint"] == ["secscan"]
     assert "${SECSCAN_WORKSPACE:-.}:/workspace:ro" in cli["volumes"]

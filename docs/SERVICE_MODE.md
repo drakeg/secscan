@@ -78,6 +78,36 @@ The optional `SECSCAN_PORT` and `SECSCAN_WORKERS` environment variables override
 SECSCAN_PORT=8080 SECSCAN_WORKERS=1 docker compose up --build --wait
 ```
 
+### Optional trusted-LAN access
+
+Compose remains bound to `127.0.0.1` by default. To test from another system on the same trusted network, copy `.env.example` to `.env`, generate a bearer token, and set `SECSCAN_BIND_ADDRESS` to the secscan host's exact private address. For example:
+
+```dotenv
+SECSCAN_BIND_ADDRESS=192.168.1.25
+SECSCAN_PORT=8000
+SECSCAN_API_TOKEN=REPLACE_WITH_A_GENERATED_TOKEN
+```
+
+Generate the token without placing it in shell history, paste it into `.env`, and start the service:
+
+```bash
+python -c 'import secrets; print(secrets.token_urlsafe(32))'
+docker compose up --build --wait
+```
+
+Prefer the host's exact private address. `SECSCAN_BIND_ADDRESS=0.0.0.0` also works but publishes on every host interface and therefore has a broader exposure boundary. Configure the host firewall to allow the configured TCP port (8000 by default) only from the intended private subnet or test system. Do not forward the port on a router, publish it through public DNS, or expose it to the internet. The service provides no TLS, user accounts, or tenant isolation.
+
+From a second trusted system, replace `192.168.1.25` with the configured address:
+
+```bash
+curl --fail http://192.168.1.25:8000/healthz
+curl --include http://192.168.1.25:8000/api/v1/jobs
+curl --fail http://192.168.1.25:8000/api/v1/jobs \
+  -H 'Authorization: Bearer REPLACE_WITH_THE_SAME_TOKEN'
+```
+
+The first request should succeed, the unauthenticated API request should return `401`, and the authenticated request should return the job list. Open `http://192.168.1.25:8000/` in a browser, select **API token**, and enter the same token; it remains in that browser tab's session storage. When testing is complete, run `docker compose down`, remove the LAN firewall rule, and restore `SECSCAN_BIND_ADDRESS=127.0.0.1`.
+
 ### Optional local bearer token
 
 The default remains unauthenticated and localhost-only. To require a bearer token for API and documentation routes, generate a temporary token and pass it to Compose:
@@ -112,7 +142,7 @@ Deleting the named volumes permanently removes Compose-managed reports, SQLite j
 docker compose down --volumes
 ```
 
-The Compose service binds only to `127.0.0.1`, runs as non-root with all Linux capabilities dropped, uses a read-only root filesystem, and mounts the repository read-only. It does not mount the Docker socket. Do not change the bind address or expose the unauthenticated API to an untrusted network.
+The Compose service binds to `127.0.0.1` unless `SECSCAN_BIND_ADDRESS` is explicitly changed. It runs as non-root with all Linux capabilities dropped, uses a read-only root filesystem, and mounts the repository read-only. It does not mount the Docker socket. Non-loopback binding is only for deliberate testing on a trusted, firewall-restricted LAN and should use bearer authentication.
 
 Compose also configures `/workspace` as the only allowed local input root. Filesystem, repository, and SBOM targets, plus optional policy and baseline files, must use absolute paths that resolve beneath that mount. Image references are not filesystem paths and remain available. Relative paths, traversal, and symlinks that resolve outside `/workspace` are rejected before a job is recorded.
 
@@ -226,6 +256,8 @@ pytest tests/test_compose.py tests/test_service.py tests/test_service_cli.py
 ```
 
 Then run the Compose quick start, health, filesystem job, report and manifest downloads, digest verification, restart-persistence, and shutdown commands above. Confirm `docker compose ps` reports the service as healthy, the submitted job reaches `completed`, both JSON files parse successfully, the digest matches, and the job remains queryable after container recreation.
+
+For LAN validation, follow the optional trusted-LAN procedure from both the host and one second system. Confirm the resolved Compose configuration publishes the expected private host address, the GUI loads remotely, health remains reachable, the unauthenticated jobs request returns `401`, and the authenticated request succeeds. Restore the loopback binding and firewall after the test.
 
 Call the artifact collection endpoint and compare its JSON with the downloaded `artifacts.json`. Use the `HEAD` and conditional commands above with the returned ETag. Confirm `HEAD` has no body and the matching conditional request returns `304` with no body.
 
