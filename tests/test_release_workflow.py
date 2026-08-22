@@ -28,8 +28,12 @@ def test_release_job_publishes_only_exact_version_and_records_digest() -> None:
     steps = _release_job()["steps"]
     by_id = {step["id"]: step for step in steps if "id" in step}
 
+    qemu = next(step for step in steps if step["name"] == "Set up QEMU for ARM64")
     buildx = next(step for step in steps if step["name"] == "Set up Docker Buildx")
+    assert qemu["uses"] == "docker/setup-qemu-action@v4"
+    assert qemu["with"] == {"platforms": "arm64"}
     assert buildx["uses"] == "docker/setup-buildx-action@v4"
+    assert steps.index(qemu) < steps.index(buildx)
 
     metadata = by_id["metadata"]
     assert metadata["uses"] == "docker/metadata-action@v6"
@@ -41,7 +45,7 @@ def test_release_job_publishes_only_exact_version_and_records_digest() -> None:
     assert container["uses"] == "docker/build-push-action@v7"
     assert container["with"] == {
         "context": ".",
-        "platforms": "linux/amd64",
+        "platforms": "linux/amd64,linux/arm64",
         "push": True,
         "provenance": False,
         "tags": "${{ steps.metadata.outputs.tags }}",

@@ -1,6 +1,6 @@
 # Release Artifacts
 
-The guarded tag-driven GitHub Release workflow publishes Python artifacts and one verifiable Linux/AMD64 container image. A successful release contains:
+The guarded tag-driven GitHub Release workflow publishes Python artifacts and one verifiable multi-architecture container image for Linux AMD64 and ARM64. A successful release contains:
 
 - the secscan wheel
 - the Python source distribution
@@ -8,7 +8,7 @@ The guarded tag-driven GitHub Release workflow publishes Python artifacts and on
 - `CONTAINER_IMAGE` containing the immutable GHCR `name@sha256:digest` reference
 - generated GitHub release notes
 
-The same workflow publishes the image under the exact version tag without the leading `v` and attaches GitHub build provenance to its registry digest. It does not publish `latest`, major, minor, branch, or pull-request aliases. Multi-architecture publication, Docker Hub, PyPI, deployment, and key-managed signing remain out of scope.
+The same workflow publishes one OCI image index under the exact version tag without the leading `v` and attaches GitHub build provenance to the index digest. The index contains exactly `linux/amd64` and `linux/arm64`. It does not publish `latest`, major, minor, branch, pull-request, or architecture-specific aliases. Additional architectures, Docker Hub, PyPI, deployment, and key-managed signing remain out of scope.
 
 ## Release guard
 
@@ -24,10 +24,11 @@ The workflow then:
 6. verifies wheel contents
 7. writes deterministic SHA-256 checksums
 8. logs in to GHCR with the workflow token
-9. builds and pushes the exact-version Linux/AMD64 image with OCI labels
-10. writes its fully qualified digest reference to `CONTAINER_IMAGE`
-11. generates GitHub build provenance for that same image digest and pushes it to GHCR
-12. creates the GitHub Release and uploads the Python artifacts, checksums, and container reference
+9. registers ARM64 emulation and builds the native AMD64 and emulated ARM64 variants with OCI labels
+10. pushes both variants as one exact-version OCI index
+11. writes the fully qualified index digest reference to `CONTAINER_IMAGE`
+12. generates GitHub build provenance for that same index digest and pushes it to GHCR
+13. creates the GitHub Release and uploads the Python artifacts, checksums, and container reference
 
 The workflow defaults to `contents: read`; only the release job receives `contents: write`, `packages: write`, `id-token: write`, and `attestations: write`. GHCR authentication uses the ephemeral workflow token and does not require a repository secret. GitHub currently documents Container registry storage and bandwidth as free; repository owners should still retain a zero-dollar Packages budget and review GitHub's billing policy before each release because hosted-service terms can change.
 
@@ -41,7 +42,7 @@ bash scripts/preflight.sh
 python -m build --sdist --wheel --outdir release-dist
 python scripts/verify_wheel.py release-dist/secscan-*.whl
 python scripts/release_artifacts.py checksums release-dist/SHA256SUMS release-dist/secscan-*.whl release-dist/secscan-*.tar.gz
-docker build --build-arg SECSCAN_VERSION=0.1.0 --tag secscan-release-test:0.1.0 .
+docker buildx build --load --platform "linux/$(docker info --format '{{.Architecture}}')" --build-arg SECSCAN_VERSION=0.1.0 --tag secscan-release-test:0.1.0 .
 docker run --rm secscan-release-test:0.1.0 --version
 ```
 
@@ -106,6 +107,16 @@ gh attestation verify "oci://$container_image" --repo drakeg/secscan
 ```
 
 Confirm the reported repository digest matches `CONTAINER_IMAGE` and GitHub verifies the attestation against this repository. If the package is private, authenticate to GHCR with a token that has read-package access before pulling.
+
+Inspect the release index and require both supported platforms beneath the recorded digest:
+
+```bash
+docker buildx imagetools inspect "$container_image"
+docker pull --platform linux/amd64 "$container_image"
+docker pull --platform linux/arm64 "$container_image"
+```
+
+The manifest output must list exactly `linux/amd64` and `linux/arm64` runtime manifests, apart from any registry-generated attestation descriptors. Run `docker run --rm "$container_image" --version` on one compatible AMD64 host and one compatible ARM64 host; each must select its native platform and report the release version.
 
 ### Run the immutable release with Compose
 
