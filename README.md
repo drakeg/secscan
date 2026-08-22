@@ -320,7 +320,7 @@ The stack is localhost-only by default, non-root, capability-free, and mounts th
 
 ## Releases
 
-Stable `vMAJOR.MINOR.PATCH` tags trigger guarded GitHub release packaging when the tag exactly matches `project.version`. Releases include a verified wheel, source distribution, and `SHA256SUMS`. See [Release Artifacts](docs/RELEASES.md) for local dry-run, publication, verification, and failure-recovery procedures.
+Stable `vMAJOR.MINOR.PATCH` tags trigger guarded GitHub release packaging when the tag exactly matches `project.version`. Releases include a verified wheel, source distribution, `SHA256SUMS`, and a Linux/AMD64 GHCR image with an immutable digest record and GitHub build provenance. See [Release Artifacts](docs/RELEASES.md) for local dry-run, publication, digest-pinned container and attestation verification, and failure-recovery procedures.
 
 ## Current boundaries
 

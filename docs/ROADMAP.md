@@ -131,48 +131,54 @@ Delivered an official version-pinned Nuclei template corpus in the container, an
 
 Delivered a fail-closed binding between the documented Nuclei template release and one reviewed full Git commit SHA, with runtime provenance markers and Compose verification.
 
+### Sprint 30 — Opt-in Trusted-LAN Access
+
+Delivered an explicit private-address Compose binding override while retaining the loopback default, with bearer-token, firewall, second-device, and cleanup procedures.
+
 ## Current sprint
 
-### Sprint 30 — Opt-in Trusted-LAN Access
+### Sprint 31 — Verifiable GHCR Container Releases
 
 #### Goal
 
-Allow operators to test the local web interface from another system on the same trusted network without weakening the default localhost-only deployment.
+Publish the existing release image to GitHub Container Registry with an immutable digest record and GitHub build provenance.
 
 #### User stories
 
-1. As an operator, I can bind the Compose-published port to the host's private address.
-2. As a security-conscious user, I retain loopback-only behavior unless I explicitly opt in.
-3. As a local evaluator, I have exact host and second-device test procedures, including bearer-token checks.
+1. As an operator, I can pull the container built from an exact stable release tag.
+2. As a security-conscious user, I can identify and pin the published image by digest.
+3. As a maintainer, I can verify the image's GitHub build provenance and reproduce the local validation procedure.
 
 #### Planned implementation
 
-- add a `SECSCAN_BIND_ADDRESS` Compose variable with a `127.0.0.1` default
-- document exact-private-IP and all-interface LAN binding options
-- require strong bearer-token and host-firewall guidance for non-loopback use
-- add host and second-device browser, health, authenticated API, and shutdown checks
-- cover the safe default and configurable interpolation with automated tests
+- extend the existing guarded stable-tag release workflow to authenticate to GHCR
+- publish one Linux/AMD64 image with the exact semantic version tag and OCI labels
+- record the fully qualified image digest as a GitHub Release asset
+- generate GitHub build provenance for the published registry digest
+- document pull, digest-pin, attestation, container smoke-test, and failure-recovery procedures
+- add automated assertions for workflow permissions, tags, digest recording, and attestation inputs
 
 #### Acceptance criteria
 
-- `docker compose up --build` remains bound to `127.0.0.1` by default
-- setting `SECSCAN_BIND_ADDRESS` publishes the configured host address without changing the container listener
-- the documented LAN procedure uses a generated API token and recommends a subnet-limited firewall rule
-- another trusted LAN system can load the GUI and authenticate API requests through the host's private address
-- automated tests validate the environment example and Compose port contract
+- the existing exact `vMAJOR.MINOR.PATCH` release guard and Python artifacts remain intact
+- GHCR receives only the exact release-version image tag; no `latest`, major, or minor alias is published
+- `CONTAINER_IMAGE` records the pullable `ghcr.io/...@sha256:...` reference
+- GitHub provenance identifies the same fully qualified image name and digest and is pushed to GHCR
+- the workflow grants package, identity-token, and attestation writes only to the release job
+- automated tests validate the release workflow's security and immutable-reference contract
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- internet exposure, TLS termination, reverse-proxy configuration, or public DNS
-- user accounts, authorization roles, tenant isolation, or token lifecycle management
-- automatic firewall changes or private-IP discovery
-- changes to scanners, service endpoints, persistence, or the web interface
+- multi-architecture builds, Docker Hub, PyPI, deployment, hosting, or registry retention automation
+- key-managed signing, a private transparency service, or non-GitHub provenance systems
+- mutable `latest`, major, minor, branch, or pull-request image tags
+- changes to scanner behavior, service endpoints, Compose runtime defaults, or version numbering
 
 #### Cost outlook
 
-LAN binding uses the existing host, container, and local network. Current and projected recurring infrastructure cost remains **$0**.
+The workflow uses existing GitHub Actions, Releases, Packages, and artifact attestations. GitHub currently documents Container registry storage and bandwidth as free; the repository owner should retain a zero-dollar Packages budget and recheck that policy before release. Current and projected recurring secscan infrastructure cost remains **$0**.
 
 ## Planned feature sprints
 
