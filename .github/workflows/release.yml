@@ -34,11 +34,22 @@ jobs:
           python-version: "3.14"
           cache: pip
 
-      - name: Install development dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
-
       - name: Verify tag matches project version
         run: python scripts/release_artifacts.py verify-tag "$GITHUB_REF_NAME" pyproject.toml
+
+      - name: Generate source SBOM
+        uses: anchore/sbom-action@v0.24.0
+        with:
+          path: .
+          format: spdx-json
+          output-file: /tmp/secscan-source.spdx.json
+          syft-version: v1.42.3
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
+
+      - name: Install development dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
 
       - name: Run repository preflight
         run: bash scripts/preflight.sh
@@ -49,8 +60,11 @@ jobs:
       - name: Verify release wheel
         run: python scripts/verify_wheel.py release-dist/secscan-*.whl
 
+      - name: Stage source SBOM
+        run: mv /tmp/secscan-source.spdx.json release-dist/secscan-source.spdx.json
+
       - name: Generate SHA-256 checksums
-        run: python scripts/release_artifacts.py checksums release-dist/SHA256SUMS release-dist/secscan-*.whl release-dist/secscan-*.tar.gz
+        run: python scripts/release_artifacts.py checksums release-dist/SHA256SUMS release-dist/secscan-*.whl release-dist/secscan-*.tar.gz release-dist/secscan-source.spdx.json
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4

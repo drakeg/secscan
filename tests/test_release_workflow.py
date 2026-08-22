@@ -69,3 +69,27 @@ def test_release_job_attests_the_published_registry_digest() -> None:
         "subject-digest": "${{ steps.container.outputs.digest }}",
         "push-to-registry": True,
     }
+
+
+def test_release_job_generates_and_checksums_a_pinned_source_sbom() -> None:
+    steps = _release_job()["steps"]
+    sbom = next(step for step in steps if step["name"] == "Generate source SBOM")
+    verify_tag = next(step for step in steps if step["name"] == "Verify tag matches project version")
+    install = next(step for step in steps if step["name"] == "Install development dependencies")
+    stage = next(step for step in steps if step["name"] == "Stage source SBOM")
+    checksums = next(step for step in steps if step["name"] == "Generate SHA-256 checksums")
+
+    assert sbom["uses"] == "anchore/sbom-action@v0.24.0"
+    assert sbom["with"] == {
+        "path": ".",
+        "format": "spdx-json",
+        "output-file": "/tmp/secscan-source.spdx.json",
+        "syft-version": "v1.42.3",
+        "upload-artifact": False,
+        "upload-release-assets": False,
+        "dependency-snapshot": False,
+    }
+    assert steps.index(verify_tag) < steps.index(sbom) < steps.index(install)
+    assert stage["run"] == "mv /tmp/secscan-source.spdx.json release-dist/secscan-source.spdx.json"
+    assert steps.index(sbom) < steps.index(stage) < steps.index(checksums)
+    assert "release-dist/secscan-source.spdx.json" in checksums["run"]
