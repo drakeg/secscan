@@ -143,50 +143,54 @@ Delivered exact-version Linux/AMD64 GHCR publication, an immutable digest releas
 
 Delivered a shared release-digest override for the Compose service and CLI with explicit pull/no-build procedures while retaining local builds as the default.
 
+### Sprint 33 — Multi-Architecture GHCR Releases
+
+Delivered one exact-version AMD64/ARM64 OCI image index with an immutable digest, unchanged provenance wiring, native local ARM64 validation, and platform verification procedures.
+
 ## Current sprint
 
-### Sprint 33 — Multi-Architecture GHCR Releases
+### Sprint 34 — Checksummed Release Source SBOM
 
 #### Goal
 
-Publish one immutable GHCR release manifest that supports native Linux AMD64 and ARM64 hosts.
+Attach a machine-readable, checksummed dependency inventory of the tagged source to every stable release.
 
 #### User stories
 
-1. As an operator, the same release digest selects a native image on common Intel/AMD and ARM Linux hosts.
-2. As an Apple Silicon evaluator, I can use the published release without AMD64 emulation.
-3. As a maintainer, I can verify both required platforms are present beneath the attested index digest.
+1. As a release consumer, I can inspect the source dependency inventory without installing secscan.
+2. As an auditor, I can verify the SBOM with the same checksum manifest as the Python artifacts.
+3. As a maintainer, I can reproduce and validate the SBOM locally with one pinned tool version.
 
 #### Planned implementation
 
-- register ARM64 emulation before the release Buildx setup
-- build and push `linux/amd64` and `linux/arm64` variants under one OCI index
-- retain the exact-version-only tag policy, separate GitHub provenance, and immutable index digest asset
-- document native local validation and post-release manifest inspection for both platforms
-- document platform-specific pull and smoke tests on compatible hosts
-- extend release-workflow tests to enforce QEMU setup ordering and the exact platform allow-list
+- generate SPDX JSON from the tagged source with a pinned Syft release and pinned GitHub Action
+- write the SBOM into the existing release artifact directory before checksum generation
+- include the SBOM as an explicit input to `SHA256SUMS`
+- use the existing GitHub Release upload path instead of action-managed uploads
+- document clean-checkout local generation, JSON validation, and checksum verification
+- extend release-workflow tests to enforce tool pins, disabled side-channel uploads, ordering, and checksum coverage
 
 #### Acceptance criteria
 
-- the release workflow publishes exactly `linux/amd64` and `linux/arm64`
-- `CONTAINER_IMAGE` records the multi-platform index digest rather than one platform manifest
-- the attestation subject remains the fully qualified image name and the same index digest
-- the exact-version tag policy still emits no `latest`, major, minor, branch, or pull-request aliases
-- existing AMD64 CI and native ARM64 local builds validate both architecture paths
-- automated tests validate emulation setup, ordering, platforms, and unchanged digest/attestation wiring
+- each stable release contains `secscan-source.spdx.json` in SPDX JSON format
+- Syft and its action are explicitly version-pinned
+- action-managed artifact, release-asset, and dependency-snapshot uploads remain disabled
+- `SHA256SUMS` covers the wheel, source distribution, and source SBOM
+- the existing single release-creation step uploads the SBOM with the other artifacts
+- automated tests validate configuration, ordering, and checksum coverage
 - branch preflight, CI, and CodeQL pass before merge
 - no AWS resources or paid infrastructure are introduced
 
 #### Out of scope
 
-- additional architectures, Windows images, architecture-specific tags, or separate per-platform releases
-- deployment, hosting, automatic registry discovery, retention automation, or mutable tag aliases
-- changes to scanner versions, Nuclei templates, application behavior, Compose, or release numbering
-- guaranteeing native execution for third-party tools on platforms outside the two-image allow-list
+- container-image or per-platform SBOM attestations, vulnerability scanning of the SBOM, or dependency submission
+- changing runtime dependencies, scanner versions, container contents, application behavior, or release numbering
+- new registries, release channels, mutable tags, signing systems, deployment, or hosting
+- automatic release creation outside the existing guarded stable-tag workflow
 
 #### Cost outlook
 
-The public repository uses existing standard GitHub-hosted release capacity and the currently free Container registry. Current and projected recurring secscan infrastructure cost remains **$0**; maintainers should retain zero-dollar budgets and recheck GitHub policy before release.
+The SBOM is generated inside the existing public-repository release job and stored with the existing GitHub Release. Current and projected recurring secscan infrastructure cost remains **$0**; maintainers should retain zero-dollar budgets and recheck GitHub policy before release.
 
 ## Planned feature sprints
 
