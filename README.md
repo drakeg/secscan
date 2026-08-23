@@ -320,7 +320,7 @@ The stack is localhost-only by default, non-root, capability-free, and mounts th
 
 ## Releases
 
-Stable `vMAJOR.MINOR.PATCH` tags trigger guarded GitHub release packaging when the tag exactly matches `project.version`. Releases include a verified wheel, source distribution, `SHA256SUMS`, and a Linux AMD64/ARM64 GHCR image index with an immutable digest record and GitHub build provenance. The supported Compose stack can explicitly pull and run that digest while retaining local builds as its default. See [Release Artifacts](docs/RELEASES.md) for local dry-run, publication, platform-manifest, digest-pinned container, Compose and attestation verification, and failure-recovery procedures.
+Stable `vMAJOR.MINOR.PATCH` tags trigger guarded GitHub release packaging when the tag exactly matches `project.version`. Releases include a verified wheel, source distribution, SPDX JSON source SBOM, `SHA256SUMS`, and a Linux AMD64/ARM64 GHCR image index with an immutable digest record and GitHub build provenance. The supported Compose stack can explicitly pull and run that digest while retaining local builds as its default. See [Release Artifacts](docs/RELEASES.md) for local dry-run, SBOM and checksum verification, publication, platform-manifest, digest-pinned container, Compose and attestation verification, and failure-recovery procedures.
 
 ## Current boundaries
 

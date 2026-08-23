@@ -272,13 +272,14 @@ Only trusted built-in plugins are registered. Arbitrary plugin loading remains o
 - base images and scanner versions are pinned
 - the container bundles a reviewed Nuclei template corpus bound to both a release tag and full Git commit SHA, fails closed if they differ, and disables runtime update checks
 - Python wheels are built and inspected
+- stable releases include a version-pinned Syft source SBOM covered by the release checksum manifest
 - CI actions are version-pinned
 - release images are scanned
 - stable releases publish one exact-version Linux AMD64/ARM64 GHCR index, record its immutable digest, and attach GitHub build provenance
 
 ## Release artifact boundary
 
-Stable version tags invoke a dedicated least-privilege workflow. A standard-library script verifies that the immutable tag name exactly matches `project.version` and creates a deterministic checksum manifest from explicit regular-file inputs. The workflow runs repository preflight, builds and verifies Python artifacts, publishes exactly Linux AMD64 and ARM64 variants as one exact-version GHCR index, records the fully qualified index digest as a release asset, attaches GitHub provenance to the same registry digest, and then creates the GitHub Release. The workflow publishes no mutable or architecture-specific aliases and grants package, identity-token, and attestation writes only to the release job. Key-managed signing, other architectures or registries, deployment, and package-index publication remain outside this boundary.
+Stable version tags invoke a dedicated least-privilege workflow. A standard-library script verifies that the immutable tag name exactly matches `project.version` and creates a deterministic checksum manifest from explicit regular-file inputs. The workflow runs repository preflight, builds and verifies Python artifacts, generates a version-pinned SPDX JSON inventory of the tagged source, includes that SBOM in the checksum manifest, publishes exactly Linux AMD64 and ARM64 variants as one exact-version GHCR index, records the fully qualified index digest as a release asset, attaches GitHub provenance to the same registry digest, and then creates the GitHub Release. The workflow publishes no mutable or architecture-specific aliases and grants package, identity-token, and attestation writes only to the release job. Container-image SBOM attestations, key-managed signing, other architectures or registries, deployment, and package-index publication remain outside this boundary.
 
 ## Coding and design standards
 

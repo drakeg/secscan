@@ -4,7 +4,8 @@ The guarded tag-driven GitHub Release workflow publishes Python artifacts and on
 
 - the secscan wheel
 - the Python source distribution
-- `SHA256SUMS` covering both artifacts
+- `secscan-source.spdx.json`, an SPDX JSON inventory of the tagged source tree
+- `SHA256SUMS` covering the Python artifacts and source SBOM
 - `CONTAINER_IMAGE` containing the immutable GHCR `name@sha256:digest` reference
 - generated GitHub release notes
 
@@ -17,18 +18,20 @@ The workflow accepts only an exact stable tag in `vMAJOR.MINOR.PATCH` form, such
 The workflow then:
 
 1. checks out the tagged commit
-2. installs the existing development dependencies
+2. sets up the supported release Python version
 3. validates the tag/version pair
-4. runs the complete repository preflight
-5. builds a wheel and source distribution in `release-dist`
-6. verifies wheel contents
-7. writes deterministic SHA-256 checksums
-8. logs in to GHCR with the workflow token
-9. registers ARM64 emulation and builds the native AMD64 and emulated ARM64 variants with OCI labels
-10. pushes both variants as one exact-version OCI index
-11. writes the fully qualified index digest reference to `CONTAINER_IMAGE`
-12. generates GitHub build provenance for that same index digest and pushes it to GHCR
-13. creates the GitHub Release and uploads the Python artifacts, checksums, and container reference
+4. generates an SPDX JSON source SBOM with version-pinned Syft before installing or building anything in the checkout
+5. installs the existing development dependencies
+6. runs the complete repository preflight
+7. builds a wheel and source distribution in `release-dist`
+8. verifies wheel contents and stages the source SBOM
+9. writes deterministic SHA-256 checksums covering the Python artifacts and source SBOM
+10. logs in to GHCR with the workflow token
+11. registers ARM64 emulation and builds the native AMD64 and emulated ARM64 variants with OCI labels
+12. pushes both variants as one exact-version OCI index
+13. writes the fully qualified index digest reference to `CONTAINER_IMAGE`
+14. generates GitHub build provenance for that same index digest and pushes it to GHCR
+15. creates the GitHub Release and uploads the Python artifacts, SBOM, checksums, and container reference
 
 The workflow defaults to `contents: read`; only the release job receives `contents: write`, `packages: write`, `id-token: write`, and `attestations: write`. GHCR authentication uses the ephemeral workflow token and does not require a repository secret. GitHub currently documents Container registry storage and bandwidth as free; repository owners should still retain a zero-dollar Packages budget and review GitHub's billing policy before each release because hosted-service terms can change.
 
@@ -38,12 +41,21 @@ From a clean checkout with development dependencies installed:
 
 ```bash
 python scripts/release_artifacts.py verify-tag v0.1.0 pyproject.toml
+docker run --rm --volume "$PWD:/src:ro" anchore/syft:v1.42.3 dir:/src -o spdx-json > /tmp/secscan-source.spdx.json
 bash scripts/preflight.sh
 python -m build --sdist --wheel --outdir release-dist
 python scripts/verify_wheel.py release-dist/secscan-*.whl
-python scripts/release_artifacts.py checksums release-dist/SHA256SUMS release-dist/secscan-*.whl release-dist/secscan-*.tar.gz
+mv /tmp/secscan-source.spdx.json release-dist/secscan-source.spdx.json
+python scripts/release_artifacts.py checksums release-dist/SHA256SUMS release-dist/secscan-*.whl release-dist/secscan-*.tar.gz release-dist/secscan-source.spdx.json
 docker buildx build --load --platform "linux/$(docker info --format '{{.Architecture}}')" --build-arg SECSCAN_VERSION=0.1.0 --tag secscan-release-test:0.1.0 .
 docker run --rm secscan-release-test:0.1.0 --version
+```
+
+Run the dry run from a clean checkout so local virtual environments and generated files do not enter the source inventory. The pinned Syft container requires no host installation. Inspect the generated SBOM and verify every locally built artifact against the same checksum manifest:
+
+```bash
+python -m json.tool release-dist/secscan-source.spdx.json >/dev/null
+(cd release-dist && shasum -a 256 --check SHA256SUMS)
 ```
 
 Replace `v0.1.0` with the intended tag. Inspect the manifest:
@@ -76,15 +88,17 @@ The tag push starts the Release workflow. No GitHub Release is created if tag va
 
 ## Post-release verification
 
-Download the wheel, source archive, and `SHA256SUMS` into one directory. On Linux:
+Download the wheel, source archive, source SBOM, and `SHA256SUMS` into one directory. Validate the SBOM structure, then verify every checksummed artifact. On Linux:
 
 ```bash
+python -m json.tool secscan-source.spdx.json >/dev/null
 sha256sum --check SHA256SUMS
 ```
 
 On macOS:
 
 ```bash
+python -m json.tool secscan-source.spdx.json >/dev/null
 shasum -a 256 --check SHA256SUMS
 ```
 
