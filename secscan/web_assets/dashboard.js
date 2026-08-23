@@ -73,16 +73,50 @@ async function refreshSecuritySummaries(){
 
 const scannerSelect=$("scanner");
 const targetHelp=$("target-help");
-function updateRepositoryTargetHelp(){
-  if(scannerSelect.value==="repository"){
+const networkAuthorization=$("network-authorization");
+const networkAuthorized=$("network-authorized");
+function updateTargetHelp(){
+  const scanner=scannerSelect.value;
+  const isNetwork=scanner==="network";
+  if(scanner==="repository"){
     $("target").placeholder="https://github.com/org/repository.git";
     if(targetHelp)targetHelp.textContent="Use a local path such as /workspace, or a public HTTPS GitHub, GitLab, Azure DevOps, or other Git repository URL.";
+  }else if(isNetwork){
+    $("target").placeholder="server.example.com or 192.0.2.10";
+    if(targetHelp)targetHelp.textContent="Active assessment of one hostname or IP address using Nmap and Nuclei. Only scan systems you own or are explicitly authorized to test.";
   }else if(targetHelp){
     targetHelp.textContent="";
   }
+  if(networkAuthorization)networkAuthorization.classList.toggle("hidden",!isNetwork);
+  if(networkAuthorized&&!isNetwork)networkAuthorized.checked=false;
 }
-scannerSelect.addEventListener("change",updateRepositoryTargetHelp);
-updateRepositoryTargetHelp();
+scannerSelect.addEventListener("change",updateTargetHelp);
+updateTargetHelp();
+
+$("scan-form").addEventListener("submit",async event=>{
+  if(scannerSelect.value!=="network")return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  if(!networkAuthorized?.checked){
+    flash("Confirm that you are authorized to security-test this network target.",true);
+    return;
+  }
+  const payload={scanner:"network",target:$("target").value.trim(),timeout:Number($("timeout").value),network_authorized:true};
+  if($("fail-on").value)payload.fail_on=$("fail-on").value;
+  if($("policy").value.trim())payload.policy=$("policy").value.trim();
+  if($("baseline").value.trim())payload.baseline=$("baseline").value.trim();
+  try{
+    const job=await api("/api/v1/jobs",{method:"POST",body:JSON.stringify(payload)});
+    flash("Network assessment queued successfully.");
+    event.target.reset();
+    $("timeout").value="600";
+    updateTargetHelp();
+    await loadJobs();
+    openJob(job.id);
+  }catch(error){
+    flash(error.message,true);
+  }
+},true);
 
 setTimeout(refreshSecuritySummaries,0);
 setInterval(refreshSecuritySummaries,7000);
