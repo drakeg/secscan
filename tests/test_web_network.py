@@ -12,6 +12,7 @@ def test_web_ui_exposes_authorized_network_assessment(tmp_path: Path) -> None:
 
     page = client.get("/")
     dashboard = client.get("/dashboard.js")
+    network_styles = client.get("/network.css")
 
     assert page.status_code == 200
     assert 'value="network"' in page.text
@@ -19,6 +20,7 @@ def test_web_ui_exposes_authorized_network_assessment(tmp_path: Path) -> None:
     assert 'id="network-authorization"' in page.text
     assert 'id="network-authorized"' in page.text
     assert "explicit authorization to security-test it" in page.text
+    assert 'href="/network.css"' in page.text
 
     assert dashboard.status_code == 200
     assert 'scanner==="network"' in dashboard.text
@@ -26,3 +28,7 @@ def test_web_ui_exposes_authorized_network_assessment(tmp_path: Path) -> None:
     assert "network_authorized:true" in dashboard.text
     assert "stopImmediatePropagation" in dashboard.text
     assert "authorized to security-test this network target" in dashboard.text
+
+    assert network_styles.status_code == 200
+    assert "#network-authorization" in network_styles.text
+    assert "#network-authorized" in network_styles.text
