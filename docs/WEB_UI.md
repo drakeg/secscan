@@ -46,6 +46,16 @@ A simple end-to-end GUI test is:
 
 Remote repository scans are shallow-cloned into temporary storage. In the default Compose configuration `/tmp` is a 512 MB tmpfs, providing a practical storage boundary for temporary checkouts. Remote URLs must use HTTPS and must not contain embedded credentials, query strings, or fragments.
 
+### Agentless server/network scans
+
+The GUI also exposes **Server / Network — Agentless assessment** for the existing Nmap/Nuclei single-host scanner. Enter exactly one hostname or IP address. The form displays an active-assessment warning and requires an explicit confirmation that you own the target or have authorization to security-test it.
+
+The browser sends `network_authorized: true` only after that checkbox is selected. The service independently validates both the acknowledgement and the target before it persists the job. URLs, CIDRs, malformed targets, and unresolvable targets are rejected. The acknowledgement is a local-operator safety control, not an identity, entitlement, or tenant-authorization system.
+
+For a safe local demonstration, use the private opt-in Compose fixture documented in [Network Scanning](NETWORK_SCANNING.md). Do not use unrelated public systems as test targets.
+
+Once queued, a network assessment uses the normal auto-refreshing scan-detail path. Normalized Nmap/Nuclei findings appear in the same severity cards and findings table, completed jobs receive the same severity chips in history, and their latest posture contributes to the existing dashboard charts.
+
 To scan a different local directory through the GUI, set an absolute path in `.env`:
 
 ```dotenv
@@ -126,6 +136,8 @@ docker compose --profile tools run --rm cli \
   --output-dir /reports/manual-remote-repository
 ```
 
+Network GUI/API behavior can be compared against the CLI using only an authorized target. For local validation, prefer the private `network-fixture` procedure in `docs/NETWORK_SCANNING.md`.
+
 Stop the local service with:
 
 ```bash
@@ -145,15 +157,18 @@ The Dashboard is intended to answer what needs attention first rather than simpl
 - Scan-history rows show compact Critical/High/Medium/Low counts for each completed report.
 - The browser retrieves a lightweight `/api/v1/jobs/{job_id}/summary` response rather than downloading every full report for dashboard rendering.
 
+Network reports use this existing normalized path; there is no separate network dashboard or result schema.
+
 ## Current GUI capabilities
 
 - view queued, running, completed, and failed job counts
 - see current Critical, High, Medium, and Low vulnerability totals on the front-page dashboard
 - visualize current vulnerability mix and the most urgent targets to fix first
 - browse recent and historical scan jobs with per-scan severity counts
-- submit image, filesystem, local repository, remote repository, and SBOM scans
+- submit image, filesystem, local repository, remote repository, SBOM, and authorized single-host network scans
 - use HTTPS GitHub, GitLab, Azure DevOps, and compatible Git URLs for public repository scans
 - use server-side `SECSCAN_GITHUB_TOKEN` authentication for private `github.com` repository scans
+- run an agentless Nmap/Nuclei assessment against one authorized hostname or IP with an explicit acknowledgement
 - configure the policy threshold, timeout, policy path, and baseline path
 - inspect normalized severity counts from `secscan.json`
 - search findings by vulnerability ID, package, title, target, or version
@@ -164,16 +179,18 @@ The Dashboard is intended to answer what needs attention first rather than simpl
 - delete completed/failed/cancelled scan history and artifacts with confirmation
 - use an existing `SECSCAN_API_TOKEN` without persisting it beyond the current browser tab
 
-Local path scans remain constrained by the service's `--allowed-input-root` configuration. The default Compose configuration exposes only the selected workspace beneath `/workspace`. Validated HTTPS repository URLs are handled separately and are not treated as local filesystem paths.
+Local path scans remain constrained by the service's `--allowed-input-root` configuration. The default Compose configuration exposes only the selected workspace beneath `/workspace`. Validated HTTPS repository URLs and validated single-host network targets are handled separately and are not treated as local filesystem paths.
 
 ## Architecture
 
-The browser UI remains a thin client over the existing service API and normalized artifacts. Scanner execution, job persistence, local path validation, artifact validation, and API authentication remain in `secscan.service`.
+The browser UI remains a thin client over the existing service API and normalized artifacts. Scanner execution, job persistence, local path validation, network-target validation, artifact validation, and API authentication remain in `secscan.service` and scanner modules.
 
-Remote repository URLs are validated at the service boundary, then the repository scanner performs a non-interactive shallow Git clone into temporary storage and feeds that checkout through the existing local repository/Trivy path. The temporary checkout is removed after each scanner operation. GitHub credentials are read only from the server environment, injected into the clone process as process-local Git configuration, and never added to job targets or command-line arguments.
+Remote repository URLs are validated at the service boundary, then the repository scanner performs a non-interactive shallow Git clone into temporary storage and feeds that checkout through the existing local repository path. The temporary checkout is removed after each scanner operation. GitHub credentials are read only from the server environment, injected into the clone process as process-local Git configuration, and never added to job targets or command-line arguments.
+
+Network targets are validated with the same single-host validator used by the scanner before a service job is persisted. The web form requires explicit operator acknowledgement, but it does not introduce users, roles, target ownership verification, tenant isolation, or hosted egress policy. Those controls are required before network submission could be offered to untrusted hosted tenants.
 
 `secscan.web.create_web_app()` creates the existing service application and mounts packaged static assets at `/` after the API routes. The web layer also exposes lightweight dashboard summaries and safe stored-scan deletion helpers while leaving scanner behavior in the core service/scanner modules.
 
 The local Compose environment deliberately retains restrictive defaults: the service binds to loopback unless LAN access is explicitly configured, the workspace is read-only, capabilities are dropped, `no-new-privileges` is enabled, the container root filesystem is read-only, and `/tmp` is bounded. A non-loopback bind does not add TLS, user accounts, or tenant isolation and must not be treated as an internet-exposure mode.
 
-This increment does not add SaaS tenancy, user accounts, billing, GitHub App/OAuth installation flows, GitLab/Azure DevOps private credentials, or tenant credential storage. Those concerns should be introduced behind explicit organization/user/integration models rather than embedded into scan job targets.
+This increment does not add SaaS tenancy, user accounts, billing, persistent Asset records, authenticated host credentials, GitHub App/OAuth installation flows, GitLab/Azure DevOps private credentials, or tenant credential storage. Those concerns should be introduced behind explicit organization/user/asset/integration models rather than embedded into scan job targets.
