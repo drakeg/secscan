@@ -18,6 +18,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from secscan.scanners.network import validate_network_target
 from secscan.scanners.repository import is_remote_repository_url, validate_remote_repository_url
 
 JobStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
@@ -37,12 +38,13 @@ ARTIFACT_PATHS = {
 
 
 class ScanSubmission(BaseModel):
-    scanner: Literal["image", "filesystem", "repository", "sbom"]
+    scanner: Literal["image", "filesystem", "repository", "sbom", "network"]
     target: str = Field(min_length=1)
     fail_on: Literal["NONE", "UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = None
     policy: str | None = None
     baseline: str | None = None
     timeout: int = Field(default=600, ge=1, le=86400)
+    network_authorized: bool = False
 
 
 @dataclass
@@ -202,6 +204,7 @@ class JobManager:
         self._lock = Lock()
 
     def submit(self, request: ScanSubmission) -> JobRecord:
+        self._validate_submission(request)
         self._validate_input_paths(request)
         job_id = str(uuid4())
         output_dir = (self.root / job_id).resolve()
@@ -219,6 +222,13 @@ class JobManager:
             self.store.save(record)
         self.executor.submit(self._run, job_id, request)
         return record
+
+    def _validate_submission(self, request: ScanSubmission) -> None:
+        if request.scanner != "network":
+            return
+        if not request.network_authorized:
+            raise ValueError("network scans require explicit authorization acknowledgement")
+        validate_network_target(request.target)
 
     def _validate_input_paths(self, request: ScanSubmission) -> None:
         remote_repository = request.scanner == "repository" and is_remote_repository_url(request.target)
@@ -531,7 +541,7 @@ def create_app(
     @app.get("/api/v1/jobs")
     def list_jobs(
         status: JobStatus | None = None,
-        scanner: Literal["image", "filesystem", "repository", "sbom"] | None = None,
+        scanner: Literal["image", "filesystem", "repository", "sbom", "network"] | None = None,
         limit: int = Query(default=20, ge=1, le=100),
     ) -> list[dict[str, object]]:
         return [asdict(record) for record in get_manager().list(status=status, scanner=scanner, limit=limit)]
