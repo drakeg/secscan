@@ -18,20 +18,21 @@ This document is the living technical blueprint for secscan. It records current 
 ## Current data flow
 
 ```text
-CLI / service API / local web UI / future scheduled job
+CLI / future API / scheduled job
               |
               v
          ScanRequest
               |
               v
        ScannerRegistry
-              |
-              v
-        target scanner
-              |
-              v
-         engine adapter(s)
-              |
+          /       \
+         v         v
+ ImageScanner   FilesystemScanner
+         \         /
+          v       v
+         Trivy adapter
+              |--------------------> raw Trivy JSON
+              |--------------------> CycloneDX JSON SBOM
               v
           Normalizer
               |
@@ -51,7 +52,35 @@ active findings   suppressed findings + audit metadata
        +----------------------------> summary and exit code
 ```
 
-The CLI owns argument parsing and presentation. The service owns local job submission, persistence, bounded concurrency, and service-side request boundaries. The web UI remains a thin client over the service. Scanner plugins own target validation and orchestration. Engine adapters own subprocess details. Normalization, reporting, and policy remain project-level concerns.
+The CLI owns argument parsing and presentation. Scanner plugins own target validation and orchestration. Engine adapters own subprocess details. Normalization, reporting, and policy remain project-level concerns.
+
+## Repository layout
+
+```text
+secscan/
+├── Dockerfile
+├── pyproject.toml
+├── README.md
+├── secscan/
+│   ├── cli.py
+│   ├── models.py
+│   ├── normalize.py
+│   ├── policy.py
+│   ├── report.py
+│   ├── trivy.py
+│   └── scanners/
+│       ├── base.py
+│       ├── registry.py
+│       ├── image.py
+│       └── filesystem.py
+├── scripts/
+│   └── verify_wheel.py
+├── tests/
+├── docs/
+│   ├── POLICIES.md
+│   └── ...
+└── .github/
+```
 
 ## Architectural rules
 
@@ -65,15 +94,15 @@ A scanner returns raw traceability data, normalized findings, and scanner metada
 
 ### Normalization is mandatory
 
-Every scanner returns secscan-owned `Finding` objects. Policy and report code do not branch on Trivy, Nmap, Nuclei, or another engine-specific result shape.
+Every scanner returns secscan-owned `Finding` objects. Policy and report code do not branch on Trivy or another engine-specific result shape.
 
 ### Tools are adapters
 
-Target scanners can use one or more engine adapters. Trivy underpins image/filesystem/SBOM behavior; repository assessment composes multiple engines; network assessment combines Nmap and Nuclei. Engines may be replaced or complemented without changing policy or report contracts.
+`ImageScanner` and `FilesystemScanner` are target plugins. Trivy is the initial engine adapter beneath both plugins. A future engine may replace or complement Trivy without changing the registry, policy layer, or report layer.
 
 ### Policy evaluation is scanner-neutral
 
-Policies consume normalized findings after scanning. The same threshold and suppression rules apply across supported scanner targets.
+Policies consume normalized findings after scanning. The same threshold and suppression rules apply to image and filesystem scans.
 
 ### Findings are never silently hidden
 
@@ -127,13 +156,17 @@ Malformed YAML, unsupported thresholds, missing reasons, missing expirations, an
 - invoke reporting and policy using `ScanResult`
 - translate results into documented exit codes
 
-### `scanners/*`
+### `scanners/image.py`
 
-Scanner plugins own target-specific validation and orchestration while delegating engine subprocess details where adapters exist. Network scanning additionally constrains the target to one resolvable hostname/IP and uses fixed Nmap/Nuclei argument lists.
+Own container-image orchestration and delegate vulnerability and SBOM operations to the Trivy adapter.
+
+### `scanners/filesystem.py`
+
+Validate and resolve filesystem paths, delegate vulnerability and SBOM operations, and normalize results. The plugin does not modify the target.
 
 ### `trivy.py`
 
-Invoke Trivy modes safely, capture raw JSON, generate CycloneDX output where applicable, enforce timeouts, and distinguish operational failure from discovered findings.
+Invoke Trivy image and filesystem modes safely, capture raw JSON, generate CycloneDX output, enforce timeouts, and distinguish operational failure from discovered findings.
 
 ### `normalize.py`
 
@@ -167,7 +200,7 @@ Strictly load local declared-license policy and evaluate a version 1 normalized 
 
 A successful scan produces the applicable artifacts:
 
-- `trivy.json` — raw engine findings when Trivy applies
+- `trivy.json` — raw engine findings
 - `secscan.json` — normalized findings plus policy evaluation metadata
 - `secscan.cdx.json` — CycloneDX SBOM
 - `secscan.spdx.json` — preserved SPDX input for SPDX SBOM scans
@@ -203,7 +236,7 @@ source modules and scanner subpackages
     -> CodeQL
 ```
 
-Runtime dependencies must be installed from declared/pinned mechanisms and verified through clean installation or container validation as applicable.
+Runtime dependencies such as the YAML parser must be installed from the wheel dependency metadata and verified through clean installation.
 
 ## Security boundaries
 
@@ -224,7 +257,7 @@ Runtime dependencies must be installed from declared/pinned mechanisms and verif
 
 ### Docker socket
 
-Normal image, filesystem, repository, SBOM, and network workflows do not require `/var/run/docker.sock`.
+Normal image and filesystem scanning do not require `/var/run/docker.sock`.
 
 ### Rootless Docker
 
@@ -277,7 +310,7 @@ Cloud components remain optional. Storage, queue, discovery, policy distribution
 
 The service stores job metadata in SQLite and report artifacts in UUID-scoped directories. A submitted record is persisted before worker execution. After execution it atomically writes a versioned manifest of allow-listed regular artifacts with deterministic names, sizes, and SHA-256 digests before persisting terminal state. The API exposes that manifest as an artifact collection, maps recorded digests to strong ETags, and supports `HEAD` and conditional revalidation without adding a cache service. Terminal records survive restarts; non-terminal records found at startup are failed explicitly instead of being replayed. The API can cancel queued work, but it does not terminate running scanners.
 
-The supported Docker Compose evaluation stack runs this service as the image's non-root user, binds the API to host loopback by default, drops all capabilities, makes the container root filesystem read-only, and mounts only named report/cache volumes plus the repository at read-only `/workspace`. Service and CLI default to the locally built `secscan:local` image but can share one explicitly configured release digest; the trusted-release procedure pulls first and disables builds so the selected digest cannot be replaced by checkout contents. The isolated network fixture always remains local. An explicit `SECSCAN_BIND_ADDRESS` override permits trusted-LAN evaluation without changing the container listener; non-loopback use requires operator-managed bearer authentication and firewall scoping and remains unsuitable for internet exposure. Service-side resolved-path validation limits local targets, policies, and baselines to `/workspace`; image references remain non-path inputs. Validated remote repository URLs and validated single-host network targets are separate non-path input classes. A Python standard-library health check avoids adding runtime tools. Compose never mounts the Docker socket and introduces no separate database, queue, or cloud dependency.
+The supported Docker Compose evaluation stack runs this service as the image's non-root user, binds the API to host loopback by default, drops all capabilities, makes the container root filesystem read-only, and mounts only named report/cache volumes plus the repository at read-only `/workspace`. Service and CLI default to the locally built `secscan:local` image but can share one explicitly configured release digest; the trusted-release procedure pulls first and disables builds so the selected digest cannot be replaced by checkout contents. The isolated network fixture always remains local. An explicit `SECSCAN_BIND_ADDRESS` override permits trusted-LAN evaluation without changing the container listener; non-loopback use requires operator-managed bearer authentication and firewall scoping and remains unsuitable for internet exposure. Service-side resolved-path validation limits local targets, policies, and baselines to `/workspace`; image references remain non-path inputs. A Python standard-library health check avoids adding runtime tools. Compose never mounts the Docker socket and introduces no separate database, queue, or cloud dependency.
 
 Optional local bearer authentication protects API routes with one operator-supplied shared token while leaving `/healthz` and local API documentation public. The OpenAPI document advertises the bearer scheme for interactive local testing. The service validates token shape at startup and uses constant-time comparison. Compose passes the token through the container environment, not command arguments; local Docker administrators remain trusted. This is defense in depth for a localhost service, not user authorization, tenant isolation, TLS, or an internet-exposure boundary.
 
@@ -295,8 +328,8 @@ The SBOM scanner recognizes CycloneDX JSON and SPDX 2.2/2.3 JSON from mutually e
 
 ### Network assessment boundary
 
-The network scanner accepts one resolvable hostname or IP address and invokes Nmap and Nuclei through fixed argument lists. The image pins the Nuclei binary and binds the official template release tag to one full reviewed Git commit SHA; the build fails if the tag resolves elsewhere. Nuclei receives the read-only bundled path explicitly with automatic update checks disabled. This makes the assessment corpus a fail-closed image-build dependency rather than mutable runtime state. Interactsh, CIDRs, target lists, URLs, and arbitrary scanner arguments remain outside this boundary.
+The network scanner accepts one resolvable hostname or IP address and invokes Nmap and Nuclei through fixed argument lists. The image pins the Nuclei binary and binds the official template release tag to one full reviewed Git commit SHA; the build fails if the tag resolves elsewhere. Nuclei receives the read-only bundled path explicitly with automatic update checks disabled. This makes the assessment corpus a fail-closed image-build dependency rather than mutable runtime state. Interactsh, CIDRs, target lists, arbitrary scanner arguments, and unrestricted hosted submission remain outside this boundary. Network assessment actively connects to the supplied system and is only for targets the operator is authorized to test.
 
-The local service may submit this same `network` scanner only when the request includes an explicit `network_authorized: true` acknowledgement. The service invokes the existing network target validator before persisting the job, so malformed inputs, URLs, CIDRs, and unresolvable targets are rejected without creating job history. The web UI surfaces that acknowledgement only for network scans. Completed jobs continue through the normal normalized report, history, dashboard summary, artifact integrity, and auto-refresh paths rather than introducing a network-specific result store.
+The local single-operator service may submit the same `network` scanner when the request includes explicit `network_authorized: true` acknowledgement. The service runs the existing single-host validator before persistence, so malformed inputs, URLs, CIDRs, and unresolvable targets are rejected without creating a job. The web UI surfaces the acknowledgement only for network scans, and completed network jobs reuse the normal normalized report, history, dashboard summary, artifact, and auto-refresh paths.
 
-The acknowledgement is not proof of ownership and does not provide identity, authorization, tenant isolation, or egress policy. Service exposure remains localhost by default; trusted-LAN use requires bearer authentication and firewall restriction. Public multi-tenant network scanning, range discovery, persistent asset authorization, and internet-exposed service operation require additional security architecture and remain out of scope. Network assessment actively connects to the supplied system and is only for targets the operator owns or is authorized to test.
+This acknowledgement is not proof of target ownership and does not provide identity, tenant authorization, or egress policy. Public multi-tenant network scanning, persistent asset authorization, CIDR/range scanning, and internet-exposed service operation require additional security architecture and remain out of scope.
