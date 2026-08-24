@@ -25,7 +25,7 @@ WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY secscan ./secscan
 COPY scripts/verify_wheel.py ./scripts/verify_wheel.py
-RUN python -c "from pathlib import Path; required={'secscan/__init__.py','secscan/aws.py','secscan/cli.py','secscan/compare.py','secscan/history.py','secscan/models.py','secscan/normalize.py','secscan/policy.py','secscan/report.py','secscan/trivy.py','secscan/web.py','secscan/web_assets/__init__.py','secscan/web_assets/index.html','secscan/scanners/__init__.py','secscan/scanners/base.py','secscan/scanners/registry.py','secscan/scanners/image.py','secscan/scanners/filesystem.py','secscan/scanners/repository.py','secscan/scanners/full_repository.py','secscan/scanners/network.py','secscan/scanners/sbom.py'}; missing={path for path in required if not Path(path).is_file()}; assert not missing, f'missing source modules: {sorted(missing)}'; print('verified source tree:', ', '.join(sorted(required)))" \
+RUN python -c "from pathlib import Path; required={'secscan/__init__.py','secscan/aws.py','secscan/cli.py','secscan/compare.py','secscan/history.py','secscan/models.py','secscan/normalize.py','secscan/policy.py','secscan/report.py','secscan/trivy.py','secscan/web.py','secscan/web_assets/__init__.py','secscan/web_assets/index.html','secscan/scanners/__init__.py','secscan/scanners/base.py','secscan/scanners/registry.py','secscan/scanners/image.py','secscan/scanners/filesystem.py','secscan/scanners/repository.py','secscan/scanners/full_repository.py','secscan/scanners/network.py','secscan/scanners/linux_host.py','secscan/scanners/sbom.py'}; missing={path for path in required if not Path(path).is_file()}; assert not missing, f'missing source modules: {sorted(missing)}'; print('verified source tree:', ', '.join(sorted(required)))" \
     && pip wheel --no-deps --wheel-dir /wheels . \
     && python scripts/verify_wheel.py /wheels/secscan-*.whl
 
@@ -44,7 +44,7 @@ COPY --from=nuclei-builder /out/nuclei /usr/local/bin/nuclei
 COPY --from=nuclei-builder /nuclei-templates /opt/nuclei-templates
 COPY --from=builder /wheels /wheels
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y git ca-certificates nmap \
+    && apt-get install --no-install-recommends -y git ca-certificates nmap openssh-client \
     && rm -rf /var/lib/apt/lists/* \
     && pip install --no-cache-dir /wheels/secscan-*.whl \
     && python -m venv /opt/semgrep \
@@ -53,11 +53,12 @@ RUN apt-get update \
     && python -m venv /opt/checkov \
     && /opt/checkov/bin/pip install --no-cache-dir checkov==3.3.8 \
     && ln -s /opt/checkov/bin/checkov /usr/local/bin/checkov \
-    && python -c "import secscan, secscan.aws, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.full_repository, secscan.scanners.network, secscan.scanners.sbom" \
+    && python -c "import secscan, secscan.aws, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.full_repository, secscan.scanners.network, secscan.scanners.linux_host, secscan.scanners.sbom" \
     && semgrep --version \
     && gitleaks version \
     && checkov --version \
     && nmap --version \
+    && ssh -V \
     && nuclei -version \
     && test "$(cat /opt/nuclei-templates/.secscan-template-version)" = "${NUCLEI_TEMPLATES_VERSION}" \
     && test "$(cat /opt/nuclei-templates/.secscan-template-commit)" = "${NUCLEI_TEMPLATES_COMMIT}" \
