@@ -22,10 +22,11 @@ world_writable_etc\t/etc/example.conf
 """
 
 
-def request(tmp_path: Path) -> ScanRequest:
-    key = tmp_path / "id_ed25519"
+def request(tmp_path: Path, *, key_path: Path | None = None) -> ScanRequest:
+    key = key_path or (tmp_path / "id_ed25519")
     known_hosts = tmp_path / "known_hosts"
-    key.write_text("fixture-private-key", encoding="utf-8")
+    if key_path is None:
+        key.write_text("fixture-private-key", encoding="utf-8")
     known_hosts.write_text("example.test ssh-ed25519 fixture-host-key\n", encoding="utf-8")
     return ScanRequest(
         scanner_name="linux-host",
@@ -96,12 +97,9 @@ def test_linux_host_scan_requires_key_and_known_hosts_files(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr("secscan.scanners.linux_host.validate_network_target", lambda value: value)
-    scan_request = request(tmp_path)
-    assert scan_request.environment is not None
-    scan_request.environment["SECSCAN_SSH_KEY"] = str(tmp_path / "missing")
 
     with pytest.raises(ValueError, match="SECSCAN_SSH_KEY must point"):
-        LinuxHostScanner().scan(scan_request)
+        LinuxHostScanner().scan(request(tmp_path, key_path=tmp_path / "missing"))
 
 
 def test_linux_host_scan_reports_ssh_failure_without_remote_execution_details(
