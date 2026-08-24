@@ -151,67 +151,77 @@ Delivered one exact-version AMD64/ARM64 OCI image index with an immutable digest
 
 Delivered a machine-readable SPDX 2.3 JSON source inventory for stable releases using pinned `anchore/sbom-action@v0.24.0` and Syft `v1.42.3`. The SBOM is generated from the clean tagged checkout, staged as `release-dist/secscan-source.spdx.json`, covered by the same deterministic `SHA256SUMS` manifest as the wheel and source distribution, and uploaded only through the existing guarded GitHub Release step. Action-managed artifact/release uploads and dependency submission remain disabled. Branch preflight, release-focused tests, container smoke checks, CI, and CodeQL passed with no release tag or package publication during validation.
 
+### Sprint 35 — Web/API Single-Host Network Assessments
+
+Delivered the existing deterministic Nmap/Nuclei single-host assessment through the local REST API and browser GUI. Network jobs require explicit operator authorization acknowledgement and reuse the normal job detail, history, severity, dashboard, policy, baseline, and artifact paths. URLs, CIDRs, target lists, arbitrary scanner flags, Interactsh, and hosted/public scanning remain outside the boundary. Python 3.12/3.14 preflight, container/Compose smoke tests, fixable-critical self-scan, and CodeQL passed before merge.
+
 ## Current sprint
 
-### Sprint 35 — Web/API Single-Host Network Assessments
+### Sprint 36 — SSH-Authenticated Linux Host Assessment
 
 #### Goal
 
-Make the existing deterministic Nmap/Nuclei single-host assessment usable from the local secscan REST API and browser GUI without weakening the scanner's current target, authorization, deployment, or cost boundaries.
+Add the first authenticated internal-host assessment path for Linux systems without introducing agents, passwords, browser-submitted credentials, persistent secret storage, cloud infrastructure, or paid services.
 
 #### User stories
 
-1. As a local operator, I can select a server/network assessment in the web GUI, enter one hostname or IP address that I am authorized to test, and launch the existing network scanner.
-2. As an API user, I can submit and filter `network` jobs through the same job endpoints used by other scanner types.
-3. As an operator, invalid or unacknowledged network targets are rejected before job persistence, and completed network findings flow through the existing job detail, history, severity, artifact, and dashboard views.
-4. As a maintainer, I can demonstrate the service path safely against the existing private Compose network fixture without scanning public infrastructure.
+1. As an operator, I can assess one Linux hostname/IP over key-based SSH using operator-managed key and known-hosts files.
+2. As an operator, I receive normalized findings for selected internal posture signals such as pending updates, SSH hardening, firewall state, UID 0 accounts, and sensitive filesystem permissions.
+3. As a maintainer, the new scanner reuses existing policy, baseline, report, history, packaging, and container boundaries rather than creating a parallel result model.
+4. As a security reviewer, I can verify that private-key and host-key material never enters scan targets, findings, reports, history, or logs.
 
 #### Planned implementation
 
-- extend the service request and list-filter scanner contracts to include `network`
-- validate network targets at the service boundary with the existing single-host validator before a job is persisted
-- require an explicit authorization acknowledgement for service-submitted network scans while leaving existing CLI behavior unchanged
-- add a **Server / Network — Agentless assessment** option to the New Scan GUI with hostname/IP guidance and a network-only authorization checkbox
-- reuse the existing normalized `secscan.json`, summary endpoint, dashboard, history, artifact, polling, policy, and baseline behavior instead of adding network-specific result storage
-- document REST, GUI, Docker Compose fixture, authentication, trusted-LAN, and cleanup procedures
-- add focused service and web regression tests for accepted/rejected submissions, filtering, UI behavior, and preservation of existing scanner contracts
+- add a built-in `linux-host` scanner plugin and registry entry
+- use key-based OpenSSH authentication only, configured by operator-side environment variables
+- require strict host-key verification with an existing operator-supplied `known_hosts` file
+- run one constant read-only remote shell program through fixed SSH arguments with password/interactive auth and forwarding disabled
+- normalize selected host-posture issues into standard secscan `Finding` records
+- package `openssh-client` in the secscan container and verify the scanner module in wheel/container checks
+- document credentials, host verification, least privilege, supported checks, limitations, failure behavior, and container usage
+- add success/failure tests for validation, SSH command construction, secret non-persistence, parsing, findings, timeout, and authentication/host-key failure
 
 #### Acceptance criteria
 
-- `POST /api/v1/jobs` accepts `scanner: network` only for one valid resolvable hostname/IP and an explicit authorization acknowledgement
-- missing authorization, URLs, CIDRs, malformed targets, and unresolvable targets return `422` and create no job
-- `GET /api/v1/jobs?scanner=network` filters network jobs using the existing newest-first and limit semantics
-- the web GUI exposes the network option, provides target-specific guidance, requires acknowledgement before submission, and opens the normal auto-refreshing job detail view
-- completed network reports appear in existing severity counts, scan history, current-posture dashboard, findings filters, and artifact downloads without a parallel result model
-- the documented Compose validation uses only the opt-in private `network-fixture`; normal `docker compose up --build --wait` does not start that fixture
-- existing image, filesystem, repository, and SBOM API/UI behavior remains compatible
-- focused tests, `git diff --check`, `bash scripts/preflight.sh`, applicable Docker/Compose validation, GitHub CI, and CodeQL pass before merge
-- no release tag, package publication, cloud resource, paid service, or recurring infrastructure cost is introduced
+- `secscan scan linux-host HOST` can assess one Linux host using `SECSCAN_SSH_USER`, `SECSCAN_SSH_KEY`, `SECSCAN_SSH_KNOWN_HOSTS`, and optional `SECSCAN_SSH_PORT`
+- target and username validation reject URLs, CIDRs, whitespace/control characters, and shell fragments
+- private-key and known-hosts contents never appear in the target, normalized findings, raw/report output, or history
+- SSH enforces `BatchMode=yes`, key-only authentication, `IdentitiesOnly=yes`, and `StrictHostKeyChecking=yes`; insecure host-key bypass is not provided
+- SSH agent/X11 forwarding and ambient SSH config are disabled
+- the remote command is constant, read-only, non-interactive, and does not interpolate user-controlled shell fragments
+- normalized findings cover the initial documented posture checks and flow through the standard policy, baseline, reporting, and history pipeline
+- missing credential files, invalid port/user/target, SSH/auth/host-key failure, malformed output, non-Linux targets, and timeout are operational failures
+- the container includes OpenSSH client support and existing scanners remain compatible
+- focused tests, `git diff --check`, full `bash scripts/preflight.sh`, applicable Docker validation, GitHub CI, and CodeQL pass before merge
+- no release tag, package publication, AWS resource, hosted service, or recurring infrastructure cost is introduced
 
 #### Security and operational boundaries
 
-- network assessment remains active probing and is only for systems the operator owns or has explicit authorization to assess
-- only one hostname or IP is accepted; CIDRs, target lists, URLs, arbitrary Nmap/Nuclei arguments, Interactsh, and browser-supplied scanner flags remain out of scope
-- the authorization checkbox/field records operator acknowledgement; it is not an identity, entitlement, or tenant authorization system
-- localhost remains the default service bind; trusted-LAN access remains explicit, bearer-token protected, firewall constrained, and unsuitable for internet exposure
-- service-side target validation does not make public-target scanning safe for a future multi-tenant hosted service; tenant authorization and egress controls must precede that use case
-- scanner binaries and Nuclei templates are unchanged in this sprint
+- only systems the operator owns or is explicitly authorized to assess may be targeted
+- passwords, keyboard-interactive auth, browser/API credential submission, SSH agents, bastion/proxy options, SSH certificates, and arbitrary SSH flags remain out of scope
+- no sudo prompt, privilege escalation, package installation, remediation, file modification, service restart, or agent deployment is performed
+- one target per scan; CIDRs, discovery, scheduling, recurring scans, and bulk execution remain out of scope
+- unsupported/unreadable checks are reported as limitations/raw metadata rather than fabricated vulnerabilities
+- the private key remains operator-managed and should be mounted read-only in container use
 
 #### Validation plan
 
-Automated validation covers service model acceptance, pre-persistence rejection, scanner filtering, command construction, and packaged web assets. Local integration validation will start the normal service plus the opt-in private Compose fixture, submit `network-fixture` through the authenticated or localhost API, wait for a terminal job, inspect `secscan.json` and `artifacts.json`, confirm dashboard compatibility, and then remove the fixture. Existing quick-start and cleanup commands remain valid.
+Automated tests mock SSH subprocess execution and validate exact argument construction, fixed remote input, parsing, normalized findings, missing/invalid settings, timeout, host-key/auth failure, and secret non-persistence. Packaging validation verifies the new scanner module and OpenSSH client. A future follow-up may add a deterministic private Compose SSH fixture; the ordinary `docker compose up --build --wait` path remains unchanged in this Sprint.
 
 #### Cost outlook
 
-Sprint 35 reuses the local service, SQLite, Docker Compose network, bundled Nmap/Nuclei binaries, and pinned local template corpus. Current and projected recurring secscan infrastructure/service cost remains **$0**. Operators remain responsible for their own network usage; no third-party hosted scanner or cloud resource is enabled.
+Sprint 36 uses local OpenSSH plus the existing scanner registry, reporting, policy, baseline, history, Docker image, and CI. Current and projected recurring secscan infrastructure/service cost remains **$0**. Operators remain responsible for their own hosts and network usage.
 
 #### Out of scope
 
-- persistent Asset records or an asset inventory database
-- authenticated Linux/Windows host inspection, agents, SSH/WinRM credentials, or endpoint management
-- CIDR/range scanning, discovery, scheduling, recurring scans, or distributed workers
-- AWS EC2 correlation, cloud posture scanning, web/API DAST expansion, or new scanner engines
-- SaaS users, organizations, tenant isolation, billing, TLS/ingress, or internet exposure
+- REST/web submission of SSH credentials or authenticated host jobs
+- password authentication, SSH agent forwarding, bastion/proxy configuration, sudo, privilege escalation, or agents
+- full distribution-specific CVE correlation, OpenSCAP/Wazuh integration, or automatic remediation
+- Windows/WinRM endpoint assessment
+- CIDR/range scanning, persistent assets, scheduling, distributed workers, or AWS EC2 correlation
+- SaaS users, tenant credential storage, billing, TLS/ingress, or internet exposure
+
+See [`docs/SPRINT_36.md`](SPRINT_36.md) and [`docs/LINUX_HOST_SCANNING.md`](LINUX_HOST_SCANNING.md) for the detailed Sprint and operator boundaries.
 
 ## Planned feature sprints
 
@@ -262,7 +272,7 @@ Delivered read-only discovery of exact ECR repositories across approved accounts
 - credentials and session tokens are never persisted
 - exact repository allow-lists prevent unbounded discovery
 - output is treated as security-sensitive infrastructure inventory
-- current and projected recurring secscan infrastructure cost remains **$0**
+- current and projected recurring infrastructure cost remains **$0**
 
 ### Sprint 12 — Authenticated ECR Scanning
 
