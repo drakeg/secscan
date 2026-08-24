@@ -29,11 +29,13 @@ def test_default_registry_contains_builtin_scanners() -> None:
     assert registry.get("full-repository").capability.name == "full-repository"
     assert registry.get("repository-trivy").capability.name == "repository-trivy"
     assert registry.get("network").capability.name == "network"
+    assert registry.get("linux-host").capability.name == "linux-host"
     assert registry.get("sbom").capability.name == "sbom"
     assert [capability.name for capability in registry.capabilities()] == [
         "filesystem",
         "full-repository",
         "image",
+        "linux-host",
         "network",
         "repository",
         "repository-trivy",
