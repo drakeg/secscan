@@ -19,8 +19,9 @@ python scripts/verify_wheel.py dist/secscan-*.whl
 
 python -m venv /tmp/secscan-wheel-test
 /tmp/secscan-wheel-test/bin/pip install --force-reinstall dist/secscan-*.whl
-/tmp/secscan-wheel-test/bin/python -c "import secscan, secscan.aws, secscan.cli, secscan.compare, secscan.history, secscan.license_policy, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.service, secscan.service_cli, secscan.sbom_inventory, secscan.sbom_inventory_compare, secscan.trivy, secscan.web, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.full_repository, secscan.scanners.network, secscan.scanners.repository, secscan.scanners.sbom"
+/tmp/secscan-wheel-test/bin/python -c "import secscan, secscan.aws, secscan.cli, secscan.compare, secscan.history, secscan.license_policy, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.service, secscan.service_cli, secscan.sbom_inventory, secscan.sbom_inventory_compare, secscan.trivy, secscan.web, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.full_repository, secscan.scanners.linux_host, secscan.scanners.network, secscan.scanners.repository, secscan.scanners.sbom"
 /tmp/secscan-wheel-test/bin/secscan --version
+/tmp/secscan-wheel-test/bin/secscan scan linux-host --help >/dev/null
 /tmp/secscan-wheel-test/bin/secscan batch ecr --help >/dev/null
 /tmp/secscan-wheel-test/bin/secscan trends --help >/dev/null
 /tmp/secscan-wheel-test/bin/secscan finding-changes --help >/dev/null
