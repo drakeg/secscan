@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -65,23 +66,28 @@ def validate_ssh_user(user: str) -> str:
     return value
 
 
-def _required_environment(request: ScanRequest, name: str) -> str:
-    environment = request.environment or {}
-    value = environment.get(name)
+def _setting(request: ScanRequest, name: str) -> str | None:
+    if request.environment and request.environment.get(name):
+        return request.environment[name]
+    return os.environ.get(name)
+
+
+def _required_setting(request: ScanRequest, name: str) -> str:
+    value = _setting(request, name)
     if not value:
         raise ValueError(f"{name} is required for linux-host scans")
     return value
 
 
 def _required_file(request: ScanRequest, name: str) -> Path:
-    path = Path(_required_environment(request, name)).expanduser()
+    path = Path(_required_setting(request, name)).expanduser()
     if not path.is_absolute() or not path.is_file():
         raise ValueError(f"{name} must point to an existing absolute file")
     return path
 
 
 def _ssh_port(request: ScanRequest) -> int:
-    raw = (request.environment or {}).get("SECSCAN_SSH_PORT", "22")
+    raw = _setting(request, "SECSCAN_SSH_PORT") or "22"
     try:
         port = int(raw)
     except ValueError as exc:
@@ -236,7 +242,7 @@ class LinuxHostScanner(Scanner):
 
     def scan(self, request: ScanRequest) -> ScanResult:
         target = validate_network_target(request.target)
-        user = validate_ssh_user(_required_environment(request, "SECSCAN_SSH_USER"))
+        user = validate_ssh_user(_required_setting(request, "SECSCAN_SSH_USER"))
         key_path = _required_file(request, "SECSCAN_SSH_KEY")
         known_hosts = _required_file(request, "SECSCAN_SSH_KNOWN_HOSTS")
         port = _ssh_port(request)
