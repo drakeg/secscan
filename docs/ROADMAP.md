@@ -147,50 +147,71 @@ Delivered a shared release-digest override for the Compose service and CLI with 
 
 Delivered one exact-version AMD64/ARM64 OCI image index with an immutable digest, unchanged provenance wiring, native local ARM64 validation, and platform verification procedures.
 
+### Sprint 34 — Checksummed Release Source SBOM
+
+Delivered a machine-readable SPDX 2.3 JSON source inventory for stable releases using pinned `anchore/sbom-action@v0.24.0` and Syft `v1.42.3`. The SBOM is generated from the clean tagged checkout, staged as `release-dist/secscan-source.spdx.json`, covered by the same deterministic `SHA256SUMS` manifest as the wheel and source distribution, and uploaded only through the existing guarded GitHub Release step. Action-managed artifact/release uploads and dependency submission remain disabled. Branch preflight, release-focused tests, container smoke checks, CI, and CodeQL passed with no release tag or package publication during validation.
+
 ## Current sprint
 
-### Sprint 34 — Checksummed Release Source SBOM
+### Sprint 35 — Web/API Single-Host Network Assessments
 
 #### Goal
 
-Attach a machine-readable, checksummed dependency inventory of the tagged source to every stable release.
+Make the existing deterministic Nmap/Nuclei single-host assessment usable from the local secscan REST API and browser GUI without weakening the scanner's current target, authorization, deployment, or cost boundaries.
 
 #### User stories
 
-1. As a release consumer, I can inspect the source dependency inventory without installing secscan.
-2. As an auditor, I can verify the SBOM with the same checksum manifest as the Python artifacts.
-3. As a maintainer, I can reproduce and validate the SBOM locally with one pinned tool version.
+1. As a local operator, I can select a server/network assessment in the web GUI, enter one hostname or IP address that I am authorized to test, and launch the existing network scanner.
+2. As an API user, I can submit and filter `network` jobs through the same job endpoints used by other scanner types.
+3. As an operator, invalid or unacknowledged network targets are rejected before job persistence, and completed network findings flow through the existing job detail, history, severity, artifact, and dashboard views.
+4. As a maintainer, I can demonstrate the service path safely against the existing private Compose network fixture without scanning public infrastructure.
 
 #### Planned implementation
 
-- generate SPDX JSON from the tagged source with a pinned Syft release and pinned GitHub Action
-- write the SBOM into the existing release artifact directory before checksum generation
-- include the SBOM as an explicit input to `SHA256SUMS`
-- use the existing GitHub Release upload path instead of action-managed uploads
-- document clean-checkout local generation, JSON validation, and checksum verification
-- extend release-workflow tests to enforce tool pins, disabled side-channel uploads, ordering, and checksum coverage
+- extend the service request and list-filter scanner contracts to include `network`
+- validate network targets at the service boundary with the existing single-host validator before a job is persisted
+- require an explicit authorization acknowledgement for service-submitted network scans while leaving existing CLI behavior unchanged
+- add a **Server / Network — Agentless assessment** option to the New Scan GUI with hostname/IP guidance and a network-only authorization checkbox
+- reuse the existing normalized `secscan.json`, summary endpoint, dashboard, history, artifact, polling, policy, and baseline behavior instead of adding network-specific result storage
+- document REST, GUI, Docker Compose fixture, authentication, trusted-LAN, and cleanup procedures
+- add focused service and web regression tests for accepted/rejected submissions, filtering, UI behavior, and preservation of existing scanner contracts
 
 #### Acceptance criteria
 
-- each stable release contains `secscan-source.spdx.json` in SPDX JSON format
-- Syft and its action are explicitly version-pinned
-- action-managed artifact, release-asset, and dependency-snapshot uploads remain disabled
-- `SHA256SUMS` covers the wheel, source distribution, and source SBOM
-- the existing single release-creation step uploads the SBOM with the other artifacts
-- automated tests validate configuration, ordering, and checksum coverage
-- branch preflight, CI, and CodeQL pass before merge
-- no AWS resources or paid infrastructure are introduced
+- `POST /api/v1/jobs` accepts `scanner: network` only for one valid resolvable hostname/IP and an explicit authorization acknowledgement
+- missing authorization, URLs, CIDRs, malformed targets, and unresolvable targets return `422` and create no job
+- `GET /api/v1/jobs?scanner=network` filters network jobs using the existing newest-first and limit semantics
+- the web GUI exposes the network option, provides target-specific guidance, requires acknowledgement before submission, and opens the normal auto-refreshing job detail view
+- completed network reports appear in existing severity counts, scan history, current-posture dashboard, findings filters, and artifact downloads without a parallel result model
+- the documented Compose validation uses only the opt-in private `network-fixture`; normal `docker compose up --build --wait` does not start that fixture
+- existing image, filesystem, repository, and SBOM API/UI behavior remains compatible
+- focused tests, `git diff --check`, `bash scripts/preflight.sh`, applicable Docker/Compose validation, GitHub CI, and CodeQL pass before merge
+- no release tag, package publication, cloud resource, paid service, or recurring infrastructure cost is introduced
 
-#### Out of scope
+#### Security and operational boundaries
 
-- container-image or per-platform SBOM attestations, vulnerability scanning of the SBOM, or dependency submission
-- changing runtime dependencies, scanner versions, container contents, application behavior, or release numbering
-- new registries, release channels, mutable tags, signing systems, deployment, or hosting
-- automatic release creation outside the existing guarded stable-tag workflow
+- network assessment remains active probing and is only for systems the operator owns or has explicit authorization to assess
+- only one hostname or IP is accepted; CIDRs, target lists, URLs, arbitrary Nmap/Nuclei arguments, Interactsh, and browser-supplied scanner flags remain out of scope
+- the authorization checkbox/field records operator acknowledgement; it is not an identity, entitlement, or tenant authorization system
+- localhost remains the default service bind; trusted-LAN access remains explicit, bearer-token protected, firewall constrained, and unsuitable for internet exposure
+- service-side target validation does not make public-target scanning safe for a future multi-tenant hosted service; tenant authorization and egress controls must precede that use case
+- scanner binaries and Nuclei templates are unchanged in this sprint
+
+#### Validation plan
+
+Automated validation covers service model acceptance, pre-persistence rejection, scanner filtering, command construction, and packaged web assets. Local integration validation will start the normal service plus the opt-in private Compose fixture, submit `network-fixture` through the authenticated or localhost API, wait for a terminal job, inspect `secscan.json` and `artifacts.json`, confirm dashboard compatibility, and then remove the fixture. Existing quick-start and cleanup commands remain valid.
 
 #### Cost outlook
 
-The SBOM is generated inside the existing public-repository release job and stored with the existing GitHub Release. Current and projected recurring secscan infrastructure cost remains **$0**; maintainers should retain zero-dollar budgets and recheck GitHub policy before release.
+Sprint 35 reuses the local service, SQLite, Docker Compose network, bundled Nmap/Nuclei binaries, and pinned local template corpus. Current and projected recurring secscan infrastructure/service cost remains **$0**. Operators remain responsible for their own network usage; no third-party hosted scanner or cloud resource is enabled.
+
+#### Out of scope
+
+- persistent Asset records or an asset inventory database
+- authenticated Linux/Windows host inspection, agents, SSH/WinRM credentials, or endpoint management
+- CIDR/range scanning, discovery, scheduling, recurring scans, or distributed workers
+- AWS EC2 correlation, cloud posture scanning, web/API DAST expansion, or new scanner engines
+- SaaS users, organizations, tenant isolation, billing, TLS/ingress, or internet exposure
 
 ## Planned feature sprints
 
@@ -304,6 +325,10 @@ Delivered sequential batches of up to 20 explicitly selected immutable ECR inven
 - risk scoring, KEV, and EPSS enrichment
 - EC2 inventory or snapshot-based scanning
 - ECS and EKS workload association
+- persistent assets and reassessment workflows
+- authenticated Linux and Windows host assessment
+- bounded network-range assessment with explicit authorization controls
+- web/API DAST expansion
 - multi-user access and tenant isolation
 - Jira, Slack, ServiceNow, SIEM, and GitHub integrations
 - signed policy bundles and enterprise governance

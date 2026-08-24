@@ -73,16 +73,25 @@ async function refreshSecuritySummaries(){
 
 const scannerSelect=$("scanner");
 const targetHelp=$("target-help");
-function updateRepositoryTargetHelp(){
-  if(scannerSelect.value==="repository"){
+const networkAuthorization=$("network-authorization");
+const networkAuthorized=$("network-authorized");
+function updateTargetHelp(){
+  const scanner=scannerSelect.value;
+  const isNetwork=scanner==="network";
+  if(scanner==="repository"){
     $("target").placeholder="https://github.com/org/repository.git";
     if(targetHelp)targetHelp.textContent="Use a local path such as /workspace, or a public HTTPS GitHub, GitLab, Azure DevOps, or other Git repository URL.";
+  }else if(isNetwork){
+    $("target").placeholder="server.example.com or 192.0.2.10";
+    if(targetHelp)targetHelp.textContent="Active assessment of one hostname or IP address using Nmap and Nuclei. Only scan systems you own or are explicitly authorized to test.";
   }else if(targetHelp){
     targetHelp.textContent="";
   }
+  if(networkAuthorization)networkAuthorization.classList.toggle("hidden",!isNetwork);
+  if(networkAuthorized&&!isNetwork)networkAuthorized.checked=false;
 }
-scannerSelect.addEventListener("change",updateRepositoryTargetHelp);
-updateRepositoryTargetHelp();
+scannerSelect.addEventListener("change",updateTargetHelp);
+updateTargetHelp();
 
 setTimeout(refreshSecuritySummaries,0);
 setInterval(refreshSecuritySummaries,7000);

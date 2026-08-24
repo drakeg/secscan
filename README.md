@@ -147,7 +147,9 @@ docker compose --profile tools run --rm cli \
   --fail-on NONE
 ```
 
-The image bundles pinned Nmap and Nuclei versions plus an official Nuclei template release bound to a reviewed full Git commit; scans do not install or update templates at runtime. URLs, CIDRs, target lists, arbitrary scanner flags, and web/API network submissions are not supported. See [Network Scanning](docs/NETWORK_SCANNING.md) for provenance, safety boundaries, and local validation.
+The image bundles pinned Nmap and Nuclei versions plus an official Nuclei template release bound to a reviewed full Git commit; scans do not install or update templates at runtime. URLs, CIDRs, target lists, and arbitrary scanner flags are not supported.
+
+The same single-host assessment is available from the local REST API and web GUI. Service submissions require an explicit `network_authorized: true` acknowledgement and are validated before job persistence; the GUI exposes that acknowledgement as a network-only confirmation checkbox. This is a local-operator safety control rather than proof of target ownership or tenant authorization. See [Network Scanning](docs/NETWORK_SCANNING.md) for the API example, GUI workflow, provenance, safety boundaries, and private Compose-fixture validation.
 
 ## SBOM scanning
 
@@ -316,7 +318,7 @@ docker compose up --build --wait
 curl --fail http://127.0.0.1:8000/healthz
 ```
 
-The stack is localhost-only by default, non-root, capability-free, and mounts this repository read-only at `/workspace` for filesystem/repository/SBOM testing. Service-controlled local paths are limited to that mount, executed jobs provide discoverable SHA-256 artifact manifests and conditional downloads, and optional environment variables can protect API access, authenticate private GitHub clones, and deliberately bind to a trusted private-LAN address. See [Web GUI](docs/WEB_UI.md), [GitHub Repository Authentication](docs/GITHUB_AUTH.md), and [Service Mode](docs/SERVICE_MODE.md) for configuration, LAN security boundaries, and host/second-device testing procedures.
+The stack is localhost-only by default, non-root, capability-free, and mounts this repository read-only at `/workspace` for filesystem/repository/SBOM testing. Service-controlled local paths are limited to that mount, executed jobs provide discoverable SHA-256 artifact manifests and conditional downloads, and optional environment variables can protect API access, authenticate private GitHub clones, and deliberately bind to a trusted private-LAN address. Authorized single-host network jobs are non-path inputs and use the same service job/report pipeline. See [Web GUI](docs/WEB_UI.md), [Network Scanning](docs/NETWORK_SCANNING.md), [GitHub Repository Authentication](docs/GITHUB_AUTH.md), and [Service Mode](docs/SERVICE_MODE.md) for configuration, LAN security boundaries, and local testing procedures.
 
 ## Releases
 
@@ -324,12 +326,14 @@ Stable `vMAJOR.MINOR.PATCH` tags trigger guarded GitHub release packaging when t
 
 ## Current boundaries
 
-The built-in scanners support public and explicitly inventoried ECR container images, including bounded sequential batches, plus local filesystem paths, local/remote source repositories, and CycloneDX or SPDX 2.2/2.3 JSON SBOM files. Public HTTPS GitHub, GitLab, Azure DevOps, and compatible Git repositories can be scanned remotely; private `github.com` repositories can use server-side `SECSCAN_GITHUB_TOKEN` authentication. Private GitLab/Azure DevOps authentication and provider OAuth/App integrations remain later increments. Supported SBOMs can produce, compare, and apply exact declared-license policy to local normalized inventories. YAML scan policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history, supports exact-cohort severity trends, and persists service job metadata. AWS discovery inventories explicitly approved ECR repositories. Richer license governance, dependency-graph analysis, scheduled AWS scanning, tenant credential storage, and contextual risk scoring remain later increments.
+The built-in scanners support public and explicitly inventoried ECR container images, including bounded sequential batches, plus local filesystem paths, local/remote source repositories, CycloneDX or SPDX 2.2/2.3 JSON SBOM files, and authorized single-host Nmap/Nuclei network assessments. Public HTTPS GitHub, GitLab, Azure DevOps, and compatible Git repositories can be scanned remotely; private `github.com` repositories can use server-side `SECSCAN_GITHUB_TOKEN` authentication. Private GitLab/Azure DevOps authentication and provider OAuth/App integrations remain later increments. Supported SBOMs can produce, compare, and apply exact declared-license policy to local normalized inventories. YAML scan policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history, supports exact-cohort severity trends, and persists service job metadata. AWS discovery inventories explicitly approved ECR repositories. Network service submission remains single-host and local/single-operator; CIDRs, target lists, hosted tenant authorization, and public service exposure are not supported. Richer license governance, dependency-graph analysis, scheduled AWS scanning, tenant credential storage, persistent asset management, and contextual risk scoring remain later increments.
 
 ## Security notes
 
 - Container image scanning does not require mounting the Docker socket.
 - Filesystem, repository, and SBOM targets, policy files, and baseline files should be mounted read-only.
+- Network assessment is active probing; scan only systems you own or have explicit authorization to test.
+- Service-submitted network jobs require explicit acknowledgement, but this is not proof of ownership or a hosted authorization control.
 - Never put Git credentials in repository URLs; use server-side provider configuration such as `SECSCAN_GITHUB_TOKEN`.
 - Keep `.env` out of source control and use narrowly scoped, read-only GitHub credentials.
 - Suppressions require a reason and expiration date.
