@@ -60,7 +60,14 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
     assert "ports" not in linux_host_fixture
     assert linux_host_fixture["security_opt"] == ["no-new-privileges:true"]
     assert linux_host_fixture["cap_drop"] == ["ALL"]
-    assert set(linux_host_fixture["cap_add"]) == {"SETGID", "SETUID", "CHOWN", "DAC_OVERRIDE"}
+    assert set(linux_host_fixture["cap_add"]) == {
+        "CHOWN",
+        "DAC_OVERRIDE",
+        "NET_BIND_SERVICE",
+        "SETGID",
+        "SETUID",
+        "SYS_CHROOT",
+    }
 
     assert set(compose["volumes"]) == {
         "secscan-reports",
