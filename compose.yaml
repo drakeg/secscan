@@ -56,7 +56,15 @@ services:
     entrypoint: ["secscan"]
     environment:
       SECSCAN_GITHUB_TOKEN: "${SECSCAN_GITHUB_TOKEN:-}"
-    volumes: *secscan-volumes
+      SECSCAN_SSH_USER: "${SECSCAN_SSH_USER:-}"
+      SECSCAN_SSH_KEY: "${SECSCAN_SSH_KEY:-}"
+      SECSCAN_SSH_KNOWN_HOSTS: "${SECSCAN_SSH_KNOWN_HOSTS:-}"
+      SECSCAN_SSH_PORT: "${SECSCAN_SSH_PORT:-22}"
+    volumes:
+      - secscan-reports:/reports
+      - secscan-cache:/cache
+      - ${SECSCAN_WORKSPACE:-.}:/workspace:ro
+      - secscan-ssh-fixture:/run/secscan-ssh-fixture:ro
     read_only: true
     tmpfs:
       - /tmp:size=512m,mode=1777
@@ -89,6 +97,32 @@ services:
       timeout: 2s
       retries: 10
 
+  linux-host-fixture:
+    profiles: ["linux-host-test"]
+    build:
+      context: tests/fixtures/linux-host
+    image: secscan-linux-host-fixture:local
+    volumes:
+      - secscan-ssh-fixture:/fixture
+    tmpfs:
+      - /run:size=16m,mode=755
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+      - CHOWN
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /fixture/client_key && test -s /fixture/known_hosts && pgrep -x sshd >/dev/null"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
 volumes:
   secscan-reports:
   secscan-cache:
+  secscan-ssh-fixture:
