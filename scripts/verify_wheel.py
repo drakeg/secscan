@@ -31,6 +31,7 @@ REQUIRED_FILES = {
     "secscan/scanners/image.py",
     "secscan/scanners/filesystem.py",
     "secscan/scanners/full_repository.py",
+    "secscan/scanners/linux_host.py",
     "secscan/scanners/network.py",
     "secscan/scanners/repository.py",
     "secscan/scanners/sbom.py",
