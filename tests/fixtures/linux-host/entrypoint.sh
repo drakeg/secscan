@@ -11,7 +11,9 @@ chmod 0600 /fixture/client_key
 chmod 0644 /fixture/client_key.pub
 chown 10001:10001 /fixture/client_key /fixture/client_key.pub
 
-install -m 0600 -o secscan-audit -g secscan-audit /fixture/client_key.pub /home/secscan-audit/.ssh/authorized_keys
+cp /fixture/client_key.pub /home/secscan-audit/.ssh/authorized_keys
+chmod 0600 /home/secscan-audit/.ssh/authorized_keys
+chown secscan-audit:secscan-audit /home/secscan-audit/.ssh/authorized_keys
 
 host_key="$(awk '{print $1 " " $2}' /etc/ssh/ssh_host_ed25519_key.pub)"
 printf 'linux-host-fixture %s\n' "$host_key" > /fixture/known_hosts
