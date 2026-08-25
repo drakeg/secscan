@@ -96,3 +96,14 @@ def test_linux_host_fixture_generates_credentials_at_runtime() -> None:
     assert entrypoint.index("chmod 0644 /fixture/known_hosts") < entrypoint.index(
         "chown 10001:10001 /fixture/known_hosts"
     )
+
+    authorized_keys = "/home/secscan-audit/.ssh/authorized_keys"
+    authorized_copy = f"cp /fixture/client_key.pub {authorized_keys}"
+    authorized_chmod = f"chmod 0600 {authorized_keys}"
+    authorized_chown = f"chown secscan-audit:secscan-audit {authorized_keys}"
+    assert "install -m 0600 -o secscan-audit -g secscan-audit" not in entrypoint
+    assert (
+        entrypoint.index(authorized_copy)
+        < entrypoint.index(authorized_chmod)
+        < entrypoint.index(authorized_chown)
+    )
