@@ -89,3 +89,10 @@ def test_linux_host_fixture_generates_credentials_at_runtime() -> None:
     assert "PermitRootLogin no" in entrypoint
     assert "AllowAgentForwarding no" in entrypoint
     assert "linux-host-fixture" in entrypoint
+
+    client_chown = "chown 10001:10001 /fixture/client_key /fixture/client_key.pub"
+    assert entrypoint.index("chmod 0600 /fixture/client_key") < entrypoint.index(client_chown)
+    assert entrypoint.index("chmod 0644 /fixture/client_key.pub") < entrypoint.index(client_chown)
+    assert entrypoint.index("chmod 0644 /fixture/known_hosts") < entrypoint.index(
+        "chown 10001:10001 /fixture/known_hosts"
+    )
