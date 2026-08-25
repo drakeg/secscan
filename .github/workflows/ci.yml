@@ -68,6 +68,12 @@ jobs:
             --output-dir /reports/linux-host-fixture \
             --fail-on NONE
 
+      - name: Show Linux host fixture logs on failure
+        if: failure()
+        run: |
+          docker compose --profile linux-host-test ps -a linux-host-fixture || true
+          docker compose --profile linux-host-test logs --no-color linux-host-fixture || true
+
       - name: Stop Docker Compose service
         if: always()
         run: docker compose --profile linux-host-test down -v
