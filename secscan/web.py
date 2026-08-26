@@ -52,7 +52,12 @@ def _linux_host_service_ready() -> bool:
 
 def _job_submitter(app: FastAPI) -> Callable[[ScanSubmission], dict[str, object]]:
     for route in app.routes:
-        if isinstance(route, APIRoute) and route.path == "/api/v1/jobs" and "POST" in route.methods:
+        if (
+            isinstance(route, APIRoute)
+            and route.path == "/api/v1/jobs"
+            and route.methods is not None
+            and "POST" in route.methods
+        ):
             return cast(Callable[[ScanSubmission], dict[str, object]], route.endpoint)
     raise RuntimeError("secscan job submission route is unavailable")
 
