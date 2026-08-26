@@ -56,9 +56,27 @@ jobs:
           docker compose up --no-build --detach --wait
           curl --fail --silent http://127.0.0.1:8000/healthz
 
+      - name: Verify authenticated Linux host fixture
+        run: |
+          docker compose --profile linux-host-test up --build --detach --wait linux-host-fixture
+          SECSCAN_SSH_USER=secscan-audit \
+          SECSCAN_SSH_KEY=/run/secscan-ssh-fixture/client_key \
+          SECSCAN_SSH_KNOWN_HOSTS=/run/secscan-ssh-fixture/known_hosts \
+          SECSCAN_SSH_PORT=22 \
+          docker compose --profile tools --profile linux-host-test run --rm --no-deps cli \
+            scan linux-host linux-host-fixture \
+            --output-dir /reports/linux-host-fixture \
+            --fail-on NONE
+
+      - name: Show Linux host fixture logs on failure
+        if: failure()
+        run: |
+          docker compose --profile linux-host-test ps -a linux-host-fixture || true
+          docker compose --profile linux-host-test logs --no-color linux-host-fixture || true
+
       - name: Stop Docker Compose service
         if: always()
-        run: docker compose down
+        run: docker compose --profile linux-host-test down -v
 
       - name: Export image for scanning
         run: docker save secscan:ci --output /tmp/secscan-ci.tar
