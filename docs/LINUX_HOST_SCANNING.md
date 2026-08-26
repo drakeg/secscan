@@ -46,6 +46,42 @@ A check that is unsupported or unreadable is retained as raw check metadata wher
 
 This is not yet a complete remote package-CVE assessment. `apt list --upgradable` indicates available package updates using the host's existing package metadata; it does not prove that every update is security-related and does not refresh package indexes. Future host-scanning Sprints can add distribution-specific vulnerability intelligence/OpenSCAP/Wazuh-style integrations without changing this initial SSH trust boundary.
 
+## GUI and service workflow
+
+The browser GUI exposes **Linux server — Authenticated assessment** as a normal **New scan** option. The browser submits only the hostname/IP, normal scan options, and an explicit authorization acknowledgement. It never receives or submits SSH private-key material, known-hosts contents, passwords, or arbitrary SSH options.
+
+SSH credentials are configured on the secscan service. For Docker Compose, place the private key and `known_hosts` file in an operator-controlled directory and mount it read-only through `SECSCAN_SSH_DIR`. The default layout is:
+
+```text
+.secscan-ssh/
+├── id_ed25519
+└── known_hosts
+```
+
+The default `.secscan-ssh/` directory is ignored by Git. Do not commit private keys.
+
+Configure `.env`:
+
+```dotenv
+SECSCAN_SSH_DIR=./.secscan-ssh
+SECSCAN_SSH_USER=secscan-audit
+SECSCAN_SSH_KEY=/run/secscan-ssh/id_ed25519
+SECSCAN_SSH_KNOWN_HOSTS=/run/secscan-ssh/known_hosts
+SECSCAN_SSH_PORT=22
+```
+
+Then use the normal startup path:
+
+```bash
+docker compose up --build --wait
+```
+
+Open the GUI, choose **Linux server — Authenticated assessment**, enter one hostname or IP address, acknowledge that you own or are authorized to assess the host, and start the scan. If the service-side SSH configuration is incomplete, the GUI reports that Linux host scanning is not configured and the service rejects the request before persisting a job.
+
+Once queued, the Linux-host assessment follows the same background-job, auto-refresh, history, severity-summary, dashboard, policy, baseline, report, and artifact paths as other secscan scans.
+
+This credential model is deliberately appropriate to the current local/single-operator service. A future multi-user hosted service will require explicit user/organization/asset/integration models and an encrypted tenant-aware secret-management boundary rather than reusing one shared service key.
+
 ## Local CLI example
 
 Create or select a dedicated read-only assessment account and SSH key according to your normal host-management practices. Populate a known-hosts file out-of-band after independently verifying the host key.
@@ -132,11 +168,7 @@ The remote script performs read-only commands only. It does not run package upda
 
 ## Failure behavior
 
-The scan fails operationally (exit code `1` through the normal CLI boundary) when required SSH configuration is missing, target/user/port validation fails, the SSH executable is unavailable, strict host-key verification or public-key authentication fails, the command times out, the remote output is malformed/incomplete, or the remote kernel is not Linux.
-
-## Service and web GUI boundary
-
-`linux-host` is a scanner plugin and therefore appears in CLI scanner discovery, but authenticated host jobs are not yet submitted through the REST API or web GUI. A future service increment must introduce a deliberate credential/integration boundary rather than accepting private-key material from browsers or persisting it in job records.
+The scan fails operationally (exit code `1` through the normal scanner boundary) when required SSH configuration is missing, target/user/port validation fails, the SSH executable is unavailable, strict host-key verification or public-key authentication fails, the command times out, the remote output is malformed/incomplete, or the remote kernel is not Linux.
 
 ## Cost
 
