@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import sqlite3
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.routing import APIRoute
@@ -24,7 +24,7 @@ _SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN")
 
 class LinuxHostWebSubmission(BaseModel):
     target: str = Field(min_length=1)
-    fail_on: str | None = None
+    fail_on: Literal["NONE", "UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = None
     policy: str | None = None
     baseline: str | None = None
     timeout: int = Field(default=600, ge=1, le=86400)
