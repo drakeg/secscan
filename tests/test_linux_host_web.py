@@ -47,11 +47,11 @@ def test_linux_host_submission_requires_authorization_and_configuration(tmp_path
 
     unauthorized = client.post(
         "/api/v1/linux-host-jobs",
-        json={"target": "server.example.com", "linux_host_authorized": False},
+        json={"target": "192.0.2.10", "linux_host_authorized": False},
     )
     unconfigured = client.post(
         "/api/v1/linux-host-jobs",
-        json={"target": "server.example.com", "linux_host_authorized": True},
+        json={"target": "192.0.2.10", "linux_host_authorized": True},
     )
 
     assert unauthorized.status_code == 422
