@@ -25,12 +25,16 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
     assert service["environment"] == {
         "SECSCAN_API_TOKEN": "${SECSCAN_API_TOKEN:-}",
         "SECSCAN_GITHUB_TOKEN": "${SECSCAN_GITHUB_TOKEN:-}",
+        "SECSCAN_SSH_USER": "${SECSCAN_SSH_USER:-}",
+        "SECSCAN_SSH_KEY": "${SECSCAN_SSH_KEY:-/run/secscan-ssh/id_ed25519}",
+        "SECSCAN_SSH_KNOWN_HOSTS": "${SECSCAN_SSH_KNOWN_HOSTS:-/run/secscan-ssh/known_hosts}",
+        "SECSCAN_SSH_PORT": "${SECSCAN_SSH_PORT:-22}",
     }
     assert cli["environment"] == {
         "SECSCAN_GITHUB_TOKEN": "${SECSCAN_GITHUB_TOKEN:-}",
         "SECSCAN_SSH_USER": "${SECSCAN_SSH_USER:-}",
-        "SECSCAN_SSH_KEY": "${SECSCAN_SSH_KEY:-}",
-        "SECSCAN_SSH_KNOWN_HOSTS": "${SECSCAN_SSH_KNOWN_HOSTS:-}",
+        "SECSCAN_SSH_KEY": "${SECSCAN_SSH_KEY:-/run/secscan-ssh/id_ed25519}",
+        "SECSCAN_SSH_KNOWN_HOSTS": "${SECSCAN_SSH_KNOWN_HOSTS:-/run/secscan-ssh/known_hosts}",
         "SECSCAN_SSH_PORT": "${SECSCAN_SSH_PORT:-22}",
     }
     assert service["read_only"] is True
@@ -40,8 +44,10 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
     assert "secscan-reports:/reports" in service["volumes"]
     assert "secscan-cache:/cache" in service["volumes"]
     assert "${SECSCAN_WORKSPACE:-.}:/workspace:ro" in service["volumes"]
+    assert "${SECSCAN_SSH_DIR:-./.secscan-ssh}:/run/secscan-ssh:ro" in service["volumes"]
     assert service["healthcheck"]["test"][:3] == ["CMD", "python", "-c"]
 
+    assert "${SECSCAN_SSH_DIR:-./.secscan-ssh}:/run/secscan-ssh:ro" in cli["volumes"]
     assert "secscan-ssh-fixture:/run/secscan-ssh-fixture:ro" in cli["volumes"]
 
     assert network_fixture["profiles"] == ["network-test"]
