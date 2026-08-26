@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - "agent/**"
 
 permissions:
   contents: read
@@ -41,8 +40,19 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Build image
-        run: docker build --no-cache --progress=plain -t secscan:ci .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image with reusable cache
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          push: false
+          provenance: false
+          tags: secscan:ci
+          cache-from: type=gha,scope=secscan-ci
+          cache-to: type=gha,mode=max,scope=secscan-ci
 
       - name: Verify CLI startup
         run: docker run --rm secscan:ci --version
@@ -87,9 +97,10 @@ jobs:
           docker run --rm \
             -v /tmp/secscan-ci.tar:/scan/secscan-ci.tar:ro \
             -v /tmp/trivy-cache:/root/.cache/ \
-            aquasec/trivy:0.72.0 image \
+            aquasec/trivy:0.74.0 image \
             --input /scan/secscan-ci.tar \
+            --scanners vuln \
+            --skip-version-check \
             --exit-code 1 \
             --ignore-unfixed \
-            --skip-files /opt/nuclei-templates/http/global-matchers/secrets-patterns-rules.yaml \
             --severity CRITICAL

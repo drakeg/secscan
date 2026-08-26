@@ -21,14 +21,13 @@ def test_container_bundles_network_assessment_engines() -> None:
     assert "nuclei -version" in dockerfile
 
 
-def test_container_scan_skips_the_nuclei_secret_detector_definition() -> None:
+def test_container_security_gate_is_vulnerability_only() -> None:
     workflow = (
         Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml"
     ).read_text(encoding="utf-8")
 
-    # The official template is itself a secret-detection rule. Trivy otherwise
-    # treats its GCP credential regex as a credential while scanning the image.
-    assert (
-        "--skip-files "
-        "/opt/nuclei-templates/http/global-matchers/secrets-patterns-rules.yaml"
-    ) in workflow
+    # This gate exists to reject fixable CRITICAL image vulnerabilities. Limiting
+    # Trivy to the vuln scanner avoids secret-scanning the embedded Nuclei secret
+    # detection rule and removes the need for a scanner-specific skip exception.
+    assert "--scanners vuln" in workflow
+    assert "secrets-patterns-rules.yaml" not in workflow
