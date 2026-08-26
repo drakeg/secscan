@@ -20,6 +20,12 @@ RUN mkdir -p /out \
     && printf '%s\n' "${NUCLEI_TEMPLATES_VERSION}" > /nuclei-templates/.secscan-template-version \
     && printf '%s\n' "${NUCLEI_TEMPLATES_COMMIT}" > /nuclei-templates/.secscan-template-commit
 
+FROM python:3.14.7-slim-bookworm AS python-scanner-tools
+RUN python -m venv /opt/semgrep \
+    && /opt/semgrep/bin/pip install --no-cache-dir semgrep==1.172.0 \
+    && python -m venv /opt/checkov \
+    && /opt/checkov/bin/pip install --no-cache-dir checkov==3.3.8
+
 FROM python:3.14.7-slim-bookworm AS builder
 WORKDIR /build
 COPY pyproject.toml README.md ./
@@ -42,18 +48,13 @@ COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 COPY --from=gitleaks-builder /out/gitleaks /usr/local/bin/gitleaks
 COPY --from=nuclei-builder /out/nuclei /usr/local/bin/nuclei
 COPY --from=nuclei-builder /nuclei-templates /opt/nuclei-templates
-COPY --from=builder /wheels /wheels
+COPY --from=python-scanner-tools /opt/semgrep /opt/semgrep
+COPY --from=python-scanner-tools /opt/checkov /opt/checkov
 RUN apt-get update \
     && apt-get install --no-install-recommends -y git ca-certificates nmap openssh-client \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir /wheels/secscan-*.whl \
-    && python -m venv /opt/semgrep \
-    && /opt/semgrep/bin/pip install --no-cache-dir semgrep==1.172.0 \
     && ln -s /opt/semgrep/bin/semgrep /usr/local/bin/semgrep \
-    && python -m venv /opt/checkov \
-    && /opt/checkov/bin/pip install --no-cache-dir checkov==3.3.8 \
     && ln -s /opt/checkov/bin/checkov /usr/local/bin/checkov \
-    && python -c "import secscan, secscan.aws, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.full_repository, secscan.scanners.network, secscan.scanners.linux_host, secscan.scanners.sbom" \
     && semgrep --version \
     && gitleaks version \
     && checkov --version \
@@ -63,10 +64,14 @@ RUN apt-get update \
     && test "$(cat /opt/nuclei-templates/.secscan-template-version)" = "${NUCLEI_TEMPLATES_VERSION}" \
     && test "$(cat /opt/nuclei-templates/.secscan-template-commit)" = "${NUCLEI_TEMPLATES_COMMIT}" \
     && test -s /opt/nuclei-templates/templates-checksum.txt \
-    && rm -rf /wheels \
     && useradd --create-home --uid 10001 secscan \
     && mkdir -p /reports /cache \
     && chown -R secscan:secscan /reports /cache
+
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir /wheels/secscan-*.whl \
+    && python -c "import secscan, secscan.aws, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.full_repository, secscan.scanners.network, secscan.scanners.linux_host, secscan.scanners.sbom" \
+    && rm -rf /wheels
 
 WORKDIR /app
 ENV TRIVY_CACHE_DIR=/cache \
