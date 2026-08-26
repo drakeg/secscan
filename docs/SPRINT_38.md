@@ -8,33 +8,34 @@ Reduce normal Docker Compose and GitHub CI iteration time without weakening secs
 
 The Sprint 37 container CI job took about 5 minutes 46 seconds. The main Docker build consumed about 4 minutes 52 seconds because CI explicitly used `docker build --no-cache`. The largest repeated work was building Nuclei and its pinned template corpus (about 3 minutes 28 seconds), building Gitleaks (about 42 seconds), and installing runtime scanner dependencies including Semgrep and Checkov (about 51 seconds). The final Trivy self-scan also downloads its vulnerability database on every run.
 
-Open `agent/**` pull requests currently trigger the same CI workflow once for the branch push and again for the pull request, doubling CI consumption for the same commit.
+Open `agent/**` pull requests currently trigger the same CI workflow once for the branch push and again for the pull request, doubling CI consumption for the same commit. The Python matrix already uses `actions/setup-python` pip caching and should retain that optimization.
 
 ## User stories
 
 1. As a developer, an application-only change should reuse expensive scanner/tool layers during `docker compose up --build --wait` instead of rebuilding Nuclei, Gitleaks, Semgrep, and Checkov unnecessarily.
 2. As a maintainer, pull-request validation should run once per commit rather than duplicating the same CI suite for both branch push and pull-request events.
-3. As a maintainer, GitHub-hosted CI should reuse safe BuildKit and Python dependency caches while preserving the complete validation gates.
-4. As a security reviewer, the final container must still receive a fresh bounded vulnerability gate and no security test may be removed merely to improve elapsed time.
+3. As a maintainer, GitHub-hosted CI should reuse safe BuildKit cache while preserving the complete validation gates and existing Python dependency cache.
+4. As a security reviewer, the final container must still receive a bounded vulnerability gate and no security test may be removed merely to improve elapsed time.
 
 ## Planned implementation
 
 - stop forcing `--no-cache` for the ordinary PR container build
 - use Docker Buildx with GitHub Actions cache import/export for reusable pinned tool layers
-- add BuildKit cache mounts for expensive Go and pip dependency/build caches where they do not alter produced artifacts
+- separate Semgrep/Checkov installation from the secscan application wheel so application changes do not invalidate those expensive installs
 - keep scanner versions and Nuclei template commit pinning unchanged
 - run normal CI on pull requests and pushes to `main`, eliminating duplicate `agent/**` push validation while a PR is open
-- enable pip dependency caching for the Python 3.12/3.14 validation matrix without reducing version coverage
-- constrain the final Trivy image gate to vulnerability scanning, since that gate specifically rejects fixable CRITICAL vulnerabilities
-- cache Trivy's vulnerability database with a bounded freshness key if it can be done without accepting indefinitely stale vulnerability data
+- preserve the existing pip cache for the Python 3.12/3.14 validation matrix without reducing version coverage
+- constrain the final Trivy image gate to vulnerability scanning, since that gate specifically rejects fixable CRITICAL vulnerabilities, and align its Trivy version with the image's pinned Trivy version
 - preserve `docker compose up --build --wait` as the supported local workflow and document warm-versus-cold build expectations
+- leave cross-run Trivy vulnerability-database caching for a later change unless a clear bounded-freshness design is established
 
 ## Acceptance criteria
 
 - normal PR CI does not deliberately invalidate Docker's build cache
 - the same PR commit does not run duplicate full CI suites solely because it was both pushed to an `agent/**` branch and associated with a pull request
 - expensive pinned scanner layers are reusable when their inputs do not change
-- Python 3.12 and 3.14 validation remains present
+- an application-wheel change occurs after the reusable Semgrep/Checkov layer in the final image build graph
+- Python 3.12 and 3.14 validation remains present with pip caching
 - container CLI startup, Compose configuration, service health, authenticated Linux-host fixture, and fixable-critical container vulnerability gates remain present
 - the vulnerability self-scan explicitly scans vulnerabilities rather than performing unrelated secret scanning of the built image
 - a deliberate clean-build path remains documented for troubleshooting/release-quality verification
@@ -47,13 +48,13 @@ Open `agent/**` pull requests currently trigger the same CI workflow once for th
 - no scanner/version/template pin is loosened for speed
 - no test or security gate is removed merely to reduce runtime
 - cached data is treated as an optimization, not a source of authority; cache misses must still produce correct builds
-- vulnerability database caching must have an explicit freshness boundary
+- vulnerability-database caching is not introduced without an explicit freshness boundary
 - release builds retain their existing provenance, digest, multi-architecture, SBOM, and guarded publication controls
 - no third-party hosted build/cache service or paid dependency is introduced
 
 ## Validation plan
 
-Compare a cold run with a subsequent app-only or documentation-only run. Record the container build duration and whether expensive scanner stages are cache hits. Verify one CI workflow is associated with each PR commit, Python 3.12/3.14 preflight still passes, Compose service/SSH-fixture smoke tests pass, the image vulnerability gate passes, and CodeQL passes.
+Compare the first PR run with a subsequent small app/documentation-only commit. Record the container build duration and whether expensive scanner stages are cache hits. Verify one CI workflow is associated with each PR commit, Python 3.12/3.14 preflight still passes, Compose service/SSH-fixture smoke tests pass, the image vulnerability gate passes, and CodeQL passes.
 
 ## Cost outlook
 
@@ -64,5 +65,6 @@ The implementation uses GitHub Actions/BuildKit caching already available to the
 - changing scanner functionality or adding new scanner engines
 - replacing pinned scanner builds with unverified binaries
 - removing Python-version coverage, container smoke tests, CodeQL, or vulnerability enforcement
+- cross-run vulnerability-database caching without a bounded-freshness policy
 - changing release publication behavior
 - paid build runners, remote builders, commercial caches, or cloud infrastructure
