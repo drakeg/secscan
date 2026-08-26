@@ -24,6 +24,7 @@ REQUIRED_FILES = {
     "secscan/web_assets/__init__.py",
     "secscan/web_assets/index.html",
     "secscan/web_assets/app.js",
+    "secscan/web_assets/linux_host.js",
     "secscan/web_assets/network.css",
     "secscan/scanners/__init__.py",
     "secscan/scanners/base.py",
