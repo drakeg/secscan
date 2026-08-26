@@ -68,9 +68,10 @@
         <div class="panel narrow">
           <div class="panel-heading"><div><p class="eyebrow">Scanner</p><h2>Start a security scan</h2></div></div>
           <form id="scan-form">
-            <label>Scanner type<select id="scanner" required><option value="image">Container image</option><option value="filesystem">Filesystem</option><option value="repository">Repository — Full security scan</option><option value="sbom">SBOM</option><option value="network">Server / Network — Agentless assessment</option></select></label>
+            <label>Scanner type<select id="scanner" required><option value="image">Container image</option><option value="filesystem">Filesystem</option><option value="repository">Repository — Full security scan</option><option value="sbom">SBOM</option><option value="network">Server / Network — Agentless assessment</option><option value="linux-host">Linux server — Authenticated assessment</option></select></label>
             <label>Target<input id="target" required placeholder="alpine:3.20"><span id="target-help" class="remote-repo-help"></span></label>
             <label id="network-authorization" class="hidden"><input id="network-authorized" type="checkbox"> I confirm that I own this host or have explicit authorization to security-test it.</label>
+            <label id="linux-host-authorization" class="hidden"><input id="linux-host-authorized" type="checkbox"> I confirm that I own this Linux host or have explicit authorization to perform an authenticated security assessment.</label>
             <div class="form-grid">
               <label>Fail on<select id="fail-on"><option value="">Use default</option><option>NONE</option><option>UNKNOWN</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></label>
               <label>Timeout (seconds)<input id="timeout" type="number" min="1" max="86400" value="600"></label>
@@ -106,6 +107,7 @@
   </dialog>
   <script src="/app.js"></script>
   <script src="/dashboard.js"></script>
+  <script src="/linux_host.js"></script>
   <script src="/delete_scans.js"></script>
 </body>
 </html>
