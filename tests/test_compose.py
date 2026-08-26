@@ -82,10 +82,12 @@ def test_linux_host_fixture_generates_credentials_at_runtime() -> None:
     entrypoint = (root / "tests/fixtures/linux-host/entrypoint.sh").read_text(encoding="utf-8")
 
     assert "openssh-server" in dockerfile
+    assert "passwd -d secscan-audit" in dockerfile
     assert "PRIVATE KEY" not in dockerfile
     assert "PRIVATE KEY" not in entrypoint
     assert "ssh-keygen -q -t ed25519" in entrypoint
     assert "PasswordAuthentication no" in entrypoint
+    assert "KbdInteractiveAuthentication no" in entrypoint
     assert "PermitRootLogin no" in entrypoint
     assert "AllowAgentForwarding no" in entrypoint
     assert "linux-host-fixture" in entrypoint
