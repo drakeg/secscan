@@ -37,12 +37,15 @@ def main() -> None:
 
     database = (args.job_database or args.job_root / "jobs.db").expanduser().resolve()
     api_token = os.environ.get("SECSCAN_API_TOKEN")
+    # Browser sessions and compatibility bearer tokens share the outer auth
+    # boundary mounted below. Keep create_app's legacy bearer middleware off here
+    # so registration/login endpoints remain reachable when a bearer token is set.
     app = create_app(
         job_root=args.job_root,
         job_database=args.job_database,
         max_workers=args.workers,
         allowed_input_roots=args.allowed_input_root,
-        api_token=api_token,
+        api_token=None,
     )
     if isinstance(app, FastAPI):
         mount_web_ui(app, job_root=args.job_root, job_database=args.job_database)
