@@ -79,7 +79,7 @@ class SshCredentialStore:
     @staticmethod
     def _validate_name(name: str) -> str:
         value = name.strip()
-        if not value or len(value) > 80 or any(character.isspace() and character not in " \t" for character in value):
+        if not value or len(value) > 80 or not all(character.isprintable() for character in value):
             raise ValueError("credential profile name must contain 1-80 printable characters")
         return value
 
@@ -87,24 +87,29 @@ class SshCredentialStore:
     def _validate_private_key(private_key: str) -> str:
         value = private_key.strip() + "\n"
         data = value.encode("utf-8")
-        loaded = False
-        for loader in (serialization.load_ssh_private_key, serialization.load_pem_private_key):
-            try:
-                loader(data, password=None)
-                loaded = True
-                break
-            except (ValueError, TypeError):
-                continue
-        if not loaded:
-            raise ValueError("SSH private key must be a valid unencrypted OpenSSH or PEM private key")
-        return value
+        try:
+            serialization.load_ssh_private_key(data, password=None)
+            return value
+        except (ValueError, TypeError):
+            pass
+        try:
+            serialization.load_pem_private_key(data, password=None)
+            return value
+        except (ValueError, TypeError) as exc:
+            raise ValueError(
+                "SSH private key must be a valid unencrypted OpenSSH or PEM private key"
+            ) from exc
 
     @staticmethod
     def _validate_known_hosts(known_hosts: str) -> str:
         value = known_hosts.strip() + "\n"
         if len(value) > 1024 * 1024:
             raise ValueError("known_hosts content must not exceed 1 MiB")
-        lines = [line.strip() for line in value.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+        lines = [
+            line.strip()
+            for line in value.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
         if not lines:
             raise ValueError("known_hosts must contain at least one trusted host-key entry")
         if any(len(line.split()) < 2 for line in lines):
@@ -140,7 +145,10 @@ class SshCredentialStore:
         with self._connect() as connection:
             try:
                 if is_default:
-                    connection.execute("UPDATE ssh_credential_profiles SET is_default = 0, updated_at = ? WHERE is_default = 1", (timestamp,))
+                    connection.execute(
+                        "UPDATE ssh_credential_profiles SET is_default = 0, updated_at = ? WHERE is_default = 1",
+                        (timestamp,),
+                    )
                 connection.execute(
                     """
                     INSERT INTO ssh_credential_profiles (
@@ -189,31 +197,49 @@ class SshCredentialStore:
 
     def decrypt(self, profile_id: str) -> DecryptedSshCredential:
         with self._connect() as connection:
-            row = connection.execute("SELECT * FROM ssh_credential_profiles WHERE id = ?", (profile_id,)).fetchone()
+            row = connection.execute(
+                "SELECT * FROM ssh_credential_profiles WHERE id = ?", (profile_id,)
+            ).fetchone()
         if row is None:
             raise ValueError("SSH credential profile was not found")
         try:
-            private_key = self._fernet.decrypt(bytes(row["private_key_ciphertext"])).decode("utf-8")
-            known_hosts = self._fernet.decrypt(bytes(row["known_hosts_ciphertext"])).decode("utf-8")
+            private_key = self._fernet.decrypt(bytes(row["private_key_ciphertext"])).decode(
+                "utf-8"
+            )
+            known_hosts = self._fernet.decrypt(bytes(row["known_hosts_ciphertext"])).decode(
+                "utf-8"
+            )
         except (InvalidToken, UnicodeDecodeError) as exc:
-            raise ValueError("SSH credential profile could not be decrypted with the configured master key") from exc
+            raise ValueError(
+                "SSH credential profile could not be decrypted with the configured master key"
+            ) from exc
         return DecryptedSshCredential(self._profile(row), private_key, known_hosts)
 
     def set_default(self, profile_id: str) -> SshCredentialProfile:
         timestamp = self._timestamp()
         with self._connect() as connection:
-            exists = connection.execute("SELECT 1 FROM ssh_credential_profiles WHERE id = ?", (profile_id,)).fetchone()
+            exists = connection.execute(
+                "SELECT 1 FROM ssh_credential_profiles WHERE id = ?", (profile_id,)
+            ).fetchone()
             if exists is None:
                 raise ValueError("SSH credential profile was not found")
-            connection.execute("UPDATE ssh_credential_profiles SET is_default = 0, updated_at = ? WHERE is_default = 1", (timestamp,))
-            connection.execute("UPDATE ssh_credential_profiles SET is_default = 1, updated_at = ? WHERE id = ?", (timestamp, profile_id))
+            connection.execute(
+                "UPDATE ssh_credential_profiles SET is_default = 0, updated_at = ? WHERE is_default = 1",
+                (timestamp,),
+            )
+            connection.execute(
+                "UPDATE ssh_credential_profiles SET is_default = 1, updated_at = ? WHERE id = ?",
+                (timestamp, profile_id),
+            )
         profile = self.get(profile_id)
         assert profile is not None
         return profile
 
     def delete(self, profile_id: str) -> bool:
         with self._connect() as connection:
-            cursor = connection.execute("DELETE FROM ssh_credential_profiles WHERE id = ?", (profile_id,))
+            cursor = connection.execute(
+                "DELETE FROM ssh_credential_profiles WHERE id = ?", (profile_id,)
+            )
         return cursor.rowcount > 0
 
     def bind_host(self, host: str, profile_id: str) -> None:
@@ -232,8 +258,12 @@ class SshCredentialStore:
 
     def resolve_profile_id(self, host: str) -> str | None:
         with self._connect() as connection:
-            bound = connection.execute("SELECT profile_id FROM ssh_host_credentials WHERE host = ?", (host,)).fetchone()
+            bound = connection.execute(
+                "SELECT profile_id FROM ssh_host_credentials WHERE host = ?", (host,)
+            ).fetchone()
             if bound is not None:
                 return str(bound["profile_id"])
-            default = connection.execute("SELECT id FROM ssh_credential_profiles WHERE is_default = 1").fetchone()
+            default = connection.execute(
+                "SELECT id FROM ssh_credential_profiles WHERE is_default = 1"
+            ).fetchone()
         return str(default["id"]) if default is not None else None
