@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 from pathlib import Path
+import socket
 import subprocess
 
 import pytest
@@ -36,6 +37,37 @@ def test_discovery_uses_bounded_ssh_keyscan_without_shell(monkeypatch: pytest.Mo
     assert captured["capture_output"] is True
     assert captured["text"] is True
     assert captured["timeout"] == 7
+    assert discovered == [("ssh-ed25519", key, _fingerprint(key))]
+
+
+def test_discovery_resolves_hostname_before_constructing_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    key = _key(b"resolved-host-key")
+    captured: dict[str, object] = {}
+    calls = 0
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        assert host == "server.example.com"
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.10", port or 0))]
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout=f"192.0.2.10 ssh-ed25519 {key}\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    discovered = discover_host_keys("server.example.com", 22)
+
+    assert calls >= 2
+    assert captured["command"][-1] == "192.0.2.10"
+    assert "server.example.com" not in captured["command"]
     assert discovered == [("ssh-ed25519", key, _fingerprint(key))]
 
 
