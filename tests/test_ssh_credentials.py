@@ -4,6 +4,8 @@ import base64
 from pathlib import Path
 import secrets
 import sqlite3
+import subprocess
+from time import sleep
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -129,6 +131,81 @@ def test_credential_api_never_returns_secret_material(monkeypatch, tmp_path: Pat
     assert stored is not None
     assert private_key.encode("utf-8") not in bytes(stored[0])
     assert known_hosts.encode("utf-8") not in bytes(stored[1])
+
+
+def test_profile_backed_job_uses_isolated_temporary_ssh_files(monkeypatch, tmp_path: Path) -> None:
+    private_key = _private_key()
+    known_hosts = _known_hosts("127.0.0.1")
+    monkeypatch.setenv("SECSCAN_CREDENTIAL_KEY", _master_key())
+    captured: dict[str, object] = {}
+
+    def fake_run(command, *, check, capture_output, text, env, timeout):  # noqa: ANN001
+        assert check is False
+        assert capture_output is True
+        assert text is True
+        assert timeout == 153
+        captured["command"] = list(command)
+        captured["user"] = env["SECSCAN_SSH_USER"]
+        captured["port"] = env["SECSCAN_SSH_PORT"]
+        key_path = Path(env["SECSCAN_SSH_KEY"])
+        known_hosts_path = Path(env["SECSCAN_SSH_KNOWN_HOSTS"])
+        captured["key_path"] = str(key_path)
+        captured["known_hosts_path"] = str(known_hosts_path)
+        captured["key_contents"] = key_path.read_text(encoding="utf-8")
+        captured["known_hosts_contents"] = known_hosts_path.read_text(encoding="utf-8")
+        output_dir = Path(command[command.index("--output-dir") + 1])
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "secscan.json").write_text(
+            '{"findings": [], "summary": {"total": 0}}', encoding="utf-8"
+        )
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("secscan.web.subprocess.run", fake_run)
+    client = TestClient(create_web_app(job_root=tmp_path / "jobs", runner=lambda _args: 0))
+    created = client.post(
+        "/api/v1/ssh-credentials",
+        json={
+            "name": "Host profile",
+            "username": "host-audit",
+            "private_key": private_key,
+            "known_hosts": known_hosts,
+        },
+    ).json()
+
+    submitted = client.post(
+        "/api/v1/linux-host-jobs",
+        json={
+            "target": "127.0.0.1",
+            "linux_host_authorized": True,
+            "credential_profile_id": created["id"],
+            "remember_credential": False,
+            "ssh_port": 2222,
+            "timeout": 123,
+        },
+    )
+    assert submitted.status_code == 202
+    job_id = submitted.json()["id"]
+    for _ in range(200):
+        job = client.get(f"/api/v1/jobs/{job_id}").json()
+        if job["status"] == "completed":
+            break
+        sleep(0.01)
+
+    assert job["status"] == "completed"
+    assert job["scanner"] == "linux-host"
+    assert captured["user"] == "host-audit"
+    assert captured["port"] == "2222"
+    assert captured["key_contents"] == private_key
+    assert captured["known_hosts_contents"] == known_hosts
+    command_text = " ".join(captured["command"])
+    assert private_key not in command_text
+    assert known_hosts not in command_text
+    assert not Path(str(captured["key_path"])).exists()
+    assert not Path(str(captured["known_hosts_path"])).exists()
+
+    resolved = client.get("/api/v1/ssh-credentials/resolve", params={"host": "127.0.0.1"})
+    assert resolved.status_code == 200
+    assert resolved.json()["profile"] is None
 
 
 def test_invalid_master_key_fails_closed(tmp_path: Path) -> None:
