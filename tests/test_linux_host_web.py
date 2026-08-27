@@ -19,18 +19,24 @@ def _configure_ssh(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("SECSCAN_SSH_PORT", "22")
 
 
-def test_web_ui_offers_linux_host_without_browser_credential_fields() -> None:
+def test_web_ui_offers_linux_host_and_separate_credential_management() -> None:
     web_root = Path(__file__).parents[1] / "secscan" / "web_assets"
     html = (web_root / "index.html").read_text(encoding="utf-8")
     javascript = (web_root / "linux_host.js").read_text(encoding="utf-8")
+    credentials_javascript = (web_root / "ssh_credentials.js").read_text(encoding="utf-8")
 
     assert '<option value="linux-host">Linux server — Authenticated assessment</option>' in html
     assert "linux-host-authorized" in html
+    assert "ssh-credential-form" in html
+    assert "ssh-profile-key" in html
     assert "SECSCAN_SSH_KEY" not in html
-    assert "private key" not in html.lower()
     assert 'api("/api/v1/linux-host-jobs"' in javascript
     assert "linux_host_authorized:true" in javascript
+    assert "private_key" not in javascript
+    assert "known_hosts" not in javascript
     assert "SECSCAN_SSH_KEY" not in javascript
+    assert "private_key" in credentials_javascript
+    assert "known_hosts" in credentials_javascript
 
 
 def test_linux_host_capability_is_false_without_server_credentials(tmp_path: Path) -> None:
@@ -57,7 +63,7 @@ def test_linux_host_submission_requires_authorization_and_configuration(tmp_path
     assert unauthorized.status_code == 422
     assert "authorization acknowledgement" in unauthorized.json()["detail"]
     assert unconfigured.status_code == 422
-    assert "server-side SECSCAN_SSH_*" in unconfigured.json()["detail"]
+    assert "Linux host scanning is not configured" in unconfigured.json()["detail"]
     assert client.get("/api/v1/jobs").json() == []
 
 

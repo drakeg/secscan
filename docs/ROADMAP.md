@@ -155,73 +155,43 @@ Delivered a machine-readable SPDX 2.3 JSON source inventory for stable releases 
 
 Delivered the existing deterministic Nmap/Nuclei single-host assessment through the local REST API and browser GUI. Network jobs require explicit operator authorization acknowledgement and reuse the normal job detail, history, severity, dashboard, policy, baseline, and artifact paths. URLs, CIDRs, target lists, arbitrary scanner flags, Interactsh, and hosted/public scanning remain outside the boundary. Python 3.12/3.14 preflight, container/Compose smoke tests, fixable-critical self-scan, and CodeQL passed before merge.
 
+### Sprint 36 — SSH-Authenticated Linux Host Assessment
+
+Delivered key-only SSH authenticated Linux posture assessment with strict host-key verification, fixed read-only remote checks, normalized findings, standard policy/baseline/history/report integration, and no password, agent, sudo, or credential persistence.
+
+### Sprint 37 — Deterministic Linux Host Compose Fixture
+
+Delivered an opt-in private OpenSSH fixture with runtime-generated Ed25519 credentials, no published SSH port, least-privilege container capabilities, strict host-key verification, and a real containerized Linux-host scan in CI.
+
+### Sprint 38 — Fast Local Builds and CI
+
+Delivered reusable Buildx/GitHub Actions cache, removed forced cold Docker builds from ordinary CI, eliminated duplicate agent-branch push CI for open pull-request work, and restructured expensive scanner-tool layers so normal source changes reuse Nuclei, Gitleaks, Semgrep, and Checkov build work.
+
+### Sprint 39 — Authenticated Linux Host Scans in the GUI
+
+Delivered **Linux server — Authenticated assessment** as a normal browser workflow using server-side SSH configuration only. Linux jobs reuse the existing history, auto-refresh, dashboard, policy, baseline, reporting, and artifact paths while private-key material remains outside browser requests and job records.
+
 ## Current sprint
 
-### Sprint 36 — SSH-Authenticated Linux Host Assessment
+### Sprint 40 — GUI SSH Credential Profiles
 
 #### Goal
 
-Add the first authenticated internal-host assessment path for Linux systems without introducing agents, passwords, browser-submitted credentials, persistent secret storage, cloud infrastructure, or paid services.
+Make authenticated Linux scanning practical from the GUI with reusable encrypted SSH credential profiles: one optional default profile plus explicit or remembered per-host overrides.
 
-#### User stories
+#### Acceptance boundaries
 
-1. As an operator, I can assess one Linux hostname/IP over key-based SSH using operator-managed key and known-hosts files.
-2. As an operator, I receive normalized findings for selected internal posture signals such as pending updates, SSH hardening, firewall state, UID 0 accounts, and sensitive filesystem permissions.
-3. As a maintainer, the new scanner reuses existing policy, baseline, report, history, packaging, and container boundaries rather than creating a parallel result model.
-4. As a security reviewer, I can verify that private-key and host-key material never enters scan targets, findings, reports, history, or logs.
+- private keys and `known_hosts` content are encrypted at rest with a service-side master key that is never written to SQLite
+- credential list/read APIs expose metadata only and never return plaintext or ciphertext secret fields
+- selecting a profile for a scan does not persist a host binding unless the operator explicitly chooses **Remember this profile for this host**
+- profile-backed jobs use isolated child-process environments and temporary key files rather than mutating global process environment
+- strict OpenSSH host-key verification and public-key-only authentication remain mandatory
+- the legacy server-side file-mounted SSH configuration remains available as a compatibility fallback
+- credential entry is a loopback/local feature; the existing trusted-LAN HTTP mode is not a safe credential-submission channel
+- passwords, key passphrases, arbitrary SSH flags, agents, bastions/proxies, automatic trust-on-first-use, cloud secret managers, and SaaS tenant vaulting remain out of scope
+- current and projected recurring infrastructure/service cost remains **$0**
 
-#### Planned implementation
-
-- add a built-in `linux-host` scanner plugin and registry entry
-- use key-based OpenSSH authentication only, configured by operator-side environment variables
-- require strict host-key verification with an existing operator-supplied `known_hosts` file
-- run one constant read-only remote shell program through fixed SSH arguments with password/interactive auth and forwarding disabled
-- normalize selected host-posture issues into standard secscan `Finding` records
-- package `openssh-client` in the secscan container and verify the scanner module in wheel/container checks
-- document credentials, host verification, least privilege, supported checks, limitations, failure behavior, and container usage
-- add success/failure tests for validation, SSH command construction, secret non-persistence, parsing, findings, timeout, and authentication/host-key failure
-
-#### Acceptance criteria
-
-- `secscan scan linux-host HOST` can assess one Linux host using `SECSCAN_SSH_USER`, `SECSCAN_SSH_KEY`, `SECSCAN_SSH_KNOWN_HOSTS`, and optional `SECSCAN_SSH_PORT`
-- target and username validation reject URLs, CIDRs, whitespace/control characters, and shell fragments
-- private-key and known-hosts contents never appear in the target, normalized findings, raw/report output, or history
-- SSH enforces `BatchMode=yes`, key-only authentication, `IdentitiesOnly=yes`, and `StrictHostKeyChecking=yes`; insecure host-key bypass is not provided
-- SSH agent/X11 forwarding and ambient SSH config are disabled
-- the remote command is constant, read-only, non-interactive, and does not interpolate user-controlled shell fragments
-- normalized findings cover the initial documented posture checks and flow through the standard policy, baseline, reporting, and history pipeline
-- missing credential files, invalid port/user/target, SSH/auth/host-key failure, malformed output, non-Linux targets, and timeout are operational failures
-- the container includes OpenSSH client support and existing scanners remain compatible
-- focused tests, `git diff --check`, full `bash scripts/preflight.sh`, applicable Docker validation, GitHub CI, and CodeQL pass before merge
-- no release tag, package publication, AWS resource, hosted service, or recurring infrastructure cost is introduced
-
-#### Security and operational boundaries
-
-- only systems the operator owns or is explicitly authorized to assess may be targeted
-- passwords, keyboard-interactive auth, browser/API credential submission, SSH agents, bastion/proxy options, SSH certificates, and arbitrary SSH flags remain out of scope
-- no sudo prompt, privilege escalation, package installation, remediation, file modification, service restart, or agent deployment is performed
-- one target per scan; CIDRs, discovery, scheduling, recurring scans, and bulk execution remain out of scope
-- unsupported/unreadable checks are reported as limitations/raw metadata rather than fabricated vulnerabilities
-- the private key remains operator-managed and should be mounted read-only in container use
-
-#### Validation plan
-
-Automated tests mock SSH subprocess execution and validate exact argument construction, fixed remote input, parsing, normalized findings, missing/invalid settings, timeout, host-key/auth failure, and secret non-persistence. Packaging validation verifies the new scanner module and OpenSSH client. A future follow-up may add a deterministic private Compose SSH fixture; the ordinary `docker compose up --build --wait` path remains unchanged in this Sprint.
-
-#### Cost outlook
-
-Sprint 36 uses local OpenSSH plus the existing scanner registry, reporting, policy, baseline, history, Docker image, and CI. Current and projected recurring secscan infrastructure/service cost remains **$0**. Operators remain responsible for their own hosts and network usage.
-
-#### Out of scope
-
-- REST/web submission of SSH credentials or authenticated host jobs
-- password authentication, SSH agent forwarding, bastion/proxy configuration, sudo, privilege escalation, or agents
-- full distribution-specific CVE correlation, OpenSCAP/Wazuh integration, or automatic remediation
-- Windows/WinRM endpoint assessment
-- CIDR/range scanning, persistent assets, scheduling, distributed workers, or AWS EC2 correlation
-- SaaS users, tenant credential storage, billing, TLS/ingress, or internet exposure
-
-See [`docs/SPRINT_36.md`](SPRINT_36.md) and [`docs/LINUX_HOST_SCANNING.md`](LINUX_HOST_SCANNING.md) for the detailed Sprint and operator boundaries.
+See [`docs/SPRINT_40.md`](SPRINT_40.md) and [`docs/SSH_CREDENTIALS.md`](SSH_CREDENTIALS.md) for the detailed implementation, security, and operator boundaries.
 
 ## Planned feature sprints
 
