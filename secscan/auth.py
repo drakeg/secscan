@@ -7,7 +7,6 @@ import hmac
 import html
 import os
 from pathlib import Path
-import re
 import secrets
 import sqlite3
 from typing import Awaitable, Callable
@@ -21,9 +20,18 @@ from starlette.types import ASGIApp
 
 SESSION_COOKIE = "secscan_session"
 SESSION_DAYS = 7
-_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _PUBLIC_PATHS = {"/healthz", "/login", "/register", "/api/v1/auth/login", "/api/v1/auth/register"}
-_PUBLIC_PREFIXES = ("/styles.css", "/dashboard.css", "/delete_scans.css", "/network.css", "/app.js", "/dashboard.js", "/linux_host.js", "/ssh_credentials.js", "/delete_scans.js")
+_PUBLIC_PREFIXES = (
+    "/styles.css",
+    "/dashboard.css",
+    "/delete_scans.css",
+    "/network.css",
+    "/app.js",
+    "/dashboard.js",
+    "/linux_host.js",
+    "/ssh_credentials.js",
+    "/delete_scans.js",
+)
 
 
 @dataclass(frozen=True)
@@ -35,7 +43,13 @@ class User:
     created_at: str
 
     def public(self) -> dict[str, object]:
-        return {"id": self.id, "email": self.email, "role": self.role, "enabled": self.enabled, "created_at": self.created_at}
+        return {
+            "id": self.id,
+            "email": self.email,
+            "role": self.role,
+            "enabled": self.enabled,
+            "created_at": self.created_at,
+        }
 
 
 class RegisterRequest(BaseModel):
@@ -148,7 +162,16 @@ class AuthStore:
 
 def normalize_email(value: str) -> str:
     email = value.strip().lower()
-    if len(email) > 254 or not _EMAIL_RE.fullmatch(email):
+    if len(email) > 254 or any(character.isspace() for character in email):
+        raise ValueError("enter a valid email address")
+    if email.count("@") != 1:
+        raise ValueError("enter a valid email address")
+    local_part, domain = email.split("@", 1)
+    if not local_part or not domain or len(local_part) > 64:
+        raise ValueError("enter a valid email address")
+    if "." not in domain or domain.startswith(".") or domain.endswith("."):
+        raise ValueError("enter a valid email address")
+    if ".." in domain:
         raise ValueError("enter a valid email address")
     return email
 
@@ -167,7 +190,14 @@ def verify_password(password: str, encoded: str) -> bool:
         if algorithm != "scrypt":
             return False
         expected = bytes.fromhex(digest_hex)
-        derived = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt_hex), n=int(n), r=int(r), p=int(p), dklen=len(expected))
+        derived = hashlib.scrypt(
+            password.encode(),
+            salt=bytes.fromhex(salt_hex),
+            n=int(n),
+            r=int(r),
+            p=int(p),
+            dklen=len(expected),
+        )
         return hmac.compare_digest(derived, expected)
     except (ValueError, TypeError):
         return False
@@ -182,14 +212,24 @@ def _token_hash(token: str) -> str:
 
 
 def _user(row: sqlite3.Row) -> User:
-    return User(str(row["id"]), str(row["email"]), str(row["role"]), bool(row["enabled"]), str(row["created_at"]))
+    return User(
+        str(row["id"]),
+        str(row["email"]),
+        str(row["role"]),
+        bool(row["enabled"]),
+        str(row["created_at"]),
+    )
 
 
 def _auth_page(mode: str, error: str = "") -> str:
     register = mode == "register"
     title = "Create account" if register else "Sign in"
     endpoint = "/api/v1/auth/register" if register else "/api/v1/auth/login"
-    switch = '<a href="/login">Already have an account? Sign in</a>' if register else '<a href="/register">Create an account</a>'
+    switch = (
+        '<a href="/login">Already have an account? Sign in</a>'
+        if register
+        else '<a href="/register">Create an account</a>'
+    )
     safe_error = html.escape(error)
     return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{title} · secscan</title><style>body{{font-family:system-ui;background:#111827;color:#e5e7eb;display:grid;place-items:center;min-height:100vh;margin:0}}main{{width:min(420px,90vw);background:#1f2937;padding:2rem;border-radius:14px}}label{{display:block;margin:1rem 0}}input{{box-sizing:border-box;width:100%;padding:.8rem;margin-top:.35rem}}button{{width:100%;padding:.8rem;font-weight:700}}a{{color:#93c5fd}}#error{{color:#fca5a5;min-height:1.3em}}</style></head><body><main><h1>secscan</h1><h2>{title}</h2><p id='error'>{safe_error}</p><form id='auth'><label>Email<input id='email' type='email' required autocomplete='email'></label><label>Password<input id='password' type='password' required minlength='12' autocomplete='current-password'></label><button type='submit'>{title}</button></form><p>{switch}</p></main><script>document.getElementById('auth').addEventListener('submit',async(e)=>{{e.preventDefault();const r=await fetch('{endpoint}',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{email:document.getElementById('email').value,password:document.getElementById('password').value}})}});if(r.ok){{location.href='/';return;}}let d=await r.json().catch(()=>({{}}));document.getElementById('error').textContent=d.detail||'Authentication failed';}});</script></body></html>"""
 
@@ -202,10 +242,19 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         path = request.url.path
-        if path in _PUBLIC_PATHS or path.startswith(_PUBLIC_PREFIXES) or path.startswith("/docs") or path.startswith("/openapi.json"):
+        if (
+            path in _PUBLIC_PATHS
+            or path.startswith(_PUBLIC_PREFIXES)
+            or path.startswith("/docs")
+            or path.startswith("/openapi.json")
+        ):
             return await call_next(request)
         authorization = request.headers.get("authorization", "")
-        if self.api_token and authorization.startswith("Bearer ") and secrets.compare_digest(authorization[7:], self.api_token):
+        if (
+            self.api_token
+            and authorization.startswith("Bearer ")
+            and secrets.compare_digest(authorization[7:], self.api_token)
+        ):
             return await call_next(request)
         user = self.store.user_for_session(request.cookies.get(SESSION_COOKIE))
         if user is None:
@@ -223,8 +272,18 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
 
 def mount_auth(app: FastAPI, *, database: Path, api_token: str | None = None) -> FastAPI:
     store = AuthStore(database)
-    registration_enabled = os.environ.get("SECSCAN_REGISTRATION_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
-    secure_cookie = os.environ.get("SECSCAN_SESSION_COOKIE_SECURE", "false").strip().lower() in {"1", "true", "yes", "on"}
+    registration_enabled = os.environ.get("SECSCAN_REGISTRATION_ENABLED", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+    secure_cookie = os.environ.get("SECSCAN_SESSION_COOKIE_SECURE", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
     def current_user(request: Request) -> User:
         user = store.user_for_session(request.cookies.get(SESSION_COOKIE))
@@ -251,7 +310,15 @@ def mount_auth(app: FastAPI, *, database: Path, api_token: str | None = None) ->
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         token = store.create_session(user.id)
-        response.set_cookie(SESSION_COOKIE, token, httponly=True, secure=secure_cookie, samesite="strict", max_age=SESSION_DAYS * 86400, path="/")
+        response.set_cookie(
+            SESSION_COOKIE,
+            token,
+            httponly=True,
+            secure=secure_cookie,
+            samesite="strict",
+            max_age=SESSION_DAYS * 86400,
+            path="/",
+        )
         return user.public()
 
     @app.post("/api/v1/auth/login")
@@ -260,7 +327,15 @@ def mount_auth(app: FastAPI, *, database: Path, api_token: str | None = None) ->
         if user is None:
             raise HTTPException(status_code=401, detail="invalid email or password")
         token = store.create_session(user.id)
-        response.set_cookie(SESSION_COOKIE, token, httponly=True, secure=secure_cookie, samesite="strict", max_age=SESSION_DAYS * 86400, path="/")
+        response.set_cookie(
+            SESSION_COOKIE,
+            token,
+            httponly=True,
+            secure=secure_cookie,
+            samesite="strict",
+            max_age=SESSION_DAYS * 86400,
+            path="/",
+        )
         return user.public()
 
     @app.post("/api/v1/auth/logout", status_code=204)
