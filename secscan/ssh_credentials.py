@@ -10,6 +10,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import serialization
 
 from secscan.scanners.linux_host import validate_ssh_user
+from secscan.ssh_host_trust import SshHostTrustStore
 
 
 @dataclass(frozen=True)
@@ -213,6 +214,16 @@ class SshCredentialStore:
             raise ValueError(
                 "SSH credential profile could not be decrypted with the configured master key"
             ) from exc
+
+        # Host trust is global and public-key-only, independent of the credential
+        # used to authenticate. Merge approved records into the ephemeral
+        # known_hosts content used by this scan; manually supplied entries remain
+        # available as a compatibility trust source.
+        trusted_lines = "".join(
+            trusted.known_hosts_line() for trusted in SshHostTrustStore(self.database).list()
+        )
+        if trusted_lines:
+            known_hosts = known_hosts.rstrip("\n") + "\n" + trusted_lines
         return DecryptedSshCredential(self._profile(row), private_key, known_hosts)
 
     def set_default(self, profile_id: str) -> SshCredentialProfile:

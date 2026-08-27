@@ -31,7 +31,7 @@ WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY secscan ./secscan
 COPY scripts/verify_wheel.py ./scripts/verify_wheel.py
-RUN python -c "from pathlib import Path; required={'secscan/__init__.py','secscan/auth.py','secscan/aws.py','secscan/cli.py','secscan/compare.py','secscan/history.py','secscan/models.py','secscan/normalize.py','secscan/policy.py','secscan/report.py','secscan/ssh_credentials.py','secscan/trivy.py','secscan/web.py','secscan/web_assets/__init__.py','secscan/web_assets/index.html','secscan/web_assets/ssh_credentials.js','secscan/scanners/__init__.py','secscan/scanners/base.py','secscan/scanners/registry.py','secscan/scanners/image.py','secscan/scanners/filesystem.py','secscan/scanners/repository.py','secscan/scanners/full_repository.py','secscan/scanners/network.py','secscan/scanners/linux_host.py','secscan/scanners/sbom.py'}; missing={path for path in required if not Path(path).is_file()}; assert not missing, f'missing source modules: {sorted(missing)}'; print('verified source tree:', ', '.join(sorted(required)))" \
+RUN python -c "from pathlib import Path; required={'secscan/__init__.py','secscan/auth.py','secscan/aws.py','secscan/cli.py','secscan/compare.py','secscan/history.py','secscan/models.py','secscan/normalize.py','secscan/policy.py','secscan/report.py','secscan/ssh_credentials.py','secscan/ssh_host_trust.py','secscan/ssh_host_trust_web.py','secscan/trivy.py','secscan/web.py','secscan/web_assets/__init__.py','secscan/web_assets/index.html','secscan/web_assets/ssh_credentials.js','secscan/scanners/__init__.py','secscan/scanners/base.py','secscan/scanners/registry.py','secscan/scanners/image.py','secscan/scanners/filesystem.py','secscan/scanners/repository.py','secscan/scanners/full_repository.py','secscan/scanners/network.py','secscan/scanners/linux_host.py','secscan/scanners/sbom.py'}; missing={path for path in required if not Path(path).is_file()}; assert not missing, f'missing source modules: {sorted(missing)}'; print('verified source tree:', ', '.join(sorted(required)))" \
     && pip wheel --no-deps --wheel-dir /wheels . \
     && python scripts/verify_wheel.py /wheels/secscan-*.whl
 
@@ -70,7 +70,7 @@ RUN apt-get update \
 
 COPY --from=builder /wheels /wheels
 RUN pip install --no-cache-dir /wheels/secscan-*.whl \
-    && python -c "import secscan, secscan.auth, secscan.aws, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.ssh_credentials, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.full_repository, secscan.scanners.network, secscan.scanners.linux_host, secscan.scanners.sbom" \
+    && python -c "import paramiko, secscan, secscan.auth, secscan.aws, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.ssh_credentials, secscan.ssh_host_trust, secscan.ssh_host_trust_web, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.full_repository, secscan.scanners.network, secscan.scanners.linux_host, secscan.scanners.sbom" \
     && rm -rf /wheels
 
 WORKDIR /app

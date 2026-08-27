@@ -33,6 +33,7 @@ def main() -> None:
 
     from secscan.auth import mount_auth
     from secscan.service import create_app
+    from secscan.ssh_host_trust_web import mount_ssh_host_trust
     from secscan.web import mount_web_ui
 
     database = (args.job_database or args.job_root / "jobs.db").expanduser().resolve()
@@ -49,6 +50,7 @@ def main() -> None:
     )
     if isinstance(app, FastAPI):
         mount_web_ui(app, job_root=args.job_root, job_database=args.job_database)
+        mount_ssh_host_trust(app, database=database)
         mount_auth(app, database=database, api_token=api_token)
     uvicorn.run(
         app,
