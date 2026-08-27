@@ -10,7 +10,7 @@ from pathlib import Path
 import re
 import secrets
 import sqlite3
-from typing import Any, Awaitable, Callable
+from typing import Awaitable, Callable
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, Response
