@@ -14,7 +14,7 @@ secscan keeps OpenSSH `StrictHostKeyChecking=yes`. It never enables `StrictHostK
 2. Open **SSH credentials**.
 3. In **Trusted host keys**, enter one hostname/IP and SSH port.
 4. Choose **Discover host key**.
-5. secscan runs bounded `ssh-keyscan` discovery and displays every presented key type and SHA-256 fingerprint.
+5. secscan performs a bounded in-process SSH handshake and displays the presented key type and SHA-256 fingerprint.
 6. Compare the fingerprint against an independent trusted source, such as the server console or an established configuration-management record.
 7. Approve only the exact verified key.
 
@@ -44,10 +44,10 @@ Listing, discovery, approval, replacement, and deletion of GUI-managed host trus
 
 ## Security boundary
 
-`ssh-keyscan` only reports the key presented by the endpoint that answered at discovery time. It does not prove identity. The administrator must verify the SHA-256 fingerprint through an independent trusted channel before approval.
+Discovery uses Paramiko to perform the SSH protocol handshake directly in-process. No request-derived hostname, port, or other value is passed to a shell or external command-line utility. The handshake still only reports the key presented by the endpoint that answered at discovery time; it does not prove identity. The administrator must verify the SHA-256 fingerprint through an independent trusted channel before approval.
 
 Sprint 42 does not add CIDR/range discovery, DNS SSHFP trust, SSH certificate authorities, bastions/proxies, passwords, arbitrary SSH flags, or automatic key acceptance.
 
 ## Cost
 
-The feature uses the existing OpenSSH client and SQLite database. Current and projected recurring infrastructure/service cost remains $0.
+The feature uses the packaged Paramiko dependency and the existing SQLite database. Current and projected recurring infrastructure/service cost remains $0.
