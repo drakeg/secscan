@@ -4,7 +4,9 @@ import base64
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 import hashlib
+import ipaddress
 from pathlib import Path
+import socket
 import sqlite3
 import subprocess
 from uuid import uuid4
@@ -89,11 +91,41 @@ def _validate_key(key_type: str, key_base64: str) -> tuple[str, str, str]:
     return normalized_type, normalized_key, _fingerprint(normalized_key)
 
 
+def _resolve_keyscan_address(target: str, port: int) -> str:
+    """Resolve a validated host to a canonical numeric address before exec.
+
+    The HTTP-supplied hostname is never passed directly to the subprocess. This
+    removes command-option ambiguity and pins discovery to the address resolved
+    by secscan rather than asking ssh-keyscan to interpret user-controlled text.
+    """
+    try:
+        addresses = socket.getaddrinfo(target, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError(f"network target could not be resolved: {target}") from exc
+    for address in addresses:
+        sockaddr = address[4]
+        if not sockaddr:
+            continue
+        try:
+            return str(ipaddress.ip_address(sockaddr[0]))
+        except ValueError:
+            continue
+    raise ValueError(f"network target did not resolve to an IP address: {target}")
+
+
 def discover_host_keys(host: str, port: int = 22, timeout: int = 5) -> list[tuple[str, str, str]]:
     target = validate_network_target(host)
     validated_port = _validate_port(port)
+    keyscan_address = _resolve_keyscan_address(target, validated_port)
     bounded_timeout = max(1, min(timeout, 10))
-    command = ["ssh-keyscan", "-T", str(bounded_timeout), "-p", str(validated_port), target]
+    command = [
+        "ssh-keyscan",
+        "-T",
+        str(bounded_timeout),
+        "-p",
+        str(validated_port),
+        keyscan_address,
+    ]
     try:
         completed = subprocess.run(
             command,
