@@ -308,10 +308,7 @@ def mount_web_ui(
     @app.get("/api/v1/linux-host-capability")
     def linux_host_capability() -> dict[str, bool]:
         has_profiles = bool(credential_store and credential_store.list())
-        return {
-            "configured": _linux_host_service_ready() or has_profiles,
-            "credential_store": credential_store is not None,
-        }
+        return {"configured": _linux_host_service_ready() or has_profiles}
 
     @app.post("/api/v1/linux-host-jobs", status_code=202)
     def submit_linux_host_job(request: LinuxHostWebSubmission) -> dict[str, object]:
@@ -332,7 +329,7 @@ def mount_web_ui(
             elif credential_store.get(profile_id) is None:
                 raise HTTPException(status_code=422, detail="SSH credential profile was not found")
             if profile_id is not None:
-                if request.remember_credential or request.credential_profile_id is not None:
+                if request.remember_credential:
                     credential_store.bind_host(target, profile_id)
                 return submit_profile_job(request, profile_id)
 
