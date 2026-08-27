@@ -3,11 +3,10 @@ from __future__ import annotations
 import base64
 import hashlib
 from pathlib import Path
-import socket
-import subprocess
 
 import pytest
 
+import secscan.ssh_host_trust as ssh_host_trust
 from secscan.ssh_host_trust import SshHostTrustStore, discover_host_keys
 
 
@@ -20,55 +19,94 @@ def _fingerprint(key: str) -> str:
     return "SHA256:" + base64.b64encode(digest).decode("ascii").rstrip("=")
 
 
-def test_discovery_uses_bounded_ssh_keyscan_without_shell(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_discovery_uses_bounded_in_process_ssh_handshake(monkeypatch: pytest.MonkeyPatch) -> None:
     key = _key(b"host-key-one")
     captured: dict[str, object] = {}
 
-    def fake_run(command, **kwargs):
-        captured["command"] = command
-        captured.update(kwargs)
-        return subprocess.CompletedProcess(command, 0, stdout=f"127.0.0.1 ssh-ed25519 {key}\n", stderr="")
+    class FakeSocket:
+        def close(self) -> None:
+            captured["socket_closed"] = True
 
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    class FakeKey:
+        def get_name(self) -> str:
+            return "ssh-ed25519"
+
+        def get_base64(self) -> str:
+            return key
+
+    class FakeTransport:
+        def __init__(self, sock: object) -> None:
+            captured["transport_socket"] = sock
+
+        def start_client(self, *, timeout: int) -> None:
+            captured["transport_timeout"] = timeout
+
+        def get_remote_server_key(self) -> FakeKey:
+            return FakeKey()
+
+        def close(self) -> None:
+            captured["transport_closed"] = True
+
+    fake_socket = FakeSocket()
+
+    def fake_create_connection(address, *, timeout):
+        captured["address"] = address
+        captured["socket_timeout"] = timeout
+        return fake_socket
+
+    monkeypatch.setattr(ssh_host_trust.socket, "create_connection", fake_create_connection)
+    monkeypatch.setattr(ssh_host_trust.paramiko, "Transport", FakeTransport)
+
     discovered = discover_host_keys("127.0.0.1", 2222, timeout=5)
 
-    assert captured["command"] == ["ssh-keyscan", "-T", "5", "-p", "2222", "127.0.0.1"]
-    assert captured["check"] is False
-    assert captured["capture_output"] is True
-    assert captured["text"] is True
-    assert captured["timeout"] == 7
+    assert captured["address"] == ("127.0.0.1", 2222)
+    assert captured["socket_timeout"] == 5
+    assert captured["transport_timeout"] == 5
+    assert captured["transport_closed"] is True
     assert discovered == [("ssh-ed25519", key, _fingerprint(key))]
 
 
-def test_discovery_resolves_hostname_before_constructing_command(monkeypatch: pytest.MonkeyPatch) -> None:
-    key = _key(b"resolved-host-key")
+def test_discovery_bounds_timeout_before_network_handshake(monkeypatch: pytest.MonkeyPatch) -> None:
+    key = _key(b"bounded-timeout-key")
     captured: dict[str, object] = {}
-    calls = 0
 
-    def fake_getaddrinfo(host, port, *args, **kwargs):
-        nonlocal calls
-        calls += 1
-        assert host == "server.example.com"
-        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.10", port or 0))]
+    class FakeSocket:
+        def close(self) -> None:
+            pass
 
-    def fake_run(command, **kwargs):
-        captured["command"] = command
-        return subprocess.CompletedProcess(
-            command,
-            0,
-            stdout=f"192.0.2.10 ssh-ed25519 {key}\n",
-            stderr="",
-        )
+    class FakeKey:
+        def get_name(self) -> str:
+            return "ssh-ed25519"
 
-    monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
-    monkeypatch.setattr(subprocess, "run", fake_run)
+        def get_base64(self) -> str:
+            return key
 
-    discovered = discover_host_keys("server.example.com", 22)
+    class FakeTransport:
+        def __init__(self, _sock: object) -> None:
+            pass
 
-    assert calls >= 2
-    assert captured["command"][-1] == "192.0.2.10"
-    assert "server.example.com" not in captured["command"]
-    assert discovered == [("ssh-ed25519", key, _fingerprint(key))]
+        def start_client(self, *, timeout: int) -> None:
+            captured["transport_timeout"] = timeout
+
+        def get_remote_server_key(self) -> FakeKey:
+            return FakeKey()
+
+        def close(self) -> None:
+            pass
+
+    def fake_create_connection(address, *, timeout):
+        captured["address"] = address
+        captured["socket_timeout"] = timeout
+        return FakeSocket()
+
+    monkeypatch.setattr(ssh_host_trust.socket, "create_connection", fake_create_connection)
+    monkeypatch.setattr(ssh_host_trust.paramiko, "Transport", FakeTransport)
+
+    discover_host_keys("server.example.com", 22, timeout=999)
+
+    assert captured["address"] == ("server.example.com", 22)
+    assert captured["socket_timeout"] == 10
+    assert captured["transport_timeout"] == 10
 
 
 def test_trust_requires_exact_unexpired_discovery_and_replaces_only_explicitly(tmp_path: Path) -> None:
