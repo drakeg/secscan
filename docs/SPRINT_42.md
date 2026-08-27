@@ -6,8 +6,8 @@ Make authenticated Linux-host onboarding practical from the browser without weak
 
 ## Stories
 
-1. As an administrator, I can enter one hostname/IP and SSH port and ask secscan to discover the public SSH host keys currently presented by that endpoint.
-2. As an administrator, I can review each discovered key type and SHA-256 fingerprint before deciding whether to trust it.
+1. As an administrator, I can enter one hostname/IP and SSH port and ask secscan to discover the public SSH host key currently presented by that endpoint.
+2. As an administrator, I can review the discovered key type and SHA-256 fingerprint before deciding whether to trust it.
 3. As an administrator, I can approve one discovered host key and persist that exact key as the trusted key for the host/port.
 4. As an operator, Linux-host scans use the approved host key with `StrictHostKeyChecking=yes` rather than silently accepting an unknown or changed key.
 5. As an administrator, I can list and remove approved host keys.
@@ -16,7 +16,7 @@ Make authenticated Linux-host onboarding practical from the browser without weak
 ## Acceptance criteria
 
 - discovery accepts only the existing validated single-host target boundary and ports 1-65535
-- discovery invokes `ssh-keyscan` with a bounded timeout and no shell interpolation
+- discovery performs a bounded in-process SSH handshake using Paramiko; request-derived values are not passed to a shell or external command-line utility
 - only public host-key material, key type, host/port, SHA-256 fingerprint, and timestamps are persisted; no private credentials are involved
 - trust APIs require an authenticated browser administrator; bearer-token automation does not implicitly gain administrator trust-management rights
 - approval requires the exact discovered public key and fingerprint presented back by the GUI
@@ -29,21 +29,21 @@ Make authenticated Linux-host onboarding practical from the browser without weak
 
 ## Security notes
 
-`ssh-keyscan` proves only what key was presented by the endpoint reached at discovery time; it does not prove that key belongs to the intended machine. The GUI must therefore show the SHA-256 fingerprint prominently and instruct the administrator to compare it against an independently trusted source before approval.
+The in-process SSH handshake proves only what key was presented by the endpoint reached at discovery time; it does not prove that key belongs to the intended machine. The GUI must therefore show the SHA-256 fingerprint prominently and instruct the administrator to compare it against an independently trusted source before approval.
 
 A changed host key is treated as a security event. The existing approved record remains authoritative until an administrator explicitly replaces it.
 
 ## Validation
 
-- unit tests for host/port validation, key parsing, fingerprinting, approval, replacement, listing, and deletion
+- unit tests for host/port validation, bounded in-process discovery, fingerprinting, approval, replacement, listing, and deletion
 - API tests for administrator-only discovery and trust mutation
 - failure tests for malformed keys, mismatched fingerprints, unknown hosts, non-admin users, and key changes
 - regression coverage that Linux scan execution still uses strict host-key verification
 - `bash scripts/preflight.sh`
 - Compose/container smoke and real SSH fixture validation when relevant
-- CodeQL
+- CodeQL, including the separate GitHub Advanced Security code-scanning check
 - `git diff --check`
 
 ## Cost outlook
 
-All storage remains in the existing local SQLite database and all discovery uses the installed OpenSSH client. Current and projected recurring infrastructure/service cost remains $0.
+All storage remains in the existing local SQLite database and host-key discovery runs in-process using the packaged Paramiko dependency. Current and projected recurring infrastructure/service cost remains $0.
