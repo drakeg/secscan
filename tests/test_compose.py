@@ -24,6 +24,8 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
     ]
     assert service["environment"] == {
         "SECSCAN_API_TOKEN": "${SECSCAN_API_TOKEN:-}",
+        "SECSCAN_REGISTRATION_ENABLED": "${SECSCAN_REGISTRATION_ENABLED:-true}",
+        "SECSCAN_SESSION_COOKIE_SECURE": "${SECSCAN_SESSION_COOKIE_SECURE:-false}",
         "SECSCAN_GITHUB_TOKEN": "${SECSCAN_GITHUB_TOKEN:-}",
         "SECSCAN_CREDENTIAL_KEY": "${SECSCAN_CREDENTIAL_KEY:-}",
         "SECSCAN_SSH_USER": "${SECSCAN_SSH_USER:-}",
