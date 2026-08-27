@@ -102,15 +102,11 @@ def _resolve_keyscan_address(target: str, port: int) -> str:
         addresses = socket.getaddrinfo(target, port, type=socket.SOCK_STREAM)
     except socket.gaierror as exc:
         raise ValueError(f"network target could not be resolved: {target}") from exc
-    for address in addresses:
-        sockaddr = address[4]
-        if not sockaddr:
-            continue
-        try:
-            return str(ipaddress.ip_address(sockaddr[0]))
-        except ValueError:
-            continue
-    raise ValueError(f"network target did not resolve to an IP address: {target}")
+    if not addresses:
+        raise ValueError(f"network target did not resolve to an IP address: {target}")
+    sockaddr = addresses[0][4]
+    candidate = str(sockaddr[0])
+    return str(ipaddress.ip_address(candidate))
 
 
 def discover_host_keys(host: str, port: int = 22, timeout: int = 5) -> list[tuple[str, str, str]]:
