@@ -60,7 +60,6 @@ RUN apt-get update \
     && checkov --version \
     && nmap --version \
     && ssh -V \
-    && command -v ssh-keyscan >/dev/null \
     && nuclei -version \
     && test "$(cat /opt/nuclei-templates/.secscan-template-version)" = "${NUCLEI_TEMPLATES_VERSION}" \
     && test "$(cat /opt/nuclei-templates/.secscan-template-commit)" = "${NUCLEI_TEMPLATES_COMMIT}" \
@@ -71,7 +70,7 @@ RUN apt-get update \
 
 COPY --from=builder /wheels /wheels
 RUN pip install --no-cache-dir /wheels/secscan-*.whl \
-    && python -c "import secscan, secscan.auth, secscan.aws, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.ssh_credentials, secscan.ssh_host_trust, secscan.ssh_host_trust_web, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.full_repository, secscan.scanners.network, secscan.scanners.linux_host, secscan.scanners.sbom" \
+    && python -c "import paramiko, secscan, secscan.auth, secscan.aws, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.report, secscan.ssh_credentials, secscan.ssh_host_trust, secscan.ssh_host_trust_web, secscan.trivy, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.full_repository, secscan.scanners.network, secscan.scanners.linux_host, secscan.scanners.sbom" \
     && rm -rf /wheels
 
 WORKDIR /app
