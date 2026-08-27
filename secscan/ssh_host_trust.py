@@ -4,12 +4,12 @@ import base64
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 import hashlib
-import ipaddress
 from pathlib import Path
 import socket
 import sqlite3
-import subprocess
 from uuid import uuid4
+
+import paramiko
 
 from secscan.scanners.network import validate_network_target
 
@@ -91,70 +91,32 @@ def _validate_key(key_type: str, key_base64: str) -> tuple[str, str, str]:
     return normalized_type, normalized_key, _fingerprint(normalized_key)
 
 
-def _resolve_keyscan_address(target: str, port: int) -> str:
-    """Resolve a validated host to a canonical numeric address before exec.
-
-    The HTTP-supplied hostname is never passed directly to the subprocess. This
-    removes command-option ambiguity and pins discovery to the address resolved
-    by secscan rather than asking ssh-keyscan to interpret user-controlled text.
-    """
-    try:
-        addresses = socket.getaddrinfo(target, port, type=socket.SOCK_STREAM)
-    except socket.gaierror as exc:
-        raise ValueError(f"network target could not be resolved: {target}") from exc
-    if not addresses:
-        raise ValueError(f"network target did not resolve to an IP address: {target}")
-    sockaddr = addresses[0][4]
-    candidate = str(sockaddr[0])
-    return str(ipaddress.ip_address(candidate))
-
-
 def discover_host_keys(host: str, port: int = 22, timeout: int = 5) -> list[tuple[str, str, str]]:
+    """Perform an unauthenticated SSH handshake and return the presented host key.
+
+    Discovery is intentionally in-process. No request-derived host, port, or other
+    value is passed to a command-line interpreter or external executable.
+    """
     target = validate_network_target(host)
     validated_port = _validate_port(port)
-    keyscan_address = _resolve_keyscan_address(target, validated_port)
     bounded_timeout = max(1, min(timeout, 10))
-    command = [
-        "ssh-keyscan",
-        "-T",
-        str(bounded_timeout),
-        "-p",
-        str(validated_port),
-        keyscan_address,
-    ]
+    sock: socket.socket | None = None
+    transport: paramiko.Transport | None = None
     try:
-        completed = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=bounded_timeout + 2,
-        )
-    except FileNotFoundError as exc:
-        raise ValueError("ssh-keyscan is required for SSH host-key discovery") from exc
-    except subprocess.TimeoutExpired as exc:
-        raise ValueError("SSH host-key discovery timed out") from exc
+        sock = socket.create_connection((target, validated_port), timeout=bounded_timeout)
+        transport = paramiko.Transport(sock)
+        transport.start_client(timeout=bounded_timeout)
+        remote_key = transport.get_remote_server_key()
+    except (OSError, EOFError, paramiko.SSHException) as exc:
+        raise ValueError(f"SSH host-key discovery failed: {exc}") from exc
+    finally:
+        if transport is not None:
+            transport.close()
+        elif sock is not None:
+            sock.close()
 
-    keys: list[tuple[str, str, str]] = []
-    seen: set[tuple[str, str]] = set()
-    for line in completed.stdout.splitlines():
-        value = line.strip()
-        if not value or value.startswith("#"):
-            continue
-        parts = value.split()
-        if len(parts) < 3:
-            continue
-        key_type, key_base64, fingerprint = _validate_key(parts[1], parts[2])
-        identity = (key_type, key_base64)
-        if identity in seen:
-            continue
-        seen.add(identity)
-        keys.append((key_type, key_base64, fingerprint))
-    if not keys:
-        detail = completed.stderr.strip().splitlines()
-        message = detail[-1] if detail else "no SSH host keys were returned"
-        raise ValueError(f"SSH host-key discovery failed: {message}")
-    return keys
+    key_type, key_base64, fingerprint = _validate_key(remote_key.get_name(), remote_key.get_base64())
+    return [(key_type, key_base64, fingerprint)]
 
 
 class SshHostTrustStore:
