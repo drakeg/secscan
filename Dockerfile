@@ -60,7 +60,7 @@ RUN apt-get update \
     && checkov --version \
     && nmap --version \
     && ssh -V \
-    && ssh-keyscan -h >/dev/null 2>&1 || true \
+    && command -v ssh-keyscan >/dev/null \
     && nuclei -version \
     && test "$(cat /opt/nuclei-templates/.secscan-template-version)" = "${NUCLEI_TEMPLATES_VERSION}" \
     && test "$(cat /opt/nuclei-templates/.secscan-template-commit)" = "${NUCLEI_TEMPLATES_COMMIT}" \
