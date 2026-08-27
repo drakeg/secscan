@@ -102,9 +102,9 @@ def test_discovery_bounds_timeout_before_network_handshake(monkeypatch: pytest.M
     monkeypatch.setattr(ssh_host_trust.socket, "create_connection", fake_create_connection)
     monkeypatch.setattr(ssh_host_trust.paramiko, "Transport", FakeTransport)
 
-    discover_host_keys("server.example.com", 22, timeout=999)
+    discover_host_keys("127.0.0.1", 22, timeout=999)
 
-    assert captured["address"] == ("server.example.com", 22)
+    assert captured["address"] == ("127.0.0.1", 22)
     assert captured["socket_timeout"] == 10
     assert captured["transport_timeout"] == 10
 
