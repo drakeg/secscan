@@ -6,6 +6,8 @@ from pathlib import Path
 
 REQUIRED_FILES = {
     "secscan/__init__.py",
+    "secscan/assets.py",
+    "secscan/assets_web.py",
     "secscan/aws.py",
     "secscan/cli.py",
     "secscan/compare.py",
