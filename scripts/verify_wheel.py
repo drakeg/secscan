@@ -37,6 +37,7 @@ REQUIRED_FILES = {
     "secscan/scanners/__init__.py",
     "secscan/scanners/base.py",
     "secscan/scanners/registry.py",
+    "secscan/scanners/grype.py",
     "secscan/scanners/image.py",
     "secscan/scanners/filesystem.py",
     "secscan/scanners/full_repository.py",
