@@ -7,7 +7,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from secscan.kev import enrich_finding_documents, load_kev_catalog
+from secscan.epss import enrich_finding_documents as enrich_epss_finding_documents
+from secscan.epss import load_epss_scores
+from secscan.kev import enrich_finding_documents as enrich_kev_finding_documents
+from secscan.kev import load_kev_catalog
 from secscan.models import Finding
 from secscan.normalize import summarize
 
@@ -19,20 +22,43 @@ def build_report(
     target_type: str = "container_image",
 ) -> dict[str, Any]:
     finding_documents = [finding.to_dict() for finding in findings]
-    summary = summarize(findings)
+    summary: dict[str, Any] = summarize(findings)
     kev_catalog = os.environ.get("SECSCAN_KEV_CATALOG")
-    enrichment: dict[str, Any] = {"cisa_kev": {"status": "disabled", "known_exploited": 0}}
+    epss_csv = os.environ.get("SECSCAN_EPSS_CSV")
+    enrichment: dict[str, Any] = {
+        "cisa_kev": {"status": "disabled", "known_exploited": 0},
+        "epss": {"status": "disabled", "scored_findings": 0},
+    }
     if kev_catalog:
         catalog = load_kev_catalog(Path(kev_catalog))
-        finding_documents, known_exploited = enrich_finding_documents(finding_documents, catalog)
+        finding_documents, known_exploited = enrich_kev_finding_documents(finding_documents, catalog)
         summary["known_exploited"] = known_exploited
         enrichment["cisa_kev"] = {
             "status": "enabled",
             "known_exploited": known_exploited,
             "catalog_entries": len(catalog),
         }
+    if epss_csv:
+        scores = load_epss_scores(Path(epss_csv))
+        finding_documents, scored_findings, max_score = enrich_epss_finding_documents(
+            finding_documents, scores
+        )
+        summary["epss_scored"] = scored_findings
+        if max_score is not None:
+            summary["max_epss_score"] = max_score
+        enrichment["epss"] = {
+            "status": "enabled",
+            "scored_findings": scored_findings,
+            "score_entries": len(scores),
+            "max_score": max_score,
+        }
+    schema_version = "1.0"
+    if kev_catalog:
+        schema_version = "1.1"
+    if epss_csv:
+        schema_version = "1.2"
     return {
-        "schema_version": "1.1" if kev_catalog else "1.0",
+        "schema_version": schema_version,
         "generated_at": datetime.now(UTC).isoformat(),
         "target": {"type": target_type, "name": target},
         "scanner": scanner,
@@ -79,11 +105,19 @@ def write_html(report: dict[str, Any], output: Path) -> None:
             kev_html = f"Yes — due {_cell(due_date)}"
             if ransomware == "Known":
                 kev_html += " — ransomware observed"
+        epss = finding.get("epss")
+        epss_html = "Not scored"
+        if isinstance(epss, dict):
+            score = epss.get("score")
+            percentile = epss.get("percentile")
+            if isinstance(score, (int, float)) and isinstance(percentile, (int, float)):
+                epss_html = f"{score:.2%} — percentile {percentile:.2%}"
         rows.append(
             "<tr>"
             f"<td>{_cell(finding.get('severity'))}</td>"
             f"<td>{vulnerability_html}</td>"
             f"<td>{kev_html}</td>"
+            f"<td>{epss_html}</td>"
             f"<td>{_cell(finding.get('package_name'))}</td>"
             f"<td>{_cell(finding.get('installed_version'))}</td>"
             f"<td>{_cell(fixed)}</td>"
@@ -94,6 +128,8 @@ def write_html(report: dict[str, Any], output: Path) -> None:
     card_levels = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN", "total"]
     if "known_exploited" in summary:
         card_levels.append("known_exploited")
+    if "epss_scored" in summary:
+        card_levels.append("epss_scored")
     summary_cards = "".join(
         (
             '<div class="card">'
@@ -103,7 +139,7 @@ def write_html(report: dict[str, Any], output: Path) -> None:
         )
         for level in card_levels
     )
-    table_body = "".join(rows) or '<tr><td colspan="7">No vulnerabilities found.</td></tr>'
+    table_body = "".join(rows) or '<tr><td colspan="8">No vulnerabilities found.</td></tr>'
     target_name = _cell(report.get("target", {}).get("name"))
     target_type = _cell(report.get("target", {}).get("type"))
     generated_at = _cell(report.get("generated_at"))
@@ -155,6 +191,7 @@ code {{ background: #f3f4f6; padding: .1rem .25rem; border-radius: .2rem; }}
   <th>Severity</th>
   <th>Vulnerability</th>
   <th>CISA KEV</th>
+  <th>EPSS</th>
   <th>Package</th>
   <th>Installed</th>
   <th>Fixed</th>

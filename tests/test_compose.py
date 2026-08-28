@@ -27,6 +27,8 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
         "SECSCAN_REGISTRATION_ENABLED": "${SECSCAN_REGISTRATION_ENABLED:-true}",
         "SECSCAN_SESSION_COOKIE_SECURE": "${SECSCAN_SESSION_COOKIE_SECURE:-false}",
         "SECSCAN_GITHUB_TOKEN": "${SECSCAN_GITHUB_TOKEN:-}",
+        "SECSCAN_KEV_CATALOG": "${SECSCAN_KEV_CATALOG:-}",
+        "SECSCAN_EPSS_CSV": "${SECSCAN_EPSS_CSV:-}",
         "SECSCAN_CREDENTIAL_KEY": "${SECSCAN_CREDENTIAL_KEY:-}",
         "SECSCAN_SSH_USER": "${SECSCAN_SSH_USER:-}",
         "SECSCAN_SSH_KEY": "${SECSCAN_SSH_KEY:-/run/secscan-ssh/id_ed25519}",
@@ -35,6 +37,8 @@ def test_local_compose_service_keeps_secure_persistent_defaults() -> None:
     }
     assert cli["environment"] == {
         "SECSCAN_GITHUB_TOKEN": "${SECSCAN_GITHUB_TOKEN:-}",
+        "SECSCAN_KEV_CATALOG": "${SECSCAN_KEV_CATALOG:-}",
+        "SECSCAN_EPSS_CSV": "${SECSCAN_EPSS_CSV:-}",
         "SECSCAN_SSH_USER": "${SECSCAN_SSH_USER:-}",
         "SECSCAN_SSH_KEY": "${SECSCAN_SSH_KEY:-/run/secscan-ssh/id_ed25519}",
         "SECSCAN_SSH_KNOWN_HOSTS": "${SECSCAN_SSH_KNOWN_HOSTS:-/run/secscan-ssh/known_hosts}",
