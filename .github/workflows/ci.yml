@@ -65,6 +65,7 @@ jobs:
           docker tag secscan:ci secscan:local
           docker compose up --no-build --detach --wait
           curl --fail --silent http://127.0.0.1:8000/healthz
+          curl --fail --silent http://127.0.0.1:8000/login | grep --fixed-strings --quiet 'Sign in'
 
       - name: Verify authenticated Linux host fixture
         run: |
