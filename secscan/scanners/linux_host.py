@@ -1,19 +1,36 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
+import tempfile
+from urllib.parse import quote
 
 from secscan.models import Finding
+from secscan.normalize import normalize_trivy
 from secscan.scanners.base import ScanRequest, ScanResult, Scanner, ScannerCapability
 from secscan.scanners.network import validate_network_target
+from secscan.trivy import scan_sbom
 
 
 _USER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,31}$")
 _ALLOWED_FIREWALL_STATES = {"active", "inactive", "unknown", "unavailable"}
 _PACKAGE_PREFIX = "package"
+_TRIVY_OS_TYPES: dict[str, tuple[str, str, str]] = {
+    "ubuntu": ("deb", "ubuntu", "ubuntu"),
+    "debian": ("deb", "debian", "debian"),
+    "rhel": ("rpm", "redhat", "redhat"),
+    "centos": ("rpm", "centos", "centos"),
+    "rocky": ("rpm", "rocky", "rocky"),
+    "almalinux": ("rpm", "alma", "alma"),
+    "fedora": ("rpm", "fedora", "fedora"),
+    "amzn": ("rpm", "amazon", "amazon"),
+    "ol": ("rpm", "oracle", "oracle"),
+    "opensuse-leap": ("rpm", "opensuse", "opensuse"),
+}
 
 _REMOTE_SCRIPT = r"""set -eu
 emit() { printf '%s\t%s\n' "$1" "$2"; }
@@ -147,10 +164,106 @@ def _parse_output(output: str) -> tuple[dict[str, str], list[dict[str, str]]]:
     package_manager = values["package_manager"]
     if package_manager not in {"dpkg", "rpm", "unavailable"}:
         raise ValueError("Linux host assessment returned an invalid package manager")
-    normalized = [packages[package_key] | {"source": package_manager} for package_key in sorted(packages)]
+    normalized = [
+        packages[package_key] | {"source": package_manager}
+        for package_key in sorted(packages)
+    ]
     if package_manager == "unavailable" and normalized:
         raise ValueError("Linux host assessment returned packages without a supported package manager")
     return values, normalized
+
+
+def _trivy_os_metadata(values: dict[str, str]) -> tuple[str, str, str] | None:
+    os_id = values["os_id"].lower()
+    metadata = _TRIVY_OS_TYPES.get(os_id)
+    if metadata is None:
+        return None
+    expected_manager = "dpkg" if metadata[0] == "deb" else "rpm"
+    if values["package_manager"] != expected_manager:
+        return None
+    if not values["os_version"]:
+        return None
+    return metadata
+
+
+def _purl_component(
+    package: dict[str, str], values: dict[str, str], metadata: tuple[str, str, str]
+) -> dict[str, object]:
+    purl_type, namespace, pkg_type = metadata
+    name = package["name"]
+    version = package["version"]
+    architecture = package["architecture"]
+    distro = f"{values['os_id'].lower()}-{values['os_version']}"
+    purl = (
+        f"pkg:{purl_type}/{quote(namespace, safe='')}/{quote(name, safe='.-_~')}"
+        f"@{quote(version, safe='.:_-~')}?arch={quote(architecture, safe='.-_~')}"
+        f"&distro={quote(distro, safe='.-_~')}"
+    )
+    return {
+        "bom-ref": purl,
+        "type": "library",
+        "name": name,
+        "version": version,
+        "purl": purl,
+        "properties": [
+            {"name": "aquasecurity:trivy:PkgID", "value": f"{name}@{version}"},
+            {"name": "aquasecurity:trivy:PkgType", "value": pkg_type},
+        ],
+    }
+
+
+def _build_trivy_sbom(
+    values: dict[str, str], packages: list[dict[str, str]], target: str
+) -> dict[str, object] | None:
+    metadata = _trivy_os_metadata(values)
+    if metadata is None:
+        return None
+    components = [_purl_component(package, values, metadata) for package in packages]
+    return {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.6",
+        "version": 1,
+        "metadata": {
+            "component": {
+                "type": "device",
+                "name": target,
+                "version": values["os_version"],
+            }
+        },
+        "components": components,
+    }
+
+
+def _package_vulnerabilities(
+    values: dict[str, str], packages: list[dict[str, str]], target: str, timeout_seconds: int
+) -> tuple[tuple[Finding, ...], dict[str, object]]:
+    if not packages:
+        return (), {"status": "no_packages", "finding_count": 0}
+    sbom = _build_trivy_sbom(values, packages, target)
+    if sbom is None:
+        return (), {
+            "status": "unsupported_distro",
+            "finding_count": 0,
+            "os_id": values["os_id"],
+            "os_version": values["os_version"],
+        }
+    with tempfile.TemporaryDirectory(prefix="secscan-linux-sbom-") as temp_dir:
+        sbom_path = Path(temp_dir) / "linux-host.cdx.json"
+        sbom_path.write_text(json.dumps(sbom, sort_keys=True) + "\n", encoding="utf-8")
+        raw = scan_sbom(sbom_path, timeout_seconds=timeout_seconds)
+    normalized = tuple(
+        replace(
+            finding,
+            target=target,
+            package_type=f"linux-host/{finding.package_type or 'os'}",
+        )
+        for finding in normalize_trivy(raw)
+    )
+    return normalized, {
+        "status": "completed",
+        "finding_count": len(normalized),
+        "engine": "trivy-sbom",
+    }
 
 
 def _findings(values: dict[str, str], target: str) -> tuple[Finding, ...]:
@@ -162,30 +275,106 @@ def _findings(values: dict[str, str], target: str) -> tuple[Finding, ...]:
         except ValueError as exc:
             raise ValueError("Linux host assessment returned an invalid pending update count") from exc
         if pending_count > 0:
-            findings.append(Finding(vulnerability_id="LINUX-UPDATES-PENDING", package_name="operating-system", installed_version=f"{pending_count} pending package updates", fixed_version="apply reviewed package updates", severity="MEDIUM", title=f"[Linux host] {pending_count} package updates are pending", target=target, package_type="linux-host/posture", primary_url=None))
+            findings.append(
+                Finding(
+                    vulnerability_id="LINUX-UPDATES-PENDING",
+                    package_name="operating-system",
+                    installed_version=f"{pending_count} pending package updates",
+                    fixed_version="apply reviewed package updates",
+                    severity="MEDIUM",
+                    title=f"[Linux host] {pending_count} package updates are pending",
+                    target=target,
+                    package_type="linux-host/posture",
+                    primary_url=None,
+                )
+            )
     if values["ssh_password_auth"].lower() == "yes":
-        findings.append(Finding(vulnerability_id="SSH-PASSWORD-AUTH-ENABLED", package_name="openssh-server", installed_version="PasswordAuthentication yes", fixed_version="PasswordAuthentication no", severity="HIGH", title="[Linux host] SSH password authentication is enabled", target=target, package_type="linux-host/ssh", primary_url=None))
+        findings.append(
+            Finding(
+                vulnerability_id="SSH-PASSWORD-AUTH-ENABLED",
+                package_name="openssh-server",
+                installed_version="PasswordAuthentication yes",
+                fixed_version="PasswordAuthentication no",
+                severity="HIGH",
+                title="[Linux host] SSH password authentication is enabled",
+                target=target,
+                package_type="linux-host/ssh",
+                primary_url=None,
+            )
+        )
     if values["ssh_root_login"].lower() == "yes":
-        findings.append(Finding(vulnerability_id="SSH-ROOT-LOGIN-ENABLED", package_name="openssh-server", installed_version="PermitRootLogin yes", fixed_version="PermitRootLogin no or prohibit-password", severity="HIGH", title="[Linux host] Direct SSH root login is permitted", target=target, package_type="linux-host/ssh", primary_url=None))
+        findings.append(
+            Finding(
+                vulnerability_id="SSH-ROOT-LOGIN-ENABLED",
+                package_name="openssh-server",
+                installed_version="PermitRootLogin yes",
+                fixed_version="PermitRootLogin no or prohibit-password",
+                severity="HIGH",
+                title="[Linux host] Direct SSH root login is permitted",
+                target=target,
+                package_type="linux-host/ssh",
+                primary_url=None,
+            )
+        )
     uid0_accounts = [value for value in values["uid0_accounts"].split(",") if value]
     unexpected_uid0 = [value for value in uid0_accounts if value != "root"]
     if unexpected_uid0:
-        findings.append(Finding(vulnerability_id="LINUX-EXTRA-UID0-ACCOUNTS", package_name="local-accounts", installed_version=", ".join(unexpected_uid0), fixed_version="remove unnecessary UID 0 accounts", severity="CRITICAL", title="[Linux host] Additional UID 0 accounts were found", target=target, package_type="linux-host/accounts", primary_url=None))
+        findings.append(
+            Finding(
+                vulnerability_id="LINUX-EXTRA-UID0-ACCOUNTS",
+                package_name="local-accounts",
+                installed_version=", ".join(unexpected_uid0),
+                fixed_version="remove unnecessary UID 0 accounts",
+                severity="CRITICAL",
+                title="[Linux host] Additional UID 0 accounts were found",
+                target=target,
+                package_type="linux-host/accounts",
+                primary_url=None,
+            )
+        )
     firewall_state = values["firewall_state"].lower()
     if firewall_state not in _ALLOWED_FIREWALL_STATES:
         firewall_state = "unknown"
     if firewall_state == "inactive":
-        findings.append(Finding(vulnerability_id="LINUX-HOST-FIREWALL-INACTIVE", package_name="host-firewall", installed_version="inactive", fixed_version="enable and configure an appropriate host firewall", severity="MEDIUM", title="[Linux host] Host firewall is inactive", target=target, package_type="linux-host/firewall", primary_url=None))
+        findings.append(
+            Finding(
+                vulnerability_id="LINUX-HOST-FIREWALL-INACTIVE",
+                package_name="host-firewall",
+                installed_version="inactive",
+                fixed_version="enable and configure an appropriate host firewall",
+                severity="MEDIUM",
+                title="[Linux host] Host firewall is inactive",
+                target=target,
+                package_type="linux-host/firewall",
+                primary_url=None,
+            )
+        )
     world_writable = [value for value in values["world_writable_etc"].split(",") if value]
     if world_writable:
-        findings.append(Finding(vulnerability_id="LINUX-WORLD-WRITABLE-ETC-FILES", package_name="filesystem-permissions", installed_version=", ".join(world_writable), fixed_version="remove world-write permission from sensitive configuration files", severity="HIGH", title="[Linux host] World-writable files were found under /etc", target=target, package_type="linux-host/filesystem", primary_url=None))
+        findings.append(
+            Finding(
+                vulnerability_id="LINUX-WORLD-WRITABLE-ETC-FILES",
+                package_name="filesystem-permissions",
+                installed_version=", ".join(world_writable),
+                fixed_version="remove world-write permission from sensitive configuration files",
+                severity="HIGH",
+                title="[Linux host] World-writable files were found under /etc",
+                target=target,
+                package_type="linux-host/filesystem",
+                primary_url=None,
+            )
+        )
     return tuple(findings)
 
 
 class LinuxHostScanner(Scanner):
     @property
     def capability(self) -> ScannerCapability:
-        return ScannerCapability(name="linux-host", description="authenticated Linux host posture and package inventory assessment over key-based SSH", target_help="single Linux hostname or IP address")
+        return ScannerCapability(
+            name="linux-host",
+            description="authenticated Linux host posture, package inventory, and package CVE assessment over key-based SSH",
+            target_help="single Linux hostname or IP address",
+        )
 
     def scan(self, request: ScanRequest) -> ScanResult:
         target = validate_network_target(request.target)
@@ -193,9 +382,57 @@ class LinuxHostScanner(Scanner):
         key_path = _required_file(request, "SECSCAN_SSH_KEY")
         known_hosts = _required_file(request, "SECSCAN_SSH_KNOWN_HOSTS")
         port = _ssh_port(request)
-        command = ["ssh", "-F", "/dev/null", "-T", "-o", "BatchMode=yes", "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no", "-o", "ChallengeResponseAuthentication=no", "-o", "PreferredAuthentications=publickey", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes", "-o", f"UserKnownHostsFile={known_hosts}", "-o", "GlobalKnownHostsFile=/dev/null", "-o", "ForwardAgent=no", "-o", "ForwardX11=no", "-o", "PermitLocalCommand=no", "-o", "RequestTTY=no", "-o", "ConnectTimeout=10", "-p", str(port), "-i", str(key_path), f"{user}@{target}", "--", "sh", "-s"]
+        command = [
+            "ssh",
+            "-F",
+            "/dev/null",
+            "-T",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "PasswordAuthentication=no",
+            "-o",
+            "KbdInteractiveAuthentication=no",
+            "-o",
+            "ChallengeResponseAuthentication=no",
+            "-o",
+            "PreferredAuthentications=publickey",
+            "-o",
+            "IdentitiesOnly=yes",
+            "-o",
+            "StrictHostKeyChecking=yes",
+            "-o",
+            f"UserKnownHostsFile={known_hosts}",
+            "-o",
+            "GlobalKnownHostsFile=/dev/null",
+            "-o",
+            "ForwardAgent=no",
+            "-o",
+            "ForwardX11=no",
+            "-o",
+            "PermitLocalCommand=no",
+            "-o",
+            "RequestTTY=no",
+            "-o",
+            "ConnectTimeout=10",
+            "-p",
+            str(port),
+            "-i",
+            str(key_path),
+            f"{user}@{target}",
+            "--",
+            "sh",
+            "-s",
+        ]
         try:
-            completed = subprocess.run(command, input=_REMOTE_SCRIPT, text=True, capture_output=True, check=False, timeout=request.timeout_seconds)
+            completed = subprocess.run(
+                command,
+                input=_REMOTE_SCRIPT,
+                text=True,
+                capture_output=True,
+                check=False,
+                timeout=request.timeout_seconds,
+            )
         except FileNotFoundError as exc:
             raise ValueError("OpenSSH client is required for linux-host assessments") from exc
         except subprocess.TimeoutExpired as exc:
@@ -207,8 +444,54 @@ class LinuxHostScanner(Scanner):
         values, packages = _parse_output(completed.stdout)
         if values["os_kernel"].lower() != "linux":
             raise ValueError("linux-host target did not report a Linux kernel")
-        findings = _findings(values, target)
-        return ScanResult(request=request, findings=findings, raw={"schema_version": 2, "target": target, "host": {"os_kernel": values["os_kernel"], "kernel_release": values["kernel_release"], "os_id": values["os_id"], "os_version": values["os_version"]}, "checks": {"pending_updates": values["pending_updates"], "ssh_password_auth": values["ssh_password_auth"], "ssh_root_login": values["ssh_root_login"], "firewall_state": values["firewall_state"], "uid0_accounts": values["uid0_accounts"], "world_writable_etc": values["world_writable_etc"]}, "package_inventory": {"manager": values["package_manager"], "count": len(packages), "packages": packages}}, scanner={"name": "secscan-linux-host", "version": "ssh-posture-packages-v2"})
+        posture_findings = _findings(values, target)
+        vulnerability_findings, vulnerability_scan = _package_vulnerabilities(
+            values, packages, target, request.timeout_seconds
+        )
+        findings = posture_findings + vulnerability_findings
+        return ScanResult(
+            request=request,
+            findings=findings,
+            raw={
+                "schema_version": 3,
+                "target": target,
+                "host": {
+                    "os_kernel": values["os_kernel"],
+                    "kernel_release": values["kernel_release"],
+                    "os_id": values["os_id"],
+                    "os_version": values["os_version"],
+                },
+                "checks": {
+                    "pending_updates": values["pending_updates"],
+                    "ssh_password_auth": values["ssh_password_auth"],
+                    "ssh_root_login": values["ssh_root_login"],
+                    "firewall_state": values["firewall_state"],
+                    "uid0_accounts": values["uid0_accounts"],
+                    "world_writable_etc": values["world_writable_etc"],
+                },
+                "package_inventory": {
+                    "manager": values["package_manager"],
+                    "count": len(packages),
+                    "packages": packages,
+                },
+                "package_vulnerability_scan": vulnerability_scan,
+            },
+            scanner={"name": "secscan-linux-host", "version": "ssh-posture-packages-cves-v3"},
+        )
 
     def generate_sbom(self, request: ScanRequest, output_path: Path) -> None:
-        output_path.write_text(json.dumps({"bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1, "metadata": {"component": {"type": "device", "name": request.target}}, "components": []}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        output_path.write_text(
+            json.dumps(
+                {
+                    "bomFormat": "CycloneDX",
+                    "specVersion": "1.6",
+                    "version": 1,
+                    "metadata": {"component": {"type": "device", "name": request.target}},
+                    "components": [],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )

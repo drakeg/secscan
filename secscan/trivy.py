@@ -70,6 +70,34 @@ def _scan_path(mode: str, target: Path, timeout_seconds: int) -> dict[str, Any]:
         return _read_json_output(output_path)
 
 
+def _trivy_compatible_sbom(target: Path, temp_dir: Path) -> Path:
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return target
+    if not isinstance(payload, dict) or payload.get("bomFormat") != "CycloneDX":
+        return target
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        return target
+    component = metadata.get("component")
+    if not isinstance(component, dict) or component.get("type") != "device":
+        return target
+
+    compatible = dict(payload)
+    compatible_metadata = dict(metadata)
+    compatible_component = dict(component)
+    compatible_component["type"] = "application"
+    compatible_metadata["component"] = compatible_component
+    compatible["metadata"] = compatible_metadata
+    compatible_path = temp_dir / "trivy-compatible.cdx.json"
+    compatible_path.write_text(
+        json.dumps(compatible, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return compatible_path
+
+
 def _generate_path_cyclonedx(
     mode: str, target: Path, output_path: Path, timeout_seconds: int
 ) -> None:
@@ -124,7 +152,10 @@ def scan_repository(target: Path, timeout_seconds: int = 600) -> dict[str, Any]:
 
 
 def scan_sbom(target: Path, timeout_seconds: int = 600) -> dict[str, Any]:
-    return _scan_path("sbom", target, timeout_seconds)
+    with tempfile.TemporaryDirectory(prefix="secscan-sbom-") as temp_dir_name:
+        temp_dir = Path(temp_dir_name)
+        compatible_target = _trivy_compatible_sbom(target, temp_dir)
+        return _scan_path("sbom", compatible_target, timeout_seconds)
 
 
 def generate_cyclonedx(
