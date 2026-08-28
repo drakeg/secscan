@@ -49,9 +49,12 @@ def main() -> None:
         api_token=None,
     )
     if isinstance(app, FastAPI):
-        mount_web_ui(app, job_root=args.job_root, job_database=args.job_database)
-        mount_ssh_host_trust(app, database=database)
+        # Starlette routes are order-sensitive. The web UI mounts StaticFiles at
+        # "/" as a catch-all, so every explicit extension route must be registered
+        # before mount_web_ui() adds that final static mount.
         mount_auth(app, database=database, api_token=api_token)
+        mount_ssh_host_trust(app, database=database)
+        mount_web_ui(app, job_root=args.job_root, job_database=args.job_database)
     uvicorn.run(
         app,
         host=args.host,
