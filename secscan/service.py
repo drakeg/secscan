@@ -20,8 +20,10 @@ from pydantic import BaseModel, Field
 
 from secscan.scanners.network import validate_network_target
 from secscan.scanners.repository import is_remote_repository_url, validate_remote_repository_url
+from secscan.scanners.web_dast import validate_web_target
 
 JobStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
+ScannerName = Literal["image", "filesystem", "repository", "sbom", "network", "web-dast"]
 ScanRunner = Callable[[list[str]], int]
 ARTIFACT_MANIFEST_NAME = "artifacts.json"
 MIN_API_TOKEN_LENGTH = 32
@@ -38,13 +40,14 @@ ARTIFACT_PATHS = {
 
 
 class ScanSubmission(BaseModel):
-    scanner: Literal["image", "filesystem", "repository", "sbom", "network"]
+    scanner: ScannerName
     target: str = Field(min_length=1)
     fail_on: Literal["NONE", "UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"] | None = None
     policy: str | None = None
     baseline: str | None = None
     timeout: int = Field(default=600, ge=1, le=86400)
     network_authorized: bool = False
+    web_authorized: bool = False
 
 
 @dataclass
@@ -224,11 +227,15 @@ class JobManager:
         return record
 
     def _validate_submission(self, request: ScanSubmission) -> None:
-        if request.scanner != "network":
+        if request.scanner == "network":
+            if not request.network_authorized:
+                raise ValueError("network scans require explicit authorization acknowledgement")
+            validate_network_target(request.target)
             return
-        if not request.network_authorized:
-            raise ValueError("network scans require explicit authorization acknowledgement")
-        validate_network_target(request.target)
+        if request.scanner == "web-dast":
+            if not request.web_authorized:
+                raise ValueError("web DAST scans require explicit authorization acknowledgement")
+            validate_web_target(request.target)
 
     def _validate_input_paths(self, request: ScanSubmission) -> None:
         remote_repository = request.scanner == "repository" and is_remote_repository_url(request.target)
@@ -541,7 +548,7 @@ def create_app(
     @app.get("/api/v1/jobs")
     def list_jobs(
         status: JobStatus | None = None,
-        scanner: Literal["image", "filesystem", "repository", "sbom", "network"] | None = None,
+        scanner: ScannerName | None = None,
         limit: int = Query(default=20, ge=1, le=100),
     ) -> list[dict[str, object]]:
         return [asdict(record) for record in get_manager().list(status=status, scanner=scanner, limit=limit)]
