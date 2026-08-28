@@ -30,6 +30,7 @@ def test_default_registry_contains_builtin_scanners() -> None:
     assert registry.get("repository-trivy").capability.name == "repository-trivy"
     assert registry.get("network").capability.name == "network"
     assert registry.get("linux-host").capability.name == "linux-host"
+    assert registry.get("windows-host").capability.name == "windows-host"
     assert registry.get("sbom").capability.name == "sbom"
     assert [capability.name for capability in registry.capabilities()] == [
         "filesystem",
@@ -40,6 +41,7 @@ def test_default_registry_contains_builtin_scanners() -> None:
         "repository",
         "repository-trivy",
         "sbom",
+        "windows-host",
     ]
 
 

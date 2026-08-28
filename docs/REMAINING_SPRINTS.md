@@ -2,21 +2,17 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 49
+## Completed through Sprint 50
 
-Sprints 0–49 are complete, including repository/image/SBOM scanning, policy and baselines, service/history/reporting, AWS ECR discovery/scanning, web UI, Nmap/Nuclei network assessment, authenticated Linux posture/package/CVE scanning, local accounts and encrypted SSH credentials, CISA KEV enrichment, FIRST EPSS enrichment, and explainable KEV/EPSS-aware web prioritization.
+Sprints 0–50 are complete, including repository/image/SBOM scanning, policy and baselines, service/history/reporting, AWS ECR discovery/scanning, web UI, Nmap/Nuclei network assessment, authenticated Linux posture/package/CVE scanning, local accounts and encrypted SSH credentials, CISA KEV enrichment, FIRST EPSS enrichment, explainable KEV/EPSS-aware web prioritization, and persistent first-class asset inventory with scan-history association.
 
 ## Current sprint
 
-### Sprint 50 — Persistent Asset Inventory and Reassessment Foundation
-
-Create durable first-class assets for supported scanner/target identities, associate their existing scan history, and expose latest-scan/scan-count evidence without adding automatic scheduling yet.
-
-## Candidate remaining sprints
-
 ### Sprint 51 — Authenticated Windows Host Assessment
 
-Add a bounded, read-only authenticated Windows assessment path with strong credential handling, explicit host trust/authentication boundaries, installed software/patch posture, normalized findings, and no target-side agent requirement.
+Add a bounded, read-only authenticated Windows assessment path using key-only OpenSSH, explicit host trust, installed-software inventory, patch/posture evidence, and normalized findings without a target-side secscan agent.
+
+## Candidate remaining sprints
 
 ### Sprint 52 — Bounded Network-Range Assessment
 
@@ -54,6 +50,7 @@ Add integrity/authenticity controls for shared policy bundles, controlled distri
 
 These remain valid ideas but are intentionally not assigned fixed sprint numbers yet:
 
+- Windows web/API submission and reusable credential-profile workflow after the CLI scanner boundary is accepted
 - richer remediation analytics and censored-aware timing metrics
 - additional SBOM formats
 - deeper license/dependency governance
