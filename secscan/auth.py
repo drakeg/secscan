@@ -20,7 +20,7 @@ from starlette.types import ASGIApp
 
 SESSION_COOKIE = "secscan_session"
 SESSION_DAYS = 7
-_PUBLIC_PATHS = {"/healthz", "/login", "/register", "/api/v1/auth/login", "/api/v1/auth/register"}
+_PUBLIC_PATHS = {"/", "/healthz", "/login", "/register", "/api/v1/auth/login", "/api/v1/auth/register"}
 _PUBLIC_PREFIXES = (
     "/styles.css",
     "/dashboard.css",

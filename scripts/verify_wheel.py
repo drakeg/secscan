@@ -18,6 +18,7 @@ REQUIRED_FILES = {
     "secscan/models.py",
     "secscan/normalize.py",
     "secscan/policy.py",
+    "secscan/public_site.py",
     "secscan/report.py",
     "secscan/service.py",
     "secscan/service_cli.py",
