@@ -54,6 +54,11 @@ def test_web_assets_are_served(tmp_path: Path) -> None:
     assert "priority-targets" in dashboard_script.text
     assert "vuln-chip critical" in dashboard_script.text
     assert "https://github.com/org/repository.git" in dashboard_script.text
+    assert "known_exploited" in dashboard_script.text
+    assert "max_epss_score" in dashboard_script.text
+    assert "comparePriority" in dashboard_script.text
+    assert "KEV" in dashboard_script.text
+    assert "EPSS" in dashboard_script.text
     assert dashboard_styles.status_code == 200
     assert ".security-dashboard-grid" in dashboard_styles.text
     assert ".priority-bar" in dashboard_styles.text
