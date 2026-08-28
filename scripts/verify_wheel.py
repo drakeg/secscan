@@ -43,6 +43,7 @@ REQUIRED_FILES = {
     "secscan/scanners/network.py",
     "secscan/scanners/repository.py",
     "secscan/scanners/sbom.py",
+    "secscan/scanners/web_dast.py",
     "secscan/scanners/windows_host.py",
 }
 

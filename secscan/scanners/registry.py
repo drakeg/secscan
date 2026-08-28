@@ -36,6 +36,7 @@ def build_default_registry() -> ScannerRegistry:
     from secscan.scanners.network import NetworkRangeScanner, NetworkScanner
     from secscan.scanners.repository import RepositoryScanner
     from secscan.scanners.sbom import SBOMScanner
+    from secscan.scanners.web_dast import WebDastScanner
     from secscan.scanners.windows_host import WindowsHostScanner
 
     class DefaultRepositoryScanner(FullRepositoryScanner):
@@ -56,6 +57,7 @@ def build_default_registry() -> ScannerRegistry:
             FullRepositoryScanner(),
             NetworkScanner(),
             NetworkRangeScanner(),
+            WebDastScanner(),
             LinuxHostScanner(),
             WindowsHostScanner(),
             SBOMScanner(),
