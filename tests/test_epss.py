@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 
 from secscan.epss import enrich_finding_documents, load_epss_scores
+from secscan.models import Finding
+from secscan.report import build_report
 
 
 def _scores(path: Path) -> Path:
@@ -34,7 +36,56 @@ def test_load_and_enrich_epss_scores(tmp_path: Path) -> None:
     assert "epss" not in findings[1]
 
 
-def test_epss_requires_absolute_existing_path(tmp_path: Path) -> None:
+def test_build_report_uses_opt_in_local_epss_scores(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    score_path = _scores(tmp_path / "epss.csv")
+    monkeypatch.delenv("SECSCAN_KEV_CATALOG", raising=False)
+    monkeypatch.setenv("SECSCAN_EPSS_CSV", str(score_path))
+    report = build_report(
+        "example",
+        [
+            Finding(
+                vulnerability_id="CVE-2024-1234",
+                package_name="example",
+                installed_version="1.0",
+                fixed_version="1.1",
+                severity="HIGH",
+                title="Example",
+                target="example",
+                package_type="os",
+                primary_url=None,
+            )
+        ],
+        {"name": "test", "version": "1"},
+    )
+
+    assert report["schema_version"] == "1.2"
+    assert report["summary"]["epss_scored"] == 1
+    assert report["summary"]["max_epss_score"] == pytest.approx(0.42)
+    assert report["enrichment"]["epss"] == {
+        "status": "enabled",
+        "scored_findings": 1,
+        "score_entries": 2,
+        "max_score": pytest.approx(0.42),
+    }
+    assert report["findings"][0]["epss"] == {"score": 0.42, "percentile": 0.97}
+
+
+def test_build_report_keeps_epss_disabled_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SECSCAN_KEV_CATALOG", raising=False)
+    monkeypatch.delenv("SECSCAN_EPSS_CSV", raising=False)
+    report = build_report("example", [], {"name": "test", "version": "1"})
+    assert report["schema_version"] == "1.0"
+    assert report["enrichment"]["epss"] == {
+        "status": "disabled",
+        "scored_findings": 0,
+    }
+
+
+def test_epss_requires_absolute_existing_path() -> None:
     with pytest.raises(ValueError, match="absolute CSV file"):
         load_epss_scores(Path("epss.csv"))
 
