@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import html
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from secscan.kev import enrich_finding_documents, load_kev_catalog
 from secscan.models import Finding
 from secscan.normalize import summarize
 
@@ -16,13 +18,27 @@ def build_report(
     scanner: dict[str, Any],
     target_type: str = "container_image",
 ) -> dict[str, Any]:
+    finding_documents = [finding.to_dict() for finding in findings]
+    summary = summarize(findings)
+    kev_catalog = os.environ.get("SECSCAN_KEV_CATALOG")
+    enrichment: dict[str, Any] = {"cisa_kev": {"status": "disabled", "known_exploited": 0}}
+    if kev_catalog:
+        catalog = load_kev_catalog(Path(kev_catalog))
+        finding_documents, known_exploited = enrich_finding_documents(finding_documents, catalog)
+        summary["known_exploited"] = known_exploited
+        enrichment["cisa_kev"] = {
+            "status": "enabled",
+            "known_exploited": known_exploited,
+            "catalog_entries": len(catalog),
+        }
     return {
-        "schema_version": "1.0",
+        "schema_version": "1.1" if kev_catalog else "1.0",
         "generated_at": datetime.now(UTC).isoformat(),
         "target": {"type": target_type, "name": target},
         "scanner": scanner,
-        "summary": summarize(findings),
-        "findings": [finding.to_dict() for finding in findings],
+        "summary": summary,
+        "enrichment": enrichment,
+        "findings": finding_documents,
     }
 
 
@@ -55,10 +71,19 @@ def write_html(report: dict[str, Any], output: Path) -> None:
             else vulnerability
         )
         fixed = finding.get("fixed_version") or "No fix listed"
+        kev = finding.get("kev")
+        kev_html = "No"
+        if finding.get("known_exploited") is True and isinstance(kev, dict):
+            ransomware = kev.get("known_ransomware_campaign_use")
+            due_date = kev.get("due_date")
+            kev_html = f"Yes — due {_cell(due_date)}"
+            if ransomware == "Known":
+                kev_html += " — ransomware observed"
         rows.append(
             "<tr>"
             f"<td>{_cell(finding.get('severity'))}</td>"
             f"<td>{vulnerability_html}</td>"
+            f"<td>{kev_html}</td>"
             f"<td>{_cell(finding.get('package_name'))}</td>"
             f"<td>{_cell(finding.get('installed_version'))}</td>"
             f"<td>{_cell(fixed)}</td>"
@@ -66,6 +91,9 @@ def write_html(report: dict[str, Any], output: Path) -> None:
             "</tr>"
         )
 
+    card_levels = ["CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN", "total"]
+    if "known_exploited" in summary:
+        card_levels.append("known_exploited")
     summary_cards = "".join(
         (
             '<div class="card">'
@@ -73,9 +101,9 @@ def write_html(report: dict[str, Any], output: Path) -> None:
             f"<span>{_cell(summary.get(level, 0))}</span>"
             "</div>"
         )
-        for level in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN", "total")
+        for level in card_levels
     )
-    table_body = "".join(rows) or '<tr><td colspan="6">No vulnerabilities found.</td></tr>'
+    table_body = "".join(rows) or '<tr><td colspan="7">No vulnerabilities found.</td></tr>'
     target_name = _cell(report.get("target", {}).get("name"))
     target_type = _cell(report.get("target", {}).get("type"))
     generated_at = _cell(report.get("generated_at"))
@@ -126,6 +154,7 @@ code {{ background: #f3f4f6; padding: .1rem .25rem; border-radius: .2rem; }}
 <tr>
   <th>Severity</th>
   <th>Vulnerability</th>
+  <th>CISA KEV</th>
   <th>Package</th>
   <th>Installed</th>
   <th>Fixed</th>
