@@ -43,6 +43,7 @@ def test_service_cli_propagates_repeated_allowed_input_roots(
 
 def test_service_cli_routes_api_token_through_outer_auth_middleware(monkeypatch: MonkeyPatch) -> None:
     create_app_kwargs: dict[str, object] = {}
+    mount_public_kwargs: dict[str, object] = {}
     mount_auth_kwargs: dict[str, object] = {}
     mount_trust_kwargs: dict[str, object] = {}
     mount_assets_kwargs: dict[str, object] = {}
@@ -53,6 +54,10 @@ def test_service_cli_routes_api_token_through_outer_auth_middleware(monkeypatch:
         secscan.service,
         "create_app",
         lambda **kwargs: create_app_kwargs.update(kwargs) or app,
+    )
+    monkeypatch.setattr(
+        "secscan.public_site.mount_public_site",
+        lambda _app, **kwargs: mount_order.append("public") or mount_public_kwargs.update(kwargs) or _app,
     )
     monkeypatch.setattr(
         secscan.auth,
@@ -78,13 +83,14 @@ def test_service_cli_routes_api_token_through_outer_auth_middleware(monkeypatch:
     service_cli.main()
 
     assert create_app_kwargs["api_token"] is None
+    assert mount_public_kwargs["database"] == Path("/reports/jobs/jobs.db")
     assert mount_auth_kwargs["api_token"] == "a" * 32
     assert mount_trust_kwargs["database"] == Path("/reports/jobs/jobs.db")
     assert mount_assets_kwargs["database"] == Path("/reports/jobs/jobs.db")
-    assert mount_order == ["auth", "trust", "assets", "web"]
+    assert mount_order == ["public", "auth", "trust", "assets", "web"]
 
 
-def test_service_cli_login_route_precedes_static_catch_all(
+def test_service_cli_public_landing_and_protected_workspace_precede_static_catch_all(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
     captured: dict[str, object] = {}
@@ -111,10 +117,16 @@ def test_service_cli_login_route_precedes_static_catch_all(
     app = captured["app"]
     assert isinstance(app, FastAPI)
     client = TestClient(app)
+
+    root = client.get("/", follow_redirects=False)
+    assert root.status_code == 200
+    assert "Find what needs fixing first" in root.text
+    assert "Compare plans" in root.text
+
     login = client.get("/login")
     assert login.status_code == 200
     assert "Sign in" in login.text
 
-    root = client.get("/", follow_redirects=False)
-    assert root.status_code == 303
-    assert root.headers["location"] == "/login"
+    workspace = client.get("/app", follow_redirects=False)
+    assert workspace.status_code == 303
+    assert workspace.headers["location"] == "/login"
