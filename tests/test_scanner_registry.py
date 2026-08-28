@@ -29,6 +29,7 @@ def test_default_registry_contains_builtin_scanners() -> None:
     assert registry.get("full-repository").capability.name == "full-repository"
     assert registry.get("repository-trivy").capability.name == "repository-trivy"
     assert registry.get("network").capability.name == "network"
+    assert registry.get("network-range").capability.name == "network-range"
     assert registry.get("linux-host").capability.name == "linux-host"
     assert registry.get("windows-host").capability.name == "windows-host"
     assert registry.get("sbom").capability.name == "sbom"
@@ -38,6 +39,7 @@ def test_default_registry_contains_builtin_scanners() -> None:
         "image",
         "linux-host",
         "network",
+        "network-range",
         "repository",
         "repository-trivy",
         "sbom",
