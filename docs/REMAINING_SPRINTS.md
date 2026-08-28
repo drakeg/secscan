@@ -2,21 +2,17 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 48
+## Completed through Sprint 49
 
-Sprints 0–48 are complete, including repository/image/SBOM scanning, policy and baselines, service/history/reporting, AWS ECR discovery/scanning, web UI, Nmap/Nuclei network assessment, authenticated Linux posture/package/CVE scanning, local accounts and encrypted SSH credentials, CISA KEV enrichment, and FIRST EPSS enrichment.
+Sprints 0–49 are complete, including repository/image/SBOM scanning, policy and baselines, service/history/reporting, AWS ECR discovery/scanning, web UI, Nmap/Nuclei network assessment, authenticated Linux posture/package/CVE scanning, local accounts and encrypted SSH credentials, CISA KEV enrichment, FIRST EPSS enrichment, and explainable KEV/EPSS-aware web prioritization.
 
 ## Current sprint
 
-### Sprint 49 — Explainable Web Risk Prioritization
+### Sprint 50 — Persistent Asset Inventory and Reassessment Foundation
 
-Surface KEV and EPSS in the browser and prioritize current targets using displayed, deterministic signals rather than an opaque aggregate score.
+Create durable first-class assets for supported scanner/target identities, associate their existing scan history, and expose latest-scan/scan-count evidence without adding automatic scheduling yet.
 
 ## Candidate remaining sprints
-
-### Sprint 50 — Persistent Asset Inventory and Reassessment
-
-Create first-class persistent assets for hosts, repositories, images, and other supported targets; associate scan history with those assets; and make reassessment status visible without requiring users to reconstruct assets from job history.
 
 ### Sprint 51 — Authenticated Windows Host Assessment
 
