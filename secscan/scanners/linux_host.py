@@ -118,13 +118,17 @@ def _parse_output(output: str) -> tuple[dict[str, str], list[dict[str, str]]]:
             if len(fields) != 4 or not all(fields[1:]):
                 raise ValueError("Linux host assessment returned malformed package inventory")
             name, version, architecture = (value.strip() for value in fields[1:])
-            key = (name, version, architecture)
-            packages[key] = {"name": name, "version": version, "architecture": architecture}
+            package_key = (name, version, architecture)
+            packages[package_key] = {
+                "name": name,
+                "version": version,
+                "architecture": architecture,
+            }
             continue
-        key, separator, value = raw_line.partition("\t")
-        if separator != "\t" or not key or key in values:
+        output_key, separator, value = raw_line.partition("\t")
+        if separator != "\t" or not output_key or output_key in values:
             raise ValueError("Linux host assessment returned malformed output")
-        values[key] = value.strip()
+        values[output_key] = value.strip()
     required = {
         "os_kernel",
         "kernel_release",
@@ -143,7 +147,7 @@ def _parse_output(output: str) -> tuple[dict[str, str], list[dict[str, str]]]:
     package_manager = values["package_manager"]
     if package_manager not in {"dpkg", "rpm", "unavailable"}:
         raise ValueError("Linux host assessment returned an invalid package manager")
-    normalized = [packages[key] | {"source": package_manager} for key in sorted(packages)]
+    normalized = [packages[package_key] | {"source": package_manager} for package_key in sorted(packages)]
     if package_manager == "unavailable" and normalized:
         raise ValueError("Linux host assessment returned packages without a supported package manager")
     return values, normalized
