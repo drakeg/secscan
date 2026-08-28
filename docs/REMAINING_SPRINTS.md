@@ -2,21 +2,17 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 51
+## Completed through Sprint 52
 
-Sprints 0–51 are complete, including repository/image/SBOM scanning, policy and baselines, service/history/reporting, AWS ECR discovery/scanning, web UI, Nmap/Nuclei network assessment, authenticated Linux posture/package/CVE scanning, local accounts and encrypted SSH credentials, CISA KEV enrichment, FIRST EPSS enrichment, explainable KEV/EPSS-aware web prioritization, persistent first-class asset inventory with scan-history association, and authenticated Windows posture/software assessment over strict key-only OpenSSH.
+Sprints 0–52 are complete, including repository/image/SBOM scanning, policy and baselines, service/history/reporting, AWS ECR discovery/scanning, web UI, Nmap/Nuclei network assessment, authenticated Linux posture/package/CVE scanning, local accounts and encrypted SSH credentials, CISA KEV enrichment, FIRST EPSS enrichment, explainable KEV/EPSS-aware web prioritization, persistent first-class asset inventory with scan-history association, authenticated Windows posture/software assessment over strict key-only OpenSSH, and a public product experience with Free/Professional account-plan foundations.
 
 ## Current sprint
 
-### Sprint 52 — Public Product Experience and Account Plans
-
-Replace forced-login entry with a public product landing page, keep the scanner workspace protected at `/app`, require a Free or Professional tier during registration, persist/manage plan selection, and enforce the first server-side Professional-only authenticated-host web boundaries without adding payment processing.
-
-## Candidate remaining sprints
-
 ### Sprint 53 — Bounded Network-Range Assessment
 
-Expand single-host Nmap/Nuclei assessment to explicitly authorized, tightly bounded IP/CIDR target sets with hard maximums, deterministic target expansion, rate/concurrency controls, and clear audit evidence.
+Expand the existing network assessment core with a distinct CLI `network-range` capability that accepts only literal IP/CIDR input, expands deterministically to at most 16 hosts, executes sequentially, reuses the fixed Nmap/Nuclei single-host scanner, and records exact audit evidence without changing the existing web/API single-host contract.
+
+## Candidate remaining sprints
 
 ### Sprint 54 — Web/API DAST Expansion
 
@@ -54,6 +50,7 @@ Add integrity/authenticity controls for shared policy bundles, controlled distri
 
 These remain valid ideas but are intentionally not assigned fixed sprint numbers yet:
 
+- authenticated web/API submission for the bounded `network-range` scanner with explicit authorization acknowledgement
 - Windows web/API submission and reusable credential-profile workflow after the CLI scanner boundary is accepted
 - richer remediation analytics and censored-aware timing metrics
 - additional SBOM formats

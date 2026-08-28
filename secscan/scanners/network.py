@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+import ipaddress
 import json
 from pathlib import Path
 import re
@@ -13,6 +15,7 @@ from secscan.scanners.base import ScanRequest, ScanResult, Scanner, ScannerCapab
 
 _HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,252}$")
 NUCLEI_TEMPLATES_PATH = "/opt/nuclei-templates"
+MAX_NETWORK_RANGE_TARGETS = 16
 
 
 def validate_network_target(target: str) -> str:
@@ -26,6 +29,27 @@ def validate_network_target(target: str) -> str:
     except socket.gaierror as exc:
         raise ValueError(f"network target could not be resolved: {value}") from exc
     return value
+
+
+def expand_network_range(target: str, *, maximum: int = MAX_NETWORK_RANGE_TARGETS) -> tuple[str, ...]:
+    value = target.strip()
+    if not value or " " in value or "," in value or "://" in value:
+        raise ValueError("network range target must be one literal IP address or CIDR")
+    try:
+        if "/" in value:
+            network = ipaddress.ip_network(value, strict=False)
+            addresses = tuple(str(address) for address in network.hosts())
+            if not addresses and network.num_addresses == 1:
+                addresses = (str(network.network_address),)
+        else:
+            addresses = (str(ipaddress.ip_address(value)),)
+    except ValueError as exc:
+        raise ValueError("network range target must be one literal IP address or CIDR") from exc
+    if not addresses:
+        raise ValueError("network range did not contain any scannable host addresses")
+    if len(addresses) > maximum:
+        raise ValueError(f"network range expands to {len(addresses)} hosts; maximum is {maximum}")
+    return addresses
 
 
 def _run(command: list[str], *, timeout: int, tool: str) -> subprocess.CompletedProcess[str]:
@@ -171,6 +195,61 @@ class NetworkScanner(Scanner):
                 "engines": {"nmap_xml": nmap.stdout, "nuclei_jsonl": nuclei.stdout},
             },
             scanner={"name": "secscan-network", "version": "nmap+nuclei"},
+        )
+
+    def generate_sbom(self, request: ScanRequest, output_path: Path) -> None:
+        output_path.write_text(
+            json.dumps(
+                {
+                    "bomFormat": "CycloneDX",
+                    "specVersion": "1.6",
+                    "version": 1,
+                    "metadata": {"component": {"type": "device", "name": request.target}},
+                    "components": [],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+
+class NetworkRangeScanner(Scanner):
+    @property
+    def capability(self) -> ScannerCapability:
+        return ScannerCapability(
+            name="network-range",
+            description="bounded authorized IP/CIDR exposure assessment with sequential Nmap and Nuclei scans",
+            target_help=f"literal IP address or CIDR expanding to at most {MAX_NETWORK_RANGE_TARGETS} hosts",
+        )
+
+    def scan(self, request: ScanRequest) -> ScanResult:
+        targets = expand_network_range(request.target)
+        scanner = NetworkScanner()
+        findings: list[Finding] = []
+        target_results: list[dict[str, object]] = []
+        for target in targets:
+            child_request = replace(request, scanner_name="network", target=target)
+            result = scanner.scan(child_request)
+            findings.extend(result.findings)
+            target_results.append({"target": target, "raw": result.raw})
+        return ScanResult(
+            request=request,
+            findings=_deduplicate(findings),
+            raw={
+                "schema_version": 1,
+                "requested_target": request.target,
+                "expanded_targets": list(targets),
+                "target_count": len(targets),
+                "controls": {
+                    "maximum_targets": MAX_NETWORK_RANGE_TARGETS,
+                    "concurrency": 1,
+                    "ordering": "ascending-address",
+                },
+                "targets": target_results,
+            },
+            scanner={"name": "secscan-network-range", "version": "bounded-sequential-v1"},
         )
 
     def generate_sbom(self, request: ScanRequest, output_path: Path) -> None:
