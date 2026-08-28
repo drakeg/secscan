@@ -4,7 +4,7 @@ import html
 import os
 from pathlib import Path
 import sqlite3
-from typing import Literal
+from typing import Literal, TypedDict
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -16,7 +16,14 @@ from secscan.auth import AuthStore, LoginRequest, SESSION_COOKIE, SESSION_DAYS
 
 PlanName = Literal["free", "professional"]
 
-PLANS: dict[str, dict[str, object]] = {
+
+class PlanDefinition(TypedDict):
+    name: str
+    tagline: str
+    features: list[str]
+
+
+PLANS: dict[str, PlanDefinition] = {
     "free": {
         "name": "Free",
         "tagline": "Evaluate secscan and cover core targets.",
@@ -127,17 +134,19 @@ def _set_session_cookie(response: Response, token: str) -> None:
 def _plan_cards(*, selectable: bool = False, selected: str = "free") -> str:
     cards: list[str] = []
     for key, definition in PLANS.items():
-        features = "".join(f"<li>{html.escape(str(item))}</li>" for item in definition["features"])
+        features = "".join(
+            f"<li>{html.escape(item)}</li>" for item in definition["features"]
+        )
         choice = ""
         if selectable:
             checked = " checked" if key == selected else ""
             choice = (
                 f"<label class='plan-choice'><input type='radio' name='plan' value='{key}'{checked}>"
-                f"Choose {html.escape(str(definition['name']))}</label>"
+                f"Choose {html.escape(definition['name'])}</label>"
             )
         cards.append(
-            f"<article class='plan-card'><h3>{html.escape(str(definition['name']))}</h3>"
-            f"<p>{html.escape(str(definition['tagline']))}</p><ul>{features}</ul>{choice}</article>"
+            f"<article class='plan-card'><h3>{html.escape(definition['name'])}</h3>"
+            f"<p>{html.escape(definition['tagline'])}</p><ul>{features}</ul>{choice}</article>"
         )
     return "".join(cards)
 
@@ -158,7 +167,7 @@ def _page_style() -> str:
 
 def _landing(user_email: str | None, plan: str | None) -> str:
     account_actions = (
-        f"<a class='button' href='/account/plan'>Plan: {html.escape(str(PLANS[plan or 'free']['name']))}</a>"
+        f"<a class='button' href='/account/plan'>Plan: {html.escape(PLANS[plan or 'free']['name'])}</a>"
         "<a class='button primary' href='/app'>Open workspace</a>"
         if user_email
         else "<a class='button' href='/login'>Sign in</a><a class='button primary' href='/register'>Start free</a>"
@@ -180,7 +189,7 @@ def _register_page() -> str:
 
 
 def _account_page(email: str, plan: str) -> str:
-    return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Plan · secscan</title><style>{_page_style()}</style></head><body><div class='wrap'><nav><div class='brand'><a href='/'>secscan</a></div><div class='actions'><a class='button' href='/app'>Workspace</a></div></nav><main><section><div class='section-title'><p class='eyebrow'>Account</p><h1>{html.escape(email)}</h1><p>Current plan: <strong id='current-plan'>{html.escape(str(PLANS[plan]['name']))}</strong></p></div><p class='notice'>Professional is a preview tier. Billing is not connected yet, so changing tiers does not create a charge.</p><div class='plans'>{_plan_cards(selectable=True, selected=plan)}</div><div style='text-align:center;margin-top:1.2rem'><button id='save-plan' class='primary'>Save plan</button><p id='status'></p></div></section></main></div><script>document.getElementById('save-plan').addEventListener('click',async()=>{{const plan=document.querySelector('input[name=plan]:checked').value;const r=await fetch('/api/v1/account/plan',{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{plan}})}});const d=await r.json().catch(()=>({{}}));if(!r.ok){{document.getElementById('status').textContent=d.detail||'Could not update plan';return}}document.getElementById('current-plan').textContent=d.plan_name;document.getElementById('status').textContent='Plan updated.';}});</script></body></html>"""
+    return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Plan · secscan</title><style>{_page_style()}</style></head><body><div class='wrap'><nav><div class='brand'><a href='/'>secscan</a></div><div class='actions'><a class='button' href='/app'>Workspace</a></div></nav><main><section><div class='section-title'><p class='eyebrow'>Account</p><h1>{html.escape(email)}</h1><p>Current plan: <strong id='current-plan'>{html.escape(PLANS[plan]['name'])}</strong></p></div><p class='notice'>Professional is a preview tier. Billing is not connected yet, so changing tiers does not create a charge.</p><div class='plans'>{_plan_cards(selectable=True, selected=plan)}</div><div style='text-align:center;margin-top:1.2rem'><button id='save-plan' class='primary'>Save plan</button><p id='status'></p></div></section></main></div><script>document.getElementById('save-plan').addEventListener('click',async()=>{{const plan=document.querySelector('input[name=plan]:checked').value;const r=await fetch('/api/v1/account/plan',{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{plan}})}});const d=await r.json().catch(()=>({{}}));if(!r.ok){{document.getElementById('status').textContent=d.detail||'Could not update plan';return}}document.getElementById('current-plan').textContent=d.plan_name;document.getElementById('status').textContent='Plan updated.';}});</script></body></html>"""
 
 
 class PlanEntitlementMiddleware(BaseHTTPMiddleware):
