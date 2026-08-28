@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 
 from secscan.kev import enrich_finding_documents, load_kev_catalog
+from secscan.models import Finding
+from secscan.report import build_report
 
 
 def _catalog(path: Path) -> Path:
@@ -59,7 +61,52 @@ def test_load_and_enrich_kev_catalog(tmp_path: Path) -> None:
     assert "kev" not in findings[1]
 
 
-def test_catalog_requires_absolute_existing_path(tmp_path: Path) -> None:
+def test_build_report_uses_opt_in_local_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog_path = _catalog(tmp_path / "kev.json")
+    monkeypatch.setenv("SECSCAN_KEV_CATALOG", str(catalog_path))
+    report = build_report(
+        "example",
+        [
+            Finding(
+                vulnerability_id="CVE-2024-1234",
+                package_name="example",
+                installed_version="1.0",
+                fixed_version="1.1",
+                severity="HIGH",
+                title="Example",
+                target="example",
+                package_type="os",
+                primary_url=None,
+            )
+        ],
+        {"name": "test", "version": "1"},
+    )
+
+    assert report["schema_version"] == "1.1"
+    assert report["summary"]["known_exploited"] == 1
+    assert report["enrichment"]["cisa_kev"] == {
+        "status": "enabled",
+        "known_exploited": 1,
+        "catalog_entries": 1,
+    }
+    assert report["findings"][0]["known_exploited"] is True
+
+
+def test_build_report_keeps_kev_disabled_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SECSCAN_KEV_CATALOG", raising=False)
+    report = build_report("example", [], {"name": "test", "version": "1"})
+    assert report["schema_version"] == "1.0"
+    assert report["enrichment"]["cisa_kev"] == {
+        "status": "disabled",
+        "known_exploited": 0,
+    }
+
+
+def test_catalog_requires_absolute_existing_path() -> None:
     with pytest.raises(ValueError, match="absolute JSON file"):
         load_kev_catalog(Path("kev.json"))
 
