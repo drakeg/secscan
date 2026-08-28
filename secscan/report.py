@@ -22,7 +22,7 @@ def build_report(
     target_type: str = "container_image",
 ) -> dict[str, Any]:
     finding_documents = [finding.to_dict() for finding in findings]
-    summary = summarize(findings)
+    summary: dict[str, Any] = summarize(findings)
     kev_catalog = os.environ.get("SECSCAN_KEV_CATALOG")
     epss_csv = os.environ.get("SECSCAN_EPSS_CSV")
     enrichment: dict[str, Any] = {
