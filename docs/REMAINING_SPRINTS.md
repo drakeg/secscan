@@ -2,21 +2,17 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 53
+## Completed through Sprint 54
 
-Sprints 0–53 are complete, including repository/image/SBOM scanning, policy and baselines, service/history/reporting, AWS ECR discovery/scanning, web UI, Nmap/Nuclei network assessment, authenticated Linux posture/package/CVE scanning, local accounts and encrypted SSH credentials, CISA KEV enrichment, FIRST EPSS enrichment, explainable KEV/EPSS-aware web prioritization, persistent first-class asset inventory with scan-history association, authenticated Windows posture/software assessment over strict key-only OpenSSH, a public product experience with Free/Professional account-plan foundations, and deterministic CLI network-range assessment limited to 16 sequential literal IP/CIDR targets.
+Sprints 0–54 are complete, including repository/image/SBOM scanning, policy and baselines, service/history/reporting, AWS ECR discovery/scanning, web UI, Nmap/Nuclei network assessment, authenticated Linux posture/package/CVE scanning, local accounts and encrypted SSH credentials, CISA KEV enrichment, FIRST EPSS enrichment, explainable KEV/EPSS-aware web prioritization, persistent first-class asset inventory with scan-history association, authenticated Windows posture/software assessment over strict key-only OpenSSH, a public product experience with Free/Professional account-plan foundations, deterministic CLI network-range assessment limited to 16 sequential literal IP/CIDR targets, and a bounded single-URL HTTP/HTTPS DAST core using the pinned local Nuclei corpus.
 
 ## Current sprint
 
-### Sprint 54 — Bounded HTTP/HTTPS DAST Core
-
-Add a scanner-isolated `web-dast` capability for exactly one explicit HTTP/HTTPS URL using the existing pinned Nuclei corpus, strict URL validation, fixed safe command arguments, disabled external interaction/template updates, normalized findings, and auditable control evidence.
-
-## Candidate remaining sprints
-
 ### Sprint 55 — Authenticated Web/API DAST Submission
 
-Expose the bounded `web-dast` core through the authenticated service and browser UI with explicit authorization acknowledgement, server-side validation, plan/entitlement decisions, normal scan history/reporting integration, and no anonymous or arbitrary-target scanning path.
+Expose the bounded `web-dast` core through the authenticated service and browser UI with explicit authorization acknowledgement, server-side URL validation, normal scan history/reporting integration, and no anonymous or arbitrary-target scanning path.
+
+## Candidate remaining sprints
 
 ### Sprint 56 — Additional Scanner Adapters
 
