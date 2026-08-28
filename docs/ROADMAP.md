@@ -171,27 +171,44 @@ Delivered reusable Buildx/GitHub Actions cache, removed forced cold Docker build
 
 Delivered **Linux server — Authenticated assessment** as a normal browser workflow using server-side SSH configuration only. Linux jobs reuse the existing history, auto-refresh, dashboard, policy, baseline, reporting, and artifact paths while private-key material remains outside browser requests and job records.
 
+### Sprint 40 — GUI SSH Credential Profiles
+
+Delivered encrypted reusable SSH credential profiles, default and per-host selection, isolated temporary key files, metadata-only APIs, and the legacy mounted-file compatibility path while preserving strict key-only authentication.
+
+### Sprint 41 — User Registration, Login, and Session Foundation
+
+Delivered local user registration, scrypt password hashing, session authentication, admin/user roles, browser login/register flows, and compatibility with bearer API tokens.
+
+### Sprint 42 — SSH Host-Key Discovery and Explicit Approval
+
+Delivered admin-only host-key discovery and explicit fingerprint approval using in-process Paramiko negotiation, persistent trusted-host metadata, nonstandard-port support, and no TOFU or `accept-new` behavior.
+
+### Sprint 43 — Authenticated Linux Package Inventory
+
+Delivered deterministic read-only dpkg/RPM installed-package inventory through the existing key-only SSH assessment, with normalized package metadata and no target-side agent or mutation.
+
+### Sprint 44 — Authenticated Linux Package CVE Correlation
+
+Delivered allow-listed distro/package-manager mapping, temporary Trivy-compatible CycloneDX package metadata, local `trivy sbom` correlation, normalized Linux package CVE findings, and fail-closed inventory-only behavior for unsupported distributions.
+
 ## Current sprint
 
-### Sprint 40 — GUI SSH Credential Profiles
+### Sprint 45 — Debian Source-Package CVE Accuracy
 
 #### Goal
 
-Make authenticated Linux scanning practical from the GUI with reusable encrypted SSH credential profiles: one optional default profile plus explicit or remembered per-host overrides.
+Improve Debian/Ubuntu CVE correlation by carrying deterministic source-package identity from dpkg metadata into Trivy-compatible CycloneDX properties, while explicitly avoiding heuristic RPM source parsing.
 
 #### Acceptance boundaries
 
-- private keys and `known_hosts` content are encrypted at rest with a service-side master key that is never written to SQLite
-- credential list/read APIs expose metadata only and never return plaintext or ciphertext secret fields
-- selecting a profile for a scan does not persist a host binding unless the operator explicitly chooses **Remember this profile for this host**
-- profile-backed jobs use isolated child-process environments and temporary key files rather than mutating global process environment
-- strict OpenSSH host-key verification and public-key-only authentication remain mandatory
-- the legacy server-side file-mounted SSH configuration remains available as a compatibility fallback
-- credential entry is a loopback/local feature; the existing trusted-LAN HTTP mode is not a safe credential-submission channel
-- passwords, key passphrases, arbitrary SSH flags, agents, bastions/proxies, automatic trust-on-first-use, cloud secret managers, and SaaS tenant vaulting remain out of scope
-- current and projected recurring infrastructure/service cost remains **$0**
+- source identity comes only from dpkg metadata or Debian's defined same-name/same-version fallback
+- incomplete source metadata fails closed as malformed package inventory
+- `aquasecurity:trivy:SrcName` and `aquasecurity:trivy:SrcVersion` are emitted only when source identity is proven
+- existing RPM correlation remains unchanged and receives no guessed source identity
+- SSH remains fixed-command, read-only, key-only, and strict-host-key verified
+- current/projected recurring infrastructure and service cost remains **$0**
 
-See [`docs/SPRINT_40.md`](SPRINT_40.md) and [`docs/SSH_CREDENTIALS.md`](SSH_CREDENTIALS.md) for the detailed implementation, security, and operator boundaries.
+See [`docs/SPRINT_45.md`](SPRINT_45.md) for the detailed implementation, security, correctness, and validation boundaries.
 
 ## Planned feature sprints
 
@@ -306,7 +323,7 @@ Delivered sequential batches of up to 20 explicitly selected immutable ECR inven
 - EC2 inventory or snapshot-based scanning
 - ECS and EKS workload association
 - persistent assets and reassessment workflows
-- authenticated Linux and Windows host assessment
+- authenticated Windows host assessment
 - bounded network-range assessment with explicit authorization controls
 - web/API DAST expansion
 - multi-user access and tenant isolation
