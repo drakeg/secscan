@@ -76,7 +76,7 @@ world_writable=$(find /etc -xdev -maxdepth 2 -type f -perm -0002 -print 2>/dev/n
 emit world_writable_etc "$world_writable"
 if command -v dpkg-query >/dev/null 2>&1; then
   emit package_manager dpkg
-  dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\n' 2>/dev/null | sed 's/^/package\t/'
+  dpkg-query -W -f='${binary:Package}\t${Version}\t${Architecture}\t${source:Package}\t${source:Version}\n' 2>/dev/null | sed 's/^/package\t/'
 elif command -v rpm >/dev/null 2>&1; then
   emit package_manager rpm
   rpm -qa --qf 'package\t%{NAME}\t%{EPOCHNUM}:%{VERSION}-%{RELEASE}\t%{ARCH}\n' 2>/dev/null
@@ -132,15 +132,26 @@ def _parse_output(output: str) -> tuple[dict[str, str], list[dict[str, str]]]:
             continue
         fields = raw_line.split("\t")
         if fields[0] == _PACKAGE_PREFIX:
-            if len(fields) != 4 or not all(fields[1:]):
+            if len(fields) not in {4, 6} or not all(fields[1:4]):
                 raise ValueError("Linux host assessment returned malformed package inventory")
-            name, version, architecture = (value.strip() for value in fields[1:])
-            package_key = (name, version, architecture)
-            packages[package_key] = {
+            name, version, architecture = (value.strip() for value in fields[1:4])
+            package: dict[str, str] = {
                 "name": name,
                 "version": version,
                 "architecture": architecture,
             }
+            if len(fields) == 6:
+                source_name = fields[4].strip()
+                source_version = fields[5].strip()
+                if bool(source_name) != bool(source_version):
+                    raise ValueError("Linux host assessment returned incomplete source package metadata")
+                if not source_name:
+                    source_name = name
+                    source_version = version
+                package["source_name"] = source_name
+                package["source_version"] = source_version
+            package_key = (name, version, architecture)
+            packages[package_key] = package
             continue
         output_key, separator, value = raw_line.partition("\t")
         if separator != "\t" or not output_key or output_key in values:
@@ -170,6 +181,8 @@ def _parse_output(output: str) -> tuple[dict[str, str], list[dict[str, str]]]:
     ]
     if package_manager == "unavailable" and normalized:
         raise ValueError("Linux host assessment returned packages without a supported package manager")
+    if package_manager != "dpkg" and any("source_name" in package for package in normalized):
+        raise ValueError("Linux host assessment returned Debian source metadata for a non-dpkg host")
     return values, normalized
 
 
@@ -199,16 +212,26 @@ def _purl_component(
         f"@{quote(version, safe='.:_-~')}?arch={quote(architecture, safe='.-_~')}"
         f"&distro={quote(distro, safe='.-_~')}"
     )
+    properties: list[dict[str, str]] = [
+        {"name": "aquasecurity:trivy:PkgID", "value": f"{name}@{version}"},
+        {"name": "aquasecurity:trivy:PkgType", "value": pkg_type},
+    ]
+    source_name = package.get("source_name")
+    source_version = package.get("source_version")
+    if source_name and source_version:
+        properties.extend(
+            [
+                {"name": "aquasecurity:trivy:SrcName", "value": source_name},
+                {"name": "aquasecurity:trivy:SrcVersion", "value": source_version},
+            ]
+        )
     return {
         "bom-ref": purl,
         "type": "library",
         "name": name,
         "version": version,
         "purl": purl,
-        "properties": [
-            {"name": "aquasecurity:trivy:PkgID", "value": f"{name}@{version}"},
-            {"name": "aquasecurity:trivy:PkgType", "value": pkg_type},
-        ],
+        "properties": properties,
     }
 
 
@@ -453,7 +476,7 @@ class LinuxHostScanner(Scanner):
             request=request,
             findings=findings,
             raw={
-                "schema_version": 3,
+                "schema_version": 4,
                 "target": target,
                 "host": {
                     "os_kernel": values["os_kernel"],
@@ -476,7 +499,7 @@ class LinuxHostScanner(Scanner):
                 },
                 "package_vulnerability_scan": vulnerability_scan,
             },
-            scanner={"name": "secscan-linux-host", "version": "ssh-posture-packages-cves-v3"},
+            scanner={"name": "secscan-linux-host", "version": "ssh-posture-packages-cves-v4"},
         )
 
     def generate_sbom(self, request: ScanRequest, output_path: Path) -> None:
