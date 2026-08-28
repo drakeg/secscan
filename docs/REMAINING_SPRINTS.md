@@ -2,47 +2,47 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 52
+## Completed through Sprint 53
 
-Sprints 0–52 are complete, including repository/image/SBOM scanning, policy and baselines, service/history/reporting, AWS ECR discovery/scanning, web UI, Nmap/Nuclei network assessment, authenticated Linux posture/package/CVE scanning, local accounts and encrypted SSH credentials, CISA KEV enrichment, FIRST EPSS enrichment, explainable KEV/EPSS-aware web prioritization, persistent first-class asset inventory with scan-history association, authenticated Windows posture/software assessment over strict key-only OpenSSH, and a public product experience with Free/Professional account-plan foundations.
+Sprints 0–53 are complete, including repository/image/SBOM scanning, policy and baselines, service/history/reporting, AWS ECR discovery/scanning, web UI, Nmap/Nuclei network assessment, authenticated Linux posture/package/CVE scanning, local accounts and encrypted SSH credentials, CISA KEV enrichment, FIRST EPSS enrichment, explainable KEV/EPSS-aware web prioritization, persistent first-class asset inventory with scan-history association, authenticated Windows posture/software assessment over strict key-only OpenSSH, a public product experience with Free/Professional account-plan foundations, and deterministic CLI network-range assessment limited to 16 sequential literal IP/CIDR targets.
 
 ## Current sprint
 
-### Sprint 53 — Bounded Network-Range Assessment
+### Sprint 54 — Bounded HTTP/HTTPS DAST Core
 
-Expand the existing network assessment core with a distinct CLI `network-range` capability that accepts only literal IP/CIDR input, expands deterministically to at most 16 hosts, executes sequentially, reuses the fixed Nmap/Nuclei single-host scanner, and records exact audit evidence without changing the existing web/API single-host contract.
+Add a scanner-isolated `web-dast` capability for exactly one explicit HTTP/HTTPS URL using the existing pinned Nuclei corpus, strict URL validation, fixed safe command arguments, disabled external interaction/template updates, normalized findings, and auditable control evidence.
 
 ## Candidate remaining sprints
 
-### Sprint 54 — Web/API DAST Expansion
+### Sprint 55 — Authenticated Web/API DAST Submission
 
-Add bounded HTTP/HTTPS application assessment beyond the current generic single-host network path, with explicit URLs, safe defaults, authorization acknowledgement, and controls that prevent unbounded crawling or third-party targeting.
+Expose the bounded `web-dast` core through the authenticated service and browser UI with explicit authorization acknowledgement, server-side validation, plan/entitlement decisions, normal scan history/reporting integration, and no anonymous or arbitrary-target scanning path.
 
-### Sprint 55 — Additional Scanner Adapters
+### Sprint 56 — Additional Scanner Adapters
 
 Add complementary open-source engines such as Grype and Syft where they provide independent coverage or inventory value, while normalizing results into secscan-owned models and avoiding duplicate-noise inflation.
 
-### Sprint 56 — AWS Compute Asset Association
+### Sprint 57 — AWS Compute Asset Association
 
 Add read-only EC2 inventory/association so discovered compute assets can be linked to secscan assessments without enabling paid scanning services or mutating AWS resources.
 
-### Sprint 57 — ECS/EKS Workload Association
+### Sprint 58 — ECS/EKS Workload Association
 
 Associate container images and assessment results with ECS tasks/services and EKS workloads using read-only AWS/Kubernetes metadata and bounded allow-lists.
 
-### Sprint 58 — Tenant and Authorization Isolation
+### Sprint 59 — Tenant and Authorization Isolation
 
 Evolve the existing local multi-user account foundation into explicit tenant/project ownership, role-scoped assets and scans, and storage/API isolation suitable for a future SaaS deployment.
 
-### Sprint 59 — Billing Provider and Enforced Subscription Lifecycle
+### Sprint 60 — Billing Provider and Enforced Subscription Lifecycle
 
 Integrate a real billing provider only after tenant/account ownership is ready. Add checkout, verified webhook-driven subscription state, upgrade/downgrade/cancellation lifecycle, payment-failure handling, and explicit cost/provider-fee documentation. Never store raw payment-card data in secscan.
 
-### Sprint 60 — External Workflow Integrations
+### Sprint 61 — External Workflow Integrations
 
 Add narrowly scoped outbound integrations such as GitHub issues, Jira, Slack, ServiceNow, or SIEM export. Each integration should be split further if required to preserve least privilege and a focused sprint boundary.
 
-### Sprint 61 — Signed Policy and Governance Bundles
+### Sprint 62 — Signed Policy and Governance Bundles
 
 Add integrity/authenticity controls for shared policy bundles, controlled distribution, version/provenance evidence, and enterprise governance workflows.
 
