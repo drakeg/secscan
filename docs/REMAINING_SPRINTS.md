@@ -2,21 +2,17 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 55
+## Completed through Sprint 56
 
-Sprints 0–55 are complete, including repository/image/SBOM scanning, policy and baselines, service/history/reporting, AWS ECR discovery/scanning, web UI, Nmap/Nuclei network assessment, authenticated Linux posture/package/CVE scanning, local accounts and encrypted SSH credentials, CISA KEV enrichment, FIRST EPSS enrichment, explainable KEV/EPSS-aware web prioritization, persistent first-class asset inventory with scan-history association, authenticated Windows posture/software assessment over strict key-only OpenSSH, a public product experience with Free/Professional account-plan foundations, deterministic CLI network-range assessment limited to 16 sequential literal IP/CIDR targets, bounded single-URL HTTP/HTTPS DAST using the pinned local Nuclei corpus, and authenticated web/API submission for that bounded DAST path with explicit authorization acknowledgement.
+Sprints 0–56 are complete, including repository/image/SBOM scanning, policy and baselines, service/history/reporting, AWS ECR discovery/scanning, web UI, Nmap/Nuclei network assessment, authenticated Linux posture/package/CVE scanning, local accounts and encrypted SSH credentials, CISA KEV enrichment, FIRST EPSS enrichment, explainable KEV/EPSS-aware web prioritization, persistent first-class asset inventory with scan-history association, authenticated Windows posture/software assessment over strict key-only OpenSSH, a public product experience with Free/Professional account-plan foundations, deterministic CLI network-range assessment limited to 16 sequential literal IP/CIDR targets, bounded single-URL HTTP/HTTPS DAST with authenticated web/API submission and explicit authorization acknowledgement, and a complementary pinned Grype image-vulnerability adapter with scanner-specific evidence and existing CycloneDX artifact integration.
 
 ## Current sprint
 
-### Sprint 56 — Additional Scanner Adapters
-
-Add a complementary Grype image-vulnerability adapter as a separate scanner identity, normalize its findings into secscan-owned models, pin the engine in the container, and avoid silently double-counting overlapping Trivy and Grype results in one report. Syft remains deferred because the existing Trivy SBOM and SBOM-ingestion paths already cover the immediate inventory need.
-
-## Candidate remaining sprints
-
 ### Sprint 57 — AWS Compute Asset Association
 
-Add read-only EC2 inventory/association so discovered compute assets can be linked to secscan assessments without enabling paid scanning services or mutating AWS resources.
+Add bounded, read-only EC2 instance discovery for explicitly approved accounts and regions, producing deterministic compute inventory that can associate AWS instance identity and network addresses with existing secscan target identities without launching scans, enabling AWS paid scanning services, or mutating AWS resources.
+
+## Candidate remaining sprints
 
 ### Sprint 58 — ECS/EKS Workload Association
 

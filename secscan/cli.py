@@ -12,12 +12,14 @@ from time import perf_counter
 
 from secscan.aws import (
     AwsDiscoveryError,
+    discover_ec2_assets,
     discover_ecr_assets,
     ecr_scan_environment,
     load_ecr_asset,
     load_ecr_assets,
     load_ecr_config,
     validate_ecr_asset,
+    write_ec2_assets,
     write_ecr_assets,
 )
 from secscan.compare import compare_findings, load_baseline
@@ -148,6 +150,16 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=Path("/reports/ecr-assets.json"),
         help="discovered asset inventory path",
+    )
+    ec2 = discover_subparsers.add_parser(
+        "ec2", help="discover explicitly approved Amazon EC2 instances"
+    )
+    ec2.add_argument("--config", type=Path, required=True, help="AWS discovery YAML config")
+    ec2.add_argument(
+        "--output",
+        type=Path,
+        default=Path("/reports/ec2-assets.json"),
+        help="discovered compute inventory path",
     )
 
     batch = subparsers.add_parser("batch", help="run a bounded batch operation")
@@ -553,7 +565,7 @@ def _run_scan(args: argparse.Namespace) -> int:
     result = scanner.scan(request)
     scanner_metadata = dict(result.scanner)
     scanner_metadata["secscan_version"] = _secscan_version()
-    report_target_type = "container_image" if scanner_name in {"image", "image-grype"} else logical_scanner
+    report_target_type = "container_image" if scanner_name == "image" else logical_scanner
     report = build_report(
         args.target,
         list(result.findings),
@@ -642,6 +654,14 @@ def _run_ecr_discovery(args: argparse.Namespace) -> int:
     report = discover_ecr_assets(load_ecr_config(args.config))
     write_ecr_assets(report, args.output)
     print(f"Discovered {report['asset_count']} ECR images")
+    print(f"Inventory written to {args.output}")
+    return 0
+
+
+def _run_ec2_discovery(args: argparse.Namespace) -> int:
+    report = discover_ec2_assets(load_ecr_config(args.config))
+    write_ec2_assets(report, args.output)
+    print(f"Discovered {report['asset_count']} EC2 instances")
     print(f"Inventory written to {args.output}")
     return 0
 
@@ -745,6 +765,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_finding_timing(args)
         if args.command == "discover" and args.discovery_type == "ecr":
             return _run_ecr_discovery(args)
+        if args.command == "discover" and args.discovery_type == "ec2":
+            return _run_ec2_discovery(args)
         if args.command == "batch" and args.batch_type == "ecr":
             return _run_ecr_batch(args)
         if args.command == "inventory" and args.inventory_type == "sbom":
@@ -754,7 +776,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "check" and args.check_type == "inventory":
             return _run_inventory_check(args)
         return 1
-    except (AwsDiscoveryError, TrivyError, OSError, ValueError) as exc:
+    except (AwsDiscoveryError, TrivyError, OSError, ValueError, RuntimeError) as exc:
         print(f"secscan error: {exc}", file=sys.stderr)
         return 1
 
