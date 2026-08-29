@@ -31,6 +31,7 @@ class ScannerRegistry:
 def build_default_registry() -> ScannerRegistry:
     from secscan.scanners.filesystem import FilesystemScanner
     from secscan.scanners.full_repository import FullRepositoryScanner
+    from secscan.scanners.grype import GrypeImageScanner
     from secscan.scanners.image import ImageScanner
     from secscan.scanners.linux_host import LinuxHostScanner
     from secscan.scanners.network import NetworkRangeScanner, NetworkScanner
@@ -51,6 +52,7 @@ def build_default_registry() -> ScannerRegistry:
     return ScannerRegistry(
         [
             ImageScanner(),
+            GrypeImageScanner(),
             FilesystemScanner(),
             DefaultRepositoryScanner(),
             RepositoryScanner(),

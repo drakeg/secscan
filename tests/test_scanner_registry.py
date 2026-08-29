@@ -24,6 +24,7 @@ def test_default_registry_contains_builtin_scanners() -> None:
     registry = build_default_registry()
 
     assert registry.get("image").capability.name == "image"
+    assert registry.get("image-grype").capability.name == "image-grype"
     assert registry.get("filesystem").capability.name == "filesystem"
     assert registry.get("repository").capability.name == "repository"
     assert registry.get("full-repository").capability.name == "full-repository"
@@ -38,6 +39,7 @@ def test_default_registry_contains_builtin_scanners() -> None:
         "filesystem",
         "full-repository",
         "image",
+        "image-grype",
         "linux-host",
         "network",
         "network-range",
