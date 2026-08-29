@@ -553,7 +553,7 @@ def _run_scan(args: argparse.Namespace) -> int:
     result = scanner.scan(request)
     scanner_metadata = dict(result.scanner)
     scanner_metadata["secscan_version"] = _secscan_version()
-    report_target_type = "container_image" if scanner_name == "image" else logical_scanner
+    report_target_type = "container_image" if scanner_name in {"image", "image-grype"} else logical_scanner
     report = build_report(
         args.target,
         list(result.findings),
@@ -588,7 +588,7 @@ def _run_scan(args: argparse.Namespace) -> int:
         ],
     }
 
-    raw_path = args.output_dir / "trivy.json"
+    raw_path = args.output_dir / scanner.raw_artifact_name(request)
     report_path = args.output_dir / "secscan.json"
     html_path = args.output_dir / "secscan.html"
     sbom_path = args.output_dir / scanner.sbom_artifact_name(request)
