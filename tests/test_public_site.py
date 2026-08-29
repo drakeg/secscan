@@ -31,12 +31,34 @@ def test_anonymous_visitors_can_browse_landing_login_and_registration(tmp_path: 
     assert "Professional" in landing.text
     assert "Sign in" in landing.text
     assert "Start free" in landing.text
+    assert "Create an account" in landing.text
 
     assert client.get("/login").status_code == 200
     registration = client.get("/register")
     assert registration.status_code == 200
     assert "Choose Free" in registration.text
     assert "Choose Professional" in registration.text
+
+
+def test_authenticated_landing_replaces_registration_ctas_with_workspace_actions(tmp_path: Path) -> None:
+    client = TestClient(app_for(tmp_path / "jobs.db"))
+    created = client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "operator@example.test",
+            "password": "correct-horse-battery",
+            "plan": "free",
+        },
+    )
+    assert created.status_code == 201
+
+    landing = client.get("/")
+    assert landing.status_code == 200
+    assert "Open workspace" in landing.text
+    assert "Plan: Free" in landing.text
+    assert "Create an account" not in landing.text
+    assert "Start free" not in landing.text
+    assert "href='/register'" not in landing.text
 
 
 def test_registration_requires_and_persists_selected_plan(tmp_path: Path) -> None:
