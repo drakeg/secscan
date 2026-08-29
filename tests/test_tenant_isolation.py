@@ -11,6 +11,7 @@ from secscan.assets_web import mount_assets
 from secscan.auth import AuthStore, mount_auth
 from secscan.service import JobStore, create_app
 from secscan.tenancy import SYSTEM_TENANT_ID
+from secscan.web import mount_web_ui
 
 
 def _register(client: TestClient, email: str, password: str) -> dict[str, object]:
@@ -33,7 +34,9 @@ def _wait_for_terminal(client: TestClient, job_id: str) -> dict[str, object]:
     raise AssertionError("job did not reach a terminal state")
 
 
-def test_session_jobs_and_assets_are_isolated_by_server_derived_tenant(tmp_path: Path, monkeypatch) -> None:
+def test_session_jobs_and_assets_are_isolated_by_server_derived_tenant(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setenv("SECSCAN_REGISTRATION_ENABLED", "true")
     database = tmp_path / "jobs.db"
     job_root = tmp_path / "jobs"
@@ -47,11 +50,13 @@ def test_session_jobs_and_assets_are_isolated_by_server_derived_tenant(tmp_path:
     app = create_app(job_root=job_root, job_database=database, runner=runner)
     mount_auth(app, database=database)
     mount_assets(app, database=database)
+    mount_web_ui(app, job_root=job_root, job_database=database)
     first = TestClient(app)
     second = TestClient(app)
 
     first_user = _register(first, "first@example.com", "correct horse battery staple")
     second_user = _register(second, "second@example.com", "another correct horse battery staple")
+    assert first_user["role"] == "admin"
     assert first_user["tenant_id"] == first_user["id"]
     assert second_user["tenant_id"] == second_user["id"]
     assert first_user["tenant_id"] != second_user["tenant_id"]
@@ -67,6 +72,8 @@ def test_session_jobs_and_assets_are_isolated_by_server_derived_tenant(tmp_path:
     assert second.delete(f"/api/v1/jobs/{first_job_id}").status_code == 404
     assert second.get(f"/api/v1/jobs/{first_job_id}/artifacts").status_code == 404
     assert second.get(f"/api/v1/jobs/{first_job_id}/artifacts/secscan.json").status_code == 404
+    assert second.get(f"/api/v1/jobs/{first_job_id}/summary").status_code == 404
+    assert second.delete(f"/api/v1/jobs/{first_job_id}/history").status_code == 404
     assert all(item["id"] != first_job_id for item in second.get("/api/v1/jobs").json())
 
     first_assets = first.get("/api/v1/assets").json()
@@ -82,10 +89,15 @@ def test_session_jobs_and_assets_are_isolated_by_server_derived_tenant(tmp_path:
     second_job_id = second_job_response.json()["id"]
     _wait_for_terminal(second, second_job_id)
 
+    assert first.get(f"/api/v1/jobs/{second_job_id}").status_code == 404
+    assert first.get(f"/api/v1/jobs/{second_job_id}/summary").status_code == 404
+    assert first.delete(f"/api/v1/jobs/{second_job_id}/history").status_code == 404
+
     second_assets = second.get("/api/v1/assets").json()
     assert len(second_assets) == 1
     assert second_assets[0]["target"] == "alpine:3.20"
     assert second_assets[0]["id"] != first_asset_id
+    assert first.get(f"/api/v1/assets/{second_assets[0]['id']}").status_code == 404
 
     with sqlite3.connect(database) as connection:
         stored = connection.execute(
