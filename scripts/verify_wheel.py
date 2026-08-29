@@ -9,6 +9,8 @@ REQUIRED_FILES = {
     "secscan/assets.py",
     "secscan/assets_web.py",
     "secscan/aws.py",
+    "secscan/aws_ecs.py",
+    "secscan/aws_ecs_cli.py",
     "secscan/cli.py",
     "secscan/compare.py",
     "secscan/epss.py",
