@@ -8,6 +8,7 @@ from typing import Any
 from secscan.models import Finding
 from secscan.normalize import SEVERITIES
 from secscan.scanners.base import ScanRequest, ScanResult, Scanner, ScannerCapability
+from secscan.trivy import generate_cyclonedx
 
 
 def _normalize_grype(payload: dict[str, Any], target: str) -> tuple[Finding, ...]:
@@ -57,18 +58,18 @@ class GrypeImageScanner(Scanner):
                 env=dict(request.environment) if request.environment is not None else None,
             )
         except FileNotFoundError as exc:
-            raise RuntimeError("Grype executable not found") from exc
+            raise ValueError("Grype executable not found") from exc
         except subprocess.TimeoutExpired as exc:
-            raise RuntimeError(f"Grype timed out after {request.timeout_seconds} seconds") from exc
+            raise ValueError(f"Grype timed out after {request.timeout_seconds} seconds") from exc
         if completed.returncode != 0:
             detail = (completed.stderr or completed.stdout).strip()
-            raise RuntimeError(f"Grype failed with exit code {completed.returncode}: {detail[:500]}")
+            raise ValueError(f"Grype failed with exit code {completed.returncode}: {detail[:500]}")
         try:
             raw = json.loads(completed.stdout)
         except json.JSONDecodeError as exc:
-            raise RuntimeError("Grype returned invalid JSON") from exc
+            raise ValueError("Grype returned invalid JSON") from exc
         if not isinstance(raw, dict):
-            raise RuntimeError("Grype returned an unexpected JSON document")
+            raise ValueError("Grype returned an unexpected JSON document")
         return ScanResult(
             request=request,
             findings=_normalize_grype(raw, request.target),
@@ -77,7 +78,12 @@ class GrypeImageScanner(Scanner):
         )
 
     def generate_sbom(self, request: ScanRequest, output_path: Path) -> None:
-        raise RuntimeError("Grype adapter does not generate SBOMs; use the existing SBOM scanner")
+        generate_cyclonedx(
+            request.target,
+            output_path,
+            timeout_seconds=request.timeout_seconds,
+            environment=request.environment,
+        )
 
     def raw_artifact_name(self, request: ScanRequest) -> str:
         return "grype.json"
