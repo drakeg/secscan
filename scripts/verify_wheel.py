@@ -11,6 +11,7 @@ REQUIRED_FILES = {
     "secscan/aws.py",
     "secscan/aws_ecs.py",
     "secscan/aws_ecs_cli.py",
+    "secscan/billing.py",
     "secscan/cli.py",
     "secscan/compare.py",
     "secscan/epss.py",

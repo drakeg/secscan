@@ -13,6 +13,14 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from secscan.auth import AuthStore, LoginRequest, SESSION_COOKIE, SESSION_DAYS
+from secscan.billing import (
+    BillingConfig,
+    BillingError,
+    BillingState,
+    BillingStore,
+    StripeBillingClient,
+    verify_stripe_event,
+)
 
 PlanName = Literal["free", "professional"]
 
@@ -131,18 +139,23 @@ def _set_session_cookie(response: Response, token: str) -> None:
     )
 
 
-def _plan_cards(*, selectable: bool = False, selected: str = "free") -> str:
+def _plan_cards(
+    *,
+    selectable: bool = False,
+    selected: str = "free",
+    billing_enabled: bool = True,
+) -> str:
     cards: list[str] = []
     for key, definition in PLANS.items():
-        features = "".join(
-            f"<li>{html.escape(item)}</li>" for item in definition["features"]
-        )
+        features = "".join(f"<li>{html.escape(item)}</li>" for item in definition["features"])
         choice = ""
         if selectable:
             checked = " checked" if key == selected else ""
+            disabled = " disabled" if key == "professional" and not billing_enabled else ""
+            suffix = " (billing not configured)" if disabled else ""
             choice = (
-                f"<label class='plan-choice'><input type='radio' name='plan' value='{key}'{checked}>"
-                f"Choose {html.escape(definition['name'])}</label>"
+                f"<label class='plan-choice'><input type='radio' name='plan' value='{key}'"
+                f"{checked}{disabled}>Choose {html.escape(definition['name'])}{suffix}</label>"
             )
         cards.append(
             f"<article class='plan-card'><h3>{html.escape(definition['name'])}</h3>"
@@ -157,15 +170,15 @@ def _page_style() -> str:
     *{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#10243d 0,#07111f 45%);min-height:100vh}
     a{color:inherit}.wrap{width:min(1120px,92vw);margin:auto}nav{display:flex;align-items:center;justify-content:space-between;padding:1.2rem 0}
     .brand{font-size:1.35rem;font-weight:800}.actions{display:flex;gap:.7rem;flex-wrap:wrap}.button,button{border:1px solid #33506f;background:#10243d;color:#fff;border-radius:9px;padding:.7rem 1rem;text-decoration:none;font-weight:700;cursor:pointer}.primary{background:#2563eb;border-color:#3b82f6}
-    .hero{padding:5.5rem 0 3rem;display:grid;grid-template-columns:1.2fr .8fr;gap:3rem;align-items:center}.eyebrow{text-transform:uppercase;letter-spacing:.12em;color:#7dd3fc;font-weight:800;font-size:.8rem}.hero h1{font-size:clamp(2.5rem,6vw,4.7rem);line-height:.98;margin:.5rem 0 1.2rem}.hero p{font-size:1.18rem;color:#b8c7da;line-height:1.65}
+    button:disabled,input:disabled{opacity:.55;cursor:not-allowed}.hero{padding:5.5rem 0 3rem;display:grid;grid-template-columns:1.2fr .8fr;gap:3rem;align-items:center}.eyebrow{text-transform:uppercase;letter-spacing:.12em;color:#7dd3fc;font-weight:800;font-size:.8rem}.hero h1{font-size:clamp(2.5rem,6vw,4.7rem);line-height:.98;margin:.5rem 0 1.2rem}.hero p{font-size:1.18rem;color:#b8c7da;line-height:1.65}
     .hero-panel,.card,.plan-card,.auth-card{background:#0d1c2f;border:1px solid #203a58;border-radius:16px;padding:1.4rem;box-shadow:0 20px 50px #0005}.hero-panel ul,.plan-card ul{padding-left:1.2rem;line-height:1.75;color:#c8d6e7}
-    section{padding:2.5rem 0}.section-title{text-align:center;margin-bottom:1.7rem}.section-title h2{font-size:2rem;margin:.3rem}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}.plans{display:grid;grid-template-columns:repeat(2,1fr);gap:1rem;max-width:850px;margin:auto}.plan-card h3{font-size:1.5rem;margin:.2rem 0}.plan-choice{display:block;margin-top:1rem;padding:.75rem;background:#132941;border-radius:9px;font-weight:800}.muted{color:#93a7bd}.notice{padding:.9rem 1rem;border:1px solid #7c5c20;background:#2b210d;border-radius:10px;color:#fde68a}
+    section{padding:2.5rem 0}.section-title{text-align:center;margin-bottom:1.7rem}.section-title h2{font-size:2rem;margin:.3rem}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}.plans{display:grid;grid-template-columns:repeat(2,1fr);gap:1rem;max-width:850px;margin:auto}.plan-card h3{font-size:1.5rem;margin:.2rem 0}.plan-choice{display:block;margin-top:1rem;padding:.75rem;background:#132941;border-radius:9px;font-weight:800}.muted{color:#93a7bd}.notice{padding:.9rem 1rem;border:1px solid #7c5c20;background:#2b210d;border-radius:10px;color:#fde68a}.good{border-color:#1f6f4a;background:#0d2b20;color:#bbf7d0}
     .auth-shell{min-height:100vh;display:grid;place-items:center;padding:2rem}.auth-card{width:min(760px,94vw)}label{display:block;margin:1rem 0}input[type=email],input[type=password]{width:100%;padding:.8rem;border-radius:8px;border:1px solid #33506f;background:#07111f;color:#fff}#error{color:#fca5a5;min-height:1.2rem}
     footer{padding:3rem 0;color:#7890a9;text-align:center}@media(max-width:760px){.hero{grid-template-columns:1fr;padding-top:3rem}.grid,.plans{grid-template-columns:1fr}}
     """
 
 
-def _landing(user_email: str | None, plan: str | None) -> str:
+def _landing(user_email: str | None, plan: str | None, *, billing_enabled: bool) -> str:
     account_actions = (
         f"<a class='button' href='/account/plan'>Plan: {html.escape(PLANS[plan or 'free']['name'])}</a>"
         "<a class='button primary' href='/app'>Open workspace</a>"
@@ -177,24 +190,52 @@ def _landing(user_email: str | None, plan: str | None) -> str:
         if user_email
         else "<a class='button primary' href='/register'>Create an account</a>"
     )
+    billing_copy = (
+        "Professional subscriptions use Stripe-hosted Checkout. secscan never stores raw payment-card data."
+        if billing_enabled
+        else "Professional billing is not configured on this instance; Free remains fully available."
+    )
     return f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>secscan · security scanning workspace</title><style>{_page_style()}</style></head><body>
     <div class='wrap'><nav><div class='brand'>secscan</div><div class='actions'>{account_actions}</div></nav>
     <main><section class='hero'><div><p class='eyebrow'>Security scanning without the sprawl</p><h1>Find what needs fixing first.</h1><p>secscan brings repository, container, SBOM, network, Linux, and Windows assessment evidence into one browsable security workspace. Normalize findings, track assets and history, and prioritize known-exploited and high-likelihood vulnerabilities without juggling a pile of disconnected tools.</p><div class='actions'>{hero_primary_action}<a class='button' href='#plans'>Compare plans</a></div></div>
     <aside class='hero-panel'><p class='eyebrow'>One workspace</p><h2>Coverage built for operators</h2><ul><li>Repository and secret scanning</li><li>Container and SBOM vulnerability analysis</li><li>Network and web-facing assessment</li><li>Authenticated Linux and Windows posture collection</li><li>KEV + EPSS-aware prioritization</li><li>Persistent asset and scan history</li></ul></aside></section>
     <section><div class='section-title'><p class='eyebrow'>How it helps</p><h2>From scan output to an actionable queue</h2></div><div class='grid'><article class='card'><h3>Scan broadly</h3><p class='muted'>Use purpose-built adapters for code, images, hosts, networks, and software inventories.</p></article><article class='card'><h3>Normalize evidence</h3><p class='muted'>Keep scanner-specific output behind a consistent secscan finding and reporting model.</p></article><article class='card'><h3>Prioritize risk</h3><p class='muted'>Bring severity, CISA KEV status, and EPSS likelihood together so urgent targets rise to the top.</p></article></div></section>
-    <section id='plans'><div class='section-title'><p class='eyebrow'>Plans</p><h2>Start small, expand when you need more</h2></div><div class='plans'>{_plan_cards()}</div><p class='muted' style='text-align:center;margin-top:1rem'>Professional is currently a preview access tier. Billing is not connected yet, so selecting it does not create a charge.</p></section></main><footer>secscan · security assessment evidence you can act on</footer></div></body></html>"""
+    <section id='plans'><div class='section-title'><p class='eyebrow'>Plans</p><h2>Start small, expand when you need more</h2></div><div class='plans'>{_plan_cards()}</div><p class='muted' style='text-align:center;margin-top:1rem'>{html.escape(billing_copy)}</p></section></main><footer>secscan · security assessment evidence you can act on</footer></div></body></html>"""
 
 
 def _login_page() -> str:
     return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Sign in · secscan</title><style>{_page_style()}</style></head><body><div class='auth-shell'><main class='auth-card'><a href='/'>← secscan</a><h1>Sign in</h1><p id='error'></p><form id='auth'><label>Email<input id='email' type='email' required autocomplete='email'></label><label>Password<input id='password' type='password' required autocomplete='current-password'></label><button class='primary' type='submit'>Sign in</button></form><p>New to secscan? <a href='/register'>Create an account</a>.</p></main></div><script>document.getElementById('auth').addEventListener('submit',async(e)=>{{e.preventDefault();const r=await fetch('/api/v1/auth/login',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{email:document.getElementById('email').value,password:document.getElementById('password').value}})}});if(r.ok){{location.href='/app';return}}const d=await r.json().catch(()=>({{}}));document.getElementById('error').textContent=d.detail||'Authentication failed';}});</script></body></html>"""
 
 
-def _register_page() -> str:
-    return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Create account · secscan</title><style>{_page_style()}</style></head><body><div class='auth-shell'><main class='auth-card'><a href='/'>← secscan</a><h1>Create your account</h1><p class='muted'>Choose the tier that fits how you want to evaluate or use secscan.</p><p class='notice'>Professional is a preview tier today. No payment method is collected and selecting it does not create a charge.</p><p id='error'></p><form id='auth'><label>Email<input id='email' type='email' required autocomplete='email'></label><label>Password<input id='password' type='password' required minlength='12' autocomplete='new-password'></label><div class='plans'>{_plan_cards(selectable=True)}</div><button class='primary' type='submit'>Create account</button></form><p>Already registered? <a href='/login'>Sign in</a>.</p></main></div><script>document.getElementById('auth').addEventListener('submit',async(e)=>{{e.preventDefault();const chosen=document.querySelector('input[name=plan]:checked');const r=await fetch('/api/v1/auth/register',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{email:document.getElementById('email').value,password:document.getElementById('password').value,plan:chosen.value}})}});if(r.ok){{location.href='/app';return}}const d=await r.json().catch(()=>({{}}));document.getElementById('error').textContent=d.detail||'Registration failed';}});</script></body></html>"""
+def _register_page(*, billing_enabled: bool) -> str:
+    billing_notice = (
+        "Choose Professional to create your account and continue to Stripe-hosted Checkout. Professional access activates only after a verified subscription event."
+        if billing_enabled
+        else "Professional billing is not configured on this instance. You can create a Free account now."
+    )
+    return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Create account · secscan</title><style>{_page_style()}</style></head><body><div class='auth-shell'><main class='auth-card'><a href='/'>← secscan</a><h1>Create your account</h1><p class='muted'>Choose the tier that fits how you want to evaluate or use secscan.</p><p class='notice'>{html.escape(billing_notice)}</p><p id='error'></p><form id='auth'><label>Email<input id='email' type='email' required autocomplete='email'></label><label>Password<input id='password' type='password' required minlength='12' autocomplete='new-password'></label><div class='plans'>{_plan_cards(selectable=True, billing_enabled=billing_enabled)}</div><button class='primary' type='submit'>Create account</button></form><p>Already registered? <a href='/login'>Sign in</a>.</p></main></div><script>document.getElementById('auth').addEventListener('submit',async(e)=>{{e.preventDefault();const chosen=document.querySelector('input[name=plan]:checked');const r=await fetch('/api/v1/auth/register',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{email:document.getElementById('email').value,password:document.getElementById('password').value,plan:chosen.value}})}});const d=await r.json().catch(()=>({{}}));if(!r.ok){{document.getElementById('error').textContent=d.detail||'Registration failed';return}}if(d.checkout_required){{const c=await fetch('/api/v1/billing/checkout',{{method:'POST'}});const cd=await c.json().catch(()=>({{}}));if(c.ok&&cd.url){{location.href=cd.url;return}}document.getElementById('error').textContent=cd.detail||'Account created as Free, but Checkout could not be started. You can retry from your plan page.';return}}location.href='/app';}});</script></body></html>"""
 
 
-def _account_page(email: str, plan: str) -> str:
-    return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Plan · secscan</title><style>{_page_style()}</style></head><body><div class='wrap'><nav><div class='brand'><a href='/'>secscan</a></div><div class='actions'><a class='button' href='/app'>Workspace</a></div></nav><main><section><div class='section-title'><p class='eyebrow'>Account</p><h1>{html.escape(email)}</h1><p>Current plan: <strong id='current-plan'>{html.escape(PLANS[plan]['name'])}</strong></p></div><p class='notice'>Professional is a preview tier. Billing is not connected yet, so changing tiers does not create a charge.</p><div class='plans'>{_plan_cards(selectable=True, selected=plan)}</div><div style='text-align:center;margin-top:1.2rem'><button id='save-plan' class='primary'>Save plan</button><p id='status'></p></div></section></main></div><script>document.getElementById('save-plan').addEventListener('click',async()=>{{const plan=document.querySelector('input[name=plan]:checked').value;const r=await fetch('/api/v1/account/plan',{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{plan}})}});const d=await r.json().catch(()=>({{}}));if(!r.ok){{document.getElementById('status').textContent=d.detail||'Could not update plan';return}}document.getElementById('current-plan').textContent=d.plan_name;document.getElementById('status').textContent='Plan updated.';}});</script></body></html>"""
+def _account_page(
+    email: str,
+    plan: str,
+    billing: BillingState,
+    *,
+    billing_enabled: bool,
+) -> str:
+    if billing.professional_active:
+        notice = "Your Professional entitlement is backed by an active Stripe subscription."
+        action = "<button id='billing-action' class='primary' data-action='portal'>Manage billing</button>"
+    elif billing_enabled:
+        notice = (
+            "Professional access activates only after Stripe confirms an active or trialing subscription. "
+            f"Current billing status: {html.escape(billing.status)}."
+        )
+        action = "<button id='billing-action' class='primary' data-action='checkout'>Upgrade to Professional</button>"
+    else:
+        notice = "Stripe billing is not configured on this instance. Free remains available without a payment provider."
+        action = ""
+    return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Plan · secscan</title><style>{_page_style()}</style></head><body><div class='wrap'><nav><div class='brand'><a href='/'>secscan</a></div><div class='actions'><a class='button' href='/app'>Workspace</a></div></nav><main><section><div class='section-title'><p class='eyebrow'>Account</p><h1>{html.escape(email)}</h1><p>Current plan: <strong id='current-plan'>{html.escape(PLANS[plan]['name'])}</strong></p></div><p class='notice'>{notice}</p><div class='plans'>{_plan_cards()}</div><div style='text-align:center;margin-top:1.2rem'>{action}<p id='status'></p></div></section></main></div><script>const b=document.getElementById('billing-action');if(b){{b.addEventListener('click',async()=>{{b.disabled=true;const endpoint=b.dataset.action==='portal'?'/api/v1/billing/portal':'/api/v1/billing/checkout';const r=await fetch(endpoint,{{method:'POST'}});const d=await r.json().catch(()=>({{}}));if(r.ok&&d.url){{location.href=d.url;return}}b.disabled=false;document.getElementById('status').textContent=d.detail||'Billing action failed';}});}}</script></body></html>"""
 
 
 class PlanEntitlementMiddleware(BaseHTTPMiddleware):
@@ -218,6 +259,9 @@ class PlanEntitlementMiddleware(BaseHTTPMiddleware):
 def mount_public_site(app: FastAPI, *, database: Path) -> FastAPI:
     auth = AuthStore(database)
     plans = PlanStore(database)
+    billing = BillingStore(database)
+    billing_config = BillingConfig.from_environment()
+    stripe = StripeBillingClient(billing_config) if billing_config else None
 
     def session_user(request: Request):  # type: ignore[no-untyped-def]
         user = auth.user_for_session(request.cookies.get(SESSION_COOKIE))
@@ -225,10 +269,19 @@ def mount_public_site(app: FastAPI, *, database: Path) -> FastAPI:
             raise HTTPException(status_code=401, detail="authentication required")
         return user
 
+    def require_stripe() -> StripeBillingClient:
+        if stripe is None:
+            raise HTTPException(status_code=503, detail="Stripe billing is not configured")
+        return stripe
+
     @app.get("/", response_class=HTMLResponse)
     def landing(request: Request) -> str:
         user = auth.user_for_session(request.cookies.get(SESSION_COOKIE))
-        return _landing(user.email if user else None, plans.get(user.id) if user else None)
+        return _landing(
+            user.email if user else None,
+            plans.get(user.id) if user else None,
+            billing_enabled=stripe is not None,
+        )
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page() -> str:
@@ -238,19 +291,25 @@ def mount_public_site(app: FastAPI, *, database: Path) -> FastAPI:
     def register_page() -> str:
         if not _registration_enabled():
             raise HTTPException(status_code=404, detail="registration is disabled")
-        return _register_page()
+        return _register_page(billing_enabled=stripe is not None)
 
     @app.post("/api/v1/auth/register", status_code=201)
     def register(request: PlanRegisterRequest, response: Response) -> dict[str, object]:
         if not _registration_enabled():
             raise HTTPException(status_code=403, detail="registration is disabled")
+        if request.plan == "professional" and stripe is None:
+            raise HTTPException(status_code=503, detail="Professional billing is not configured")
         try:
             user = auth.register(request.email, request.password)
-            plan = plans.set(user.id, request.plan)
+            plan = plans.set(user.id, "free")
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         _set_session_cookie(response, auth.create_session(user.id))
-        return user.public() | {"plan": plan, "plan_name": PLANS[plan]["name"]}
+        return user.public() | {
+            "plan": plan,
+            "plan_name": PLANS[plan]["name"],
+            "checkout_required": request.plan == "professional",
+        }
 
     @app.post("/api/v1/auth/login")
     def login(request: LoginRequest, response: Response) -> dict[str, object]:
@@ -264,22 +323,85 @@ def mount_public_site(app: FastAPI, *, database: Path) -> FastAPI:
     @app.get("/account/plan", response_class=HTMLResponse)
     def account_plan(request: Request) -> str:
         user = session_user(request)
-        return _account_page(user.email, plans.get(user.id))
+        return _account_page(
+            user.email,
+            plans.get(user.id),
+            billing.state(user.tenant_id),
+            billing_enabled=stripe is not None,
+        )
 
     @app.get("/api/v1/account/plan")
     def get_plan(request: Request) -> dict[str, object]:
         user = session_user(request)
         plan = plans.get(user.id)
-        return {"plan": plan, "plan_name": PLANS[plan]["name"], "definition": PLANS[plan]}
+        state = billing.state(user.tenant_id)
+        return {
+            "plan": plan,
+            "plan_name": PLANS[plan]["name"],
+            "definition": PLANS[plan],
+            "billing_configured": stripe is not None,
+            "billing_status": state.status,
+        }
 
     @app.put("/api/v1/account/plan")
     def change_plan(request: Request, change: PlanChangeRequest) -> dict[str, object]:
         user = session_user(request)
-        try:
-            plan = plans.set(user.id, change.plan)
-        except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        state = billing.state(user.tenant_id)
+        if change.plan == "professional":
+            raise HTTPException(
+                status_code=409,
+                detail="Professional plan requires a verified subscription; use billing checkout",
+            )
+        if state.professional_active:
+            raise HTTPException(
+                status_code=409,
+                detail="Use the billing portal to cancel or change an active subscription",
+            )
+        plan = plans.set(user.id, "free")
         return {"plan": plan, "plan_name": PLANS[plan]["name"], "definition": PLANS[plan]}
+
+    @app.post("/api/v1/billing/checkout")
+    def create_checkout(request: Request) -> dict[str, object]:
+        user = session_user(request)
+        client = require_stripe()
+        state = billing.state(user.tenant_id)
+        if state.professional_active:
+            raise HTTPException(status_code=409, detail="Professional subscription is already active")
+        try:
+            session = client.create_checkout_session(
+                tenant_id=user.tenant_id,
+                email=user.email,
+                customer_id=state.customer_id,
+            )
+        except BillingError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return {"id": session["id"], "url": session["url"]}
+
+    @app.post("/api/v1/billing/portal")
+    def create_portal(request: Request) -> dict[str, object]:
+        user = session_user(request)
+        client = require_stripe()
+        state = billing.state(user.tenant_id)
+        if not state.customer_id:
+            raise HTTPException(status_code=409, detail="No Stripe customer is associated with this account")
+        try:
+            session = client.create_portal_session(state.customer_id)
+        except BillingError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return {"url": session["url"]}
+
+    @app.post("/api/v1/billing/webhook")
+    async def stripe_webhook(request: Request) -> dict[str, object]:
+        if billing_config is None:
+            raise HTTPException(status_code=503, detail="Stripe billing is not configured")
+        payload = await request.body()
+        signature = request.headers.get("stripe-signature", "")
+        try:
+            event = verify_stripe_event(payload, signature, billing_config.webhook_secret)
+            billing.apply_stripe_event(event)
+        except BillingError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"received": True, "event_id": event.get("id")}
 
     app.add_middleware(PlanEntitlementMiddleware, database=database)
     return app
