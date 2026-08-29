@@ -37,6 +37,7 @@ _PUBLIC_PREFIXES = (
 @dataclass(frozen=True)
 class User:
     id: str
+    tenant_id: str
     email: str
     role: str
     enabled: bool
@@ -45,6 +46,7 @@ class User:
     def public(self) -> dict[str, object]:
         return {
             "id": self.id,
+            "tenant_id": self.tenant_id,
             "email": self.email,
             "role": self.role,
             "enabled": self.enabled,
@@ -95,23 +97,32 @@ class AuthStore:
                 CREATE INDEX IF NOT EXISTS auth_sessions_expiry_idx ON auth_sessions(expires_at);
                 """
             )
+            columns = {
+                str(row[1]) for row in connection.execute("PRAGMA table_info(auth_users)").fetchall()
+            }
+            if "tenant_id" not in columns:
+                connection.execute("ALTER TABLE auth_users ADD COLUMN tenant_id TEXT")
+            connection.execute(
+                "UPDATE auth_users SET tenant_id = id WHERE tenant_id IS NULL OR tenant_id = ''"
+            )
 
     def register(self, email: str, password: str) -> User:
         normalized = normalize_email(email)
         password_hash = hash_password(password)
         user_id = str(uuid4())
+        tenant_id = user_id
         created_at = _now().isoformat()
         with self._connect() as connection:
             count = int(connection.execute("SELECT COUNT(*) FROM auth_users").fetchone()[0])
             role = "admin" if count == 0 else "user"
             try:
                 connection.execute(
-                    "INSERT INTO auth_users (id, email, password_hash, role, enabled, created_at) VALUES (?, ?, ?, ?, 1, ?)",
-                    (user_id, normalized, password_hash, role, created_at),
+                    "INSERT INTO auth_users (id, tenant_id, email, password_hash, role, enabled, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)",
+                    (user_id, tenant_id, normalized, password_hash, role, created_at),
                 )
             except sqlite3.IntegrityError as exc:
                 raise ValueError("an account with that email already exists") from exc
-        return User(user_id, normalized, role, True, created_at)
+        return User(user_id, tenant_id, normalized, role, True, created_at)
 
     def authenticate(self, email: str, password: str) -> User | None:
         try:
@@ -214,6 +225,7 @@ def _token_hash(token: str) -> str:
 def _user(row: sqlite3.Row) -> User:
     return User(
         str(row["id"]),
+        str(row["tenant_id"]),
         str(row["email"]),
         str(row["role"]),
         bool(row["enabled"]),
