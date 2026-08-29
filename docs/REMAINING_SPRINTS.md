@@ -2,21 +2,17 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 57
+## Completed through Sprint 58
 
-Sprints 0–57 are complete, including repository/image/SBOM scanning, policy and baselines, service/history/reporting, AWS ECR discovery/scanning, web UI, Nmap/Nuclei network assessment, authenticated Linux posture/package/CVE scanning, local accounts and encrypted SSH credentials, CISA KEV enrichment, FIRST EPSS enrichment, explainable KEV/EPSS-aware web prioritization, persistent first-class asset inventory with scan-history association, authenticated Windows posture/software assessment over strict key-only OpenSSH, a public product experience with Free/Professional account-plan foundations, deterministic CLI network-range assessment limited to 16 sequential literal IP/CIDR targets, bounded single-URL HTTP/HTTPS DAST with authenticated web/API submission and explicit authorization acknowledgement, a complementary pinned Grype image-vulnerability adapter with scanner-specific evidence and existing CycloneDX artifact integration, and bounded read-only EC2 compute discovery/association for explicitly approved instance IDs.
+Sprints 0–58 are complete, including repository/image/SBOM scanning, policy and baselines, service/history/reporting, AWS ECR discovery/scanning, web UI, Nmap/Nuclei network assessment, authenticated Linux posture/package/CVE scanning, local accounts and encrypted SSH credentials, CISA KEV enrichment, FIRST EPSS enrichment, explainable KEV/EPSS-aware web prioritization, persistent first-class asset inventory with scan-history association, authenticated Windows posture/software assessment over strict key-only OpenSSH, a public product experience with Free/Professional account-plan foundations, deterministic CLI network-range assessment limited to 16 sequential literal IP/CIDR targets, bounded single-URL HTTP/HTTPS DAST with authenticated web/API submission and explicit authorization acknowledgement, a complementary pinned Grype image-vulnerability adapter with scanner-specific evidence and existing CycloneDX artifact integration, bounded read-only EC2 compute discovery/association for explicitly approved instance IDs, and bounded ECS service/task-definition/container-image association for explicitly approved workloads.
 
 ## Current sprint
 
-### Sprint 58 — Bounded ECS Workload Association
-
-Associate explicitly approved ECS services with their task definitions and container image references using read-only AWS metadata. Promote only immutable `@sha256` image references as exact secscan association targets. Do not enumerate clusters/services/tasks, mutate ECS resources, trigger scans, or enable paid AWS security services.
-
-## Candidate remaining sprints
-
 ### Sprint 59 — Tenant and Authorization Isolation
 
-Evolve the existing local multi-user account foundation into explicit tenant/project ownership, role-scoped assets and scans, and storage/API isolation suitable for a future SaaS deployment.
+Introduce the first enforceable tenant boundary for authenticated service jobs and derived assets. Each registered account receives an explicit tenant identity; session-backed job and asset APIs filter server-side by that identity. Existing local history is migrated deterministically, while the optional shared bearer token remains an explicitly documented trusted-local system/operator compatibility path rather than being represented as tenant-safe authentication.
+
+## Candidate remaining sprints
 
 ### Sprint 60 — Billing Provider and Enforced Subscription Lifecycle
 
@@ -34,6 +30,9 @@ Add integrity/authenticity controls for shared policy bundles, controlled distri
 
 These remain valid ideas but are intentionally not assigned fixed sprint numbers yet:
 
+- multi-user tenant membership, invitations, tenant switching, and project-level authorization after the Sprint 59 account-tenant foundation
+- per-tenant API keys or external identity/OIDC before any production SaaS exposure
+- tenant-aware sharing/ownership for SSH credentials and cloud discovery configuration
 - EKS/Kubernetes workload association with explicit cluster/namespace/workload allow-lists and least-privilege RBAC
 - authenticated web/API submission for the bounded `network-range` scanner with explicit authorization acknowledgement
 - Windows web/API submission and reusable credential-profile workflow after the CLI scanner boundary is accepted

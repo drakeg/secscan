@@ -27,6 +27,7 @@ REQUIRED_FILES = {
     "secscan/sbom_inventory.py",
     "secscan/sbom_inventory_compare.py",
     "secscan/ssh_credentials.py",
+    "secscan/tenancy.py",
     "secscan/trivy.py",
     "secscan/web.py",
     "secscan/web_assets/__init__.py",

@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from secscan.scanners.network import validate_network_target
 from secscan.scanners.repository import is_remote_repository_url, validate_remote_repository_url
 from secscan.scanners.web_dast import validate_web_target
+from secscan.tenancy import SYSTEM_TENANT_ID, request_tenant_id
 
 JobStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 ScannerName = Literal["image", "filesystem", "repository", "sbom", "network", "web-dast"]
@@ -62,6 +63,13 @@ class JobRecord:
     completed_at: str | None = None
     exit_code: int | None = None
     error: str | None = None
+    tenant_id: str = SYSTEM_TENANT_ID
+
+
+def _job_document(record: JobRecord) -> dict[str, object]:
+    document = asdict(record)
+    document.pop("tenant_id", None)
+    return document
 
 
 class JobStore:
@@ -78,7 +86,7 @@ class JobStore:
     def migrate(self) -> None:
         with self._connect() as connection:
             connection.executescript(
-                """
+                f"""
                 CREATE TABLE IF NOT EXISTS service_jobs (
                     id TEXT PRIMARY KEY,
                     status TEXT NOT NULL,
@@ -89,13 +97,40 @@ class JobStore:
                     started_at TEXT,
                     completed_at TEXT,
                     exit_code INTEGER,
-                    error TEXT
+                    error TEXT,
+                    tenant_id TEXT NOT NULL DEFAULT '{SYSTEM_TENANT_ID}'
                 );
                 CREATE INDEX IF NOT EXISTS service_jobs_created_at_idx
                     ON service_jobs(created_at DESC);
                 CREATE INDEX IF NOT EXISTS service_jobs_status_created_at_idx
                     ON service_jobs(status, created_at DESC);
                 """
+            )
+            columns = {
+                str(row[1]) for row in connection.execute("PRAGMA table_info(service_jobs)").fetchall()
+            }
+            added_tenant_column = "tenant_id" not in columns
+            if added_tenant_column:
+                connection.execute(
+                    f"ALTER TABLE service_jobs ADD COLUMN tenant_id TEXT NOT NULL DEFAULT '{SYSTEM_TENANT_ID}'"
+                )
+                auth_table = connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'auth_users'"
+                ).fetchone()
+                if auth_table is not None:
+                    admin = connection.execute(
+                        "SELECT id FROM auth_users WHERE role = 'admin' ORDER BY created_at ASC, id ASC LIMIT 1"
+                    ).fetchone()
+                    if admin is not None:
+                        connection.execute(
+                            "UPDATE service_jobs SET tenant_id = ? WHERE tenant_id = ?",
+                            (str(admin["id"]), SYSTEM_TENANT_ID),
+                        )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS service_jobs_tenant_created_at_idx ON service_jobs(tenant_id, created_at DESC)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS service_jobs_tenant_status_created_at_idx ON service_jobs(tenant_id, status, created_at DESC)"
             )
 
     def save(self, record: JobRecord) -> None:
@@ -104,8 +139,8 @@ class JobStore:
                 """
                 INSERT INTO service_jobs (
                     id, status, scanner, target, output_dir, created_at,
-                    started_at, completed_at, exit_code, error
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    started_at, completed_at, exit_code, error, tenant_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     status = excluded.status,
                     started_at = excluded.started_at,
@@ -124,12 +159,19 @@ class JobStore:
                     record.completed_at,
                     record.exit_code,
                     record.error,
+                    record.tenant_id,
                 ),
             )
 
-    def get(self, job_id: str) -> JobRecord | None:
+    def get(self, job_id: str, *, tenant_id: str | None = None) -> JobRecord | None:
         with self._connect() as connection:
-            row = connection.execute("SELECT * FROM service_jobs WHERE id = ?", (job_id,)).fetchone()
+            if tenant_id is None:
+                row = connection.execute("SELECT * FROM service_jobs WHERE id = ?", (job_id,)).fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT * FROM service_jobs WHERE id = ? AND tenant_id = ?",
+                    (job_id, tenant_id),
+                ).fetchone()
         return JobRecord(**dict(row)) if row else None
 
     def list(
@@ -138,38 +180,26 @@ class JobStore:
         status: JobStatus | None = None,
         scanner: str | None = None,
         limit: int = 20,
+        tenant_id: str | None = None,
     ) -> list[JobRecord]:
+        predicates: list[str] = []
+        parameters: list[object] = []
+        if tenant_id is not None:
+            predicates.append("tenant_id = ?")
+            parameters.append(tenant_id)
+        if status is not None:
+            predicates.append("status = ?")
+            parameters.append(status)
+        if scanner is not None:
+            predicates.append("scanner = ?")
+            parameters.append(scanner)
+        where = f" WHERE {' AND '.join(predicates)}" if predicates else ""
+        parameters.append(limit)
         with self._connect() as connection:
-            if status is not None and scanner is not None:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM service_jobs
-                    WHERE status = ? AND scanner = ?
-                    ORDER BY created_at DESC LIMIT ?
-                    """,
-                    (status, scanner, limit),
-                ).fetchall()
-            elif status is not None:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM service_jobs
-                    WHERE status = ? ORDER BY created_at DESC LIMIT ?
-                    """,
-                    (status, limit),
-                ).fetchall()
-            elif scanner is not None:
-                rows = connection.execute(
-                    """
-                    SELECT * FROM service_jobs
-                    WHERE scanner = ? ORDER BY created_at DESC LIMIT ?
-                    """,
-                    (scanner, limit),
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    "SELECT * FROM service_jobs ORDER BY created_at DESC LIMIT ?",
-                    (limit,),
-                ).fetchall()
+            rows = connection.execute(
+                f"SELECT * FROM service_jobs{where} ORDER BY created_at DESC LIMIT ?",
+                tuple(parameters),
+            ).fetchall()
         return [JobRecord(**dict(row)) for row in rows]
 
     def fail_interrupted(self) -> None:
@@ -206,7 +236,7 @@ class JobManager:
         self.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="secscan")
         self._lock = Lock()
 
-    def submit(self, request: ScanSubmission) -> JobRecord:
+    def submit(self, request: ScanSubmission, *, tenant_id: str = SYSTEM_TENANT_ID) -> JobRecord:
         self._validate_submission(request)
         self._validate_input_paths(request)
         job_id = str(uuid4())
@@ -220,6 +250,7 @@ class JobManager:
             target=request.target,
             output_dir=str(output_dir),
             created_at=_timestamp(),
+            tenant_id=tenant_id,
         )
         with self._lock:
             self.store.save(record)
@@ -273,9 +304,9 @@ class JobManager:
                 return True
         return False
 
-    def get(self, job_id: str) -> JobRecord | None:
+    def get(self, job_id: str, *, tenant_id: str | None = None) -> JobRecord | None:
         with self._lock:
-            return self.store.get(job_id)
+            return self.store.get(job_id, tenant_id=tenant_id)
 
     def list(
         self,
@@ -283,13 +314,19 @@ class JobManager:
         status: JobStatus | None = None,
         scanner: str | None = None,
         limit: int = 20,
+        tenant_id: str | None = None,
     ) -> list[JobRecord]:
         with self._lock:
-            return self.store.list(status=status, scanner=scanner, limit=limit)
+            return self.store.list(
+                status=status,
+                scanner=scanner,
+                limit=limit,
+                tenant_id=tenant_id,
+            )
 
-    def cancel(self, job_id: str) -> JobRecord | None:
+    def cancel(self, job_id: str, *, tenant_id: str | None = None) -> JobRecord | None:
         with self._lock:
-            record = self.store.get(job_id)
+            record = self.store.get(job_id, tenant_id=tenant_id)
             if record is None:
                 return None
             if record.status != "queued":
@@ -538,41 +575,51 @@ def create_app(
         return {"status": "ok"}
 
     @app.post("/api/v1/jobs", status_code=202)
-    def submit_job(request: ScanSubmission) -> dict[str, object]:
+    def submit_job(request: Request, submission: ScanSubmission) -> dict[str, object]:
+        tenant_id = request_tenant_id(request) or SYSTEM_TENANT_ID
         try:
-            record = get_manager().submit(request)
+            record = get_manager().submit(submission, tenant_id=tenant_id)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return asdict(record)
+        return _job_document(record)
 
     @app.get("/api/v1/jobs")
     def list_jobs(
+        request: Request,
         status: JobStatus | None = None,
         scanner: ScannerName | None = None,
         limit: int = Query(default=20, ge=1, le=100),
     ) -> list[dict[str, object]]:
-        return [asdict(record) for record in get_manager().list(status=status, scanner=scanner, limit=limit)]
+        return [
+            _job_document(record)
+            for record in get_manager().list(
+                status=status,
+                scanner=scanner,
+                limit=limit,
+                tenant_id=request_tenant_id(request),
+            )
+        ]
 
     @app.get("/api/v1/jobs/{job_id}")
-    def get_job(job_id: str) -> dict[str, object]:
-        record = get_manager().get(job_id)
+    def get_job(job_id: str, request: Request) -> dict[str, object]:
+        record = get_manager().get(job_id, tenant_id=request_tenant_id(request))
         if record is None:
             raise HTTPException(status_code=404, detail="job not found")
-        return asdict(record)
+        return _job_document(record)
 
     @app.delete("/api/v1/jobs/{job_id}")
-    def cancel_job(job_id: str) -> dict[str, object]:
+    def cancel_job(job_id: str, request: Request) -> dict[str, object]:
         try:
-            record = get_manager().cancel(job_id)
+            record = get_manager().cancel(job_id, tenant_id=request_tenant_id(request))
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         if record is None:
             raise HTTPException(status_code=404, detail="job not found")
-        return asdict(record)
+        return _job_document(record)
 
     def artifact_response(job_id: str, name: str, request: Request) -> Response:
         manager = get_manager()
-        record = manager.get(job_id)
+        record = manager.get(job_id, tenant_id=request_tenant_id(request))
         if record is None:
             raise HTTPException(status_code=404, detail="job not found")
         artifact = manager.artifact_path(record, name)
