@@ -20,9 +20,7 @@ RUN mkdir -p /out \
     && printf '%s\n' "${NUCLEI_TEMPLATES_VERSION}" > /nuclei-templates/.secscan-template-version \
     && printf '%s\n' "${NUCLEI_TEMPLATES_COMMIT}" > /nuclei-templates/.secscan-template-commit
 
-FROM golang:1.25-bookworm AS grype-builder
-RUN mkdir -p /out \
-    && GOBIN=/out go install github.com/anchore/grype/cmd/grype@v0.104.1
+FROM ghcr.io/anchore/grype:v0.116.1 AS grype
 
 FROM python:3.14.7-slim-bookworm AS python-scanner-tools
 RUN python -m venv /opt/semgrep \
@@ -52,7 +50,7 @@ COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
 COPY --from=gitleaks-builder /out/gitleaks /usr/local/bin/gitleaks
 COPY --from=nuclei-builder /out/nuclei /usr/local/bin/nuclei
 COPY --from=nuclei-builder /nuclei-templates /opt/nuclei-templates
-COPY --from=grype-builder /out/grype /usr/local/bin/grype
+COPY --from=grype /grype /usr/local/bin/grype
 COPY --from=python-scanner-tools /opt/semgrep /opt/semgrep
 COPY --from=python-scanner-tools /opt/checkov /opt/checkov
 RUN apt-get update \
