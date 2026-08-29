@@ -14,7 +14,7 @@ import tempfile
 from typing import Any, Literal, cast
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -23,6 +23,7 @@ from secscan.scanners.linux_host import validate_ssh_user
 from secscan.scanners.network import validate_network_target
 from secscan.service import ARTIFACT_MANIFEST_NAME, ARTIFACT_PATHS, JobRecord, JobStore, ScanSubmission, create_app
 from secscan.ssh_credentials import SshCredentialStore
+from secscan.tenancy import SYSTEM_TENANT_ID, request_tenant_id
 
 _WEB_ROOT = Path(__file__).with_name("web_assets")
 _TERMINAL_JOB_STATUSES = {"completed", "failed", "cancelled"}
@@ -68,7 +69,7 @@ def _linux_host_service_ready() -> bool:
     return True
 
 
-def _job_submitter(app: FastAPI) -> Callable[[ScanSubmission], dict[str, object]]:
+def _job_submitter(app: FastAPI) -> Callable[[Request, ScanSubmission], dict[str, object]]:
     for route in app.routes:
         if (
             isinstance(route, APIRoute)
@@ -76,7 +77,7 @@ def _job_submitter(app: FastAPI) -> Callable[[ScanSubmission], dict[str, object]
             and route.methods is not None
             and "POST" in route.methods
         ):
-            return cast(Callable[[ScanSubmission], dict[str, object]], route.endpoint)
+            return cast(Callable[[Request, ScanSubmission], dict[str, object]], route.endpoint)
     raise RuntimeError("secscan job submission route is unavailable")
 
 
@@ -89,7 +90,8 @@ def _initialize_job_manager(app: FastAPI) -> None:
             and "GET" in route.methods
         ):
             endpoint = cast(Callable[..., list[dict[str, object]]], route.endpoint)
-            endpoint(status=None, scanner=None, limit=1)
+            internal_request = Request({"type": "http", "state": {}})
+            endpoint(request=internal_request, status=None, scanner=None, limit=1)
             return
     raise RuntimeError("secscan job listing route is unavailable")
 
@@ -149,14 +151,20 @@ def mount_web_ui(
             )
         return credential_store
 
-    def job_storage(job_id: str) -> tuple[str, Path]:
+    def job_storage(job_id: str, tenant_id: str | None) -> tuple[str, Path]:
         if not database.is_file():
             raise HTTPException(status_code=404, detail="job not found")
         with sqlite3.connect(database) as connection:
-            row = connection.execute(
-                "SELECT status, output_dir FROM service_jobs WHERE id = ?",
-                (job_id,),
-            ).fetchone()
+            if tenant_id is None:
+                row = connection.execute(
+                    "SELECT status, output_dir FROM service_jobs WHERE id = ?",
+                    (job_id,),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT status, output_dir FROM service_jobs WHERE id = ? AND tenant_id = ?",
+                    (job_id, tenant_id),
+                ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail="job not found")
         status, output_dir = str(row[0]), str(row[1])
@@ -241,7 +249,9 @@ def mount_web_ui(
                 record.error = f"{record.error}; {manifest_error}" if record.error else manifest_error
                 store.save(record)
 
-    def submit_profile_job(request: LinuxHostWebSubmission, profile_id: str) -> dict[str, object]:
+    def submit_profile_job(
+        request: LinuxHostWebSubmission, profile_id: str, tenant_id: str
+    ) -> dict[str, object]:
         job_id = str(uuid4())
         output_dir = (resolved_root / job_id).resolve()
         if not output_dir.is_relative_to(resolved_root):
@@ -255,10 +265,13 @@ def mount_web_ui(
             target=request.target,
             output_dir=str(output_dir),
             created_at=datetime.now(UTC).isoformat(),
+            tenant_id=tenant_id,
         )
         store.save(record)
         profile_executor.submit(run_profile_job, job_id, request, profile_id)
-        return asdict(record)
+        document = asdict(record)
+        document.pop("tenant_id", None)
+        return document
 
     @app.get("/api/v1/ssh-credentials/capability")
     def ssh_credential_capability() -> dict[str, bool]:
@@ -311,7 +324,9 @@ def mount_web_ui(
         return {"configured": _linux_host_service_ready() or has_profiles}
 
     @app.post("/api/v1/linux-host-jobs", status_code=202)
-    def submit_linux_host_job(request: LinuxHostWebSubmission) -> dict[str, object]:
+    def submit_linux_host_job(
+        http_request: Request, request: LinuxHostWebSubmission
+    ) -> dict[str, object]:
         if not request.linux_host_authorized:
             raise HTTPException(
                 status_code=422,
@@ -331,7 +346,8 @@ def mount_web_ui(
             if profile_id is not None:
                 if request.remember_credential:
                     credential_store.bind_host(target, profile_id)
-                return submit_profile_job(request, profile_id)
+                tenant_id = request_tenant_id(http_request) or SYSTEM_TENANT_ID
+                return submit_profile_job(request, profile_id, tenant_id)
 
         if not _linux_host_service_ready():
             raise HTTPException(
@@ -350,11 +366,11 @@ def mount_web_ui(
             timeout=request.timeout,
             network_authorized=False,
         )
-        return submit_job(submission)
+        return submit_job(http_request, submission)
 
     @app.get("/api/v1/jobs/{job_id}/summary")
-    def job_summary(job_id: str) -> dict[str, object]:
-        status, job_dir = job_storage(job_id)
+    def job_summary(job_id: str, request: Request) -> dict[str, object]:
+        status, job_dir = job_storage(job_id, request_tenant_id(request))
         report_path = job_dir / "secscan.json"
         if not report_path.is_file():
             raise HTTPException(status_code=404, detail="scan report not found")
@@ -378,14 +394,21 @@ def mount_web_ui(
         }
 
     @app.delete("/api/v1/jobs/{job_id}/history", status_code=204)
-    def delete_job_history(job_id: str) -> Response:
-        status, job_dir = job_storage(job_id)
+    def delete_job_history(job_id: str, request: Request) -> Response:
+        tenant_id = request_tenant_id(request)
+        status, job_dir = job_storage(job_id, tenant_id)
         if status not in _TERMINAL_JOB_STATUSES:
             raise HTTPException(status_code=409, detail="active jobs cannot be deleted")
         if job_dir.exists():
             shutil.rmtree(job_dir)
         with sqlite3.connect(database) as connection:
-            connection.execute("DELETE FROM service_jobs WHERE id = ?", (job_id,))
+            if tenant_id is None:
+                connection.execute("DELETE FROM service_jobs WHERE id = ?", (job_id,))
+            else:
+                connection.execute(
+                    "DELETE FROM service_jobs WHERE id = ? AND tenant_id = ?",
+                    (job_id, tenant_id),
+                )
         return Response(status_code=204)
 
     app.mount("/", StaticFiles(directory=_WEB_ROOT, html=True), name="web")
