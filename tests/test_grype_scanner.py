@@ -68,12 +68,31 @@ def test_grype_scanner_uses_fixed_json_command(monkeypatch: pytest.MonkeyPatch) 
     assert calls[0] == ["grype", "alpine:3.20", "-o", "json", "--only-fixed=false"]
     assert result.findings == ()
     assert result.raw == payload
+    assert scanner.raw_artifact_name(result.request) == "grype.json"
 
 
-def test_grype_adapter_does_not_claim_sbom_generation(tmp_path: Path) -> None:
+def test_grype_adapter_reuses_existing_trivy_sbom_generation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[tuple[str, Path, int]] = []
+
+    def fake_generate(
+        target: str,
+        output_path: Path,
+        *,
+        timeout_seconds: int,
+        environment: object = None,
+    ) -> None:
+        calls.append((target, output_path, timeout_seconds))
+        output_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr("secscan.scanners.grype.generate_cyclonedx", fake_generate)
     scanner = GrypeImageScanner()
-    with pytest.raises(RuntimeError, match="does not generate SBOMs"):
-        scanner.generate_sbom(
-            ScanRequest(scanner_name="image-grype", target="alpine:3.20"),
-            tmp_path / "sbom.json",
-        )
+    output = tmp_path / "sbom.json"
+    scanner.generate_sbom(
+        ScanRequest(scanner_name="image-grype", target="alpine:3.20", timeout_seconds=45),
+        output,
+    )
+
+    assert calls == [("alpine:3.20", output, 45)]
+    assert output.read_text(encoding="utf-8") == "{}"
