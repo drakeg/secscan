@@ -52,6 +52,18 @@ class AssetStore:
                     connection.execute(
                         f"ALTER TABLE service_jobs ADD COLUMN tenant_id TEXT NOT NULL DEFAULT '{SYSTEM_TENANT_ID}'"
                     )
+                    auth_table = connection.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'auth_users'"
+                    ).fetchone()
+                    if auth_table is not None:
+                        admin = connection.execute(
+                            "SELECT id FROM auth_users WHERE role = 'admin' ORDER BY created_at ASC, id ASC LIMIT 1"
+                        ).fetchone()
+                        if admin is not None:
+                            connection.execute(
+                                "UPDATE service_jobs SET tenant_id = ? WHERE tenant_id = ?",
+                                (str(admin["id"]), SYSTEM_TENANT_ID),
+                            )
 
             asset_columns = {
                 str(row[1])
