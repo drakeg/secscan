@@ -34,7 +34,6 @@ def _job_submitter(app: FastAPI) -> Callable[[Request, ScanSubmission], dict[str
 
 def mount_network_range_submission(app: FastAPI) -> FastAPI:
     """Expose the bounded CLI network-range scanner through an explicit authorized API."""
-    submit_job = _job_submitter(app)
 
     @app.post("/api/v1/network-range-jobs", status_code=202, tags=["network"])
     def submit_network_range(request: Request, submission: NetworkRangeSubmission) -> dict[str, object]:
@@ -48,10 +47,10 @@ def mount_network_range_submission(app: FastAPI) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-        # The dedicated endpoint owns validation for this scanner identity. The
-        # generic persisted job machinery then supplies normal tenant ownership,
-        # execution, history, status, and artifact behavior.
-        job_request = ScanSubmission.model_construct(
+        # The dedicated endpoint owns its explicit acknowledgement UX, while the
+        # generic job route remains the single persistence/execution boundary and
+        # independently re-validates network-range authorization and target bounds.
+        job_request = ScanSubmission(
             scanner="network-range",
             target=submission.target,
             fail_on=submission.fail_on,
@@ -61,6 +60,6 @@ def mount_network_range_submission(app: FastAPI) -> FastAPI:
             network_authorized=True,
             web_authorized=False,
         )
-        return submit_job(request, job_request)
+        return _job_submitter(app)(request, job_request)
 
     return app
