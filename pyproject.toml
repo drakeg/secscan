@@ -31,6 +31,7 @@ dev = [
 secscan = "secscan.cli:main"
 secscan-service = "secscan.service_cli:main"
 secscan-ecs = "secscan.aws_ecs_cli:main"
+secscan-policy = "secscan.signed_policy:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -53,7 +54,6 @@ select = ["E9", "F"]
 
 [tool.ruff.format]
 quote-style = "double"
-indent-style = "space"
 
 [tool.mypy]
 python_version = "3.12"
