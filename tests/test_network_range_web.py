@@ -32,6 +32,21 @@ def test_network_range_requires_explicit_authorization(tmp_path: Path) -> None:
     assert client.get("/api/v1/jobs").json() == []
 
 
+def test_generic_job_endpoint_cannot_bypass_network_range_authorization(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+
+    response = client.post(
+        "/api/v1/jobs",
+        json={"scanner": "network-range", "target": "192.0.2.0/30"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": "network range scans require explicit authorization acknowledgement"
+    }
+    assert client.get("/api/v1/jobs").json() == []
+
+
 def test_network_range_rejects_large_ipv6_without_unbounded_expansion(tmp_path: Path) -> None:
     client = _client(tmp_path)
 
