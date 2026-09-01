@@ -293,6 +293,18 @@ The vulnerability database cache is stored under `/cache` and should be persiste
 - Container runtime: Python 3.14
 - CI validates both Python 3.12 and 3.14
 
+## GitHub issue export
+
+Prepare one bounded GitHub issue locally from a completed report without making a network request:
+
+```bash
+secscan export github-issue ./reports/secscan.json \
+  --repository OWNER/REPOSITORY \
+  --output ./reports/github-issue.json
+```
+
+Review the payload before adding `--submit`. Live submission requires `SECSCAN_GITHUB_ISSUES_TOKEN` in the environment and a fine-grained token scoped to the exact destination repository with Issues write access. The command sends one request to the fixed public GitHub API and records only the returned issue number and URL. See [GitHub Issue Export](docs/GITHUB_ISSUES.md) for security boundaries, offline/local tests, optional live testing, rate limits, and cleanup.
+
 ## Local development
 
 ```bash
@@ -326,7 +338,7 @@ Stable `vMAJOR.MINOR.PATCH` tags trigger guarded GitHub release packaging when t
 
 ## Current boundaries
 
-The built-in scanners support public and explicitly inventoried ECR container images, including bounded sequential batches, plus local filesystem paths, local/remote source repositories, CycloneDX or SPDX 2.2/2.3 JSON SBOM files, and authorized single-host Nmap/Nuclei network assessments. Public HTTPS GitHub, GitLab, Azure DevOps, and compatible Git repositories can be scanned remotely; private `github.com` repositories can use server-side `SECSCAN_GITHUB_TOKEN` authentication. Private GitLab/Azure DevOps authentication and provider OAuth/App integrations remain later increments. Supported SBOMs can produce, compare, and apply exact declared-license policy to local normalized inventories. YAML scan policies support severity thresholds and expiring vulnerability suppressions. Baseline comparison classifies current and previous findings. Local SQLite stores scan history, supports exact-cohort severity trends, and persists service job metadata. AWS discovery inventories explicitly approved ECR repositories. Network service submission remains single-host and local/single-operator; CIDRs, target lists, hosted tenant authorization, and public service exposure are not supported. Richer license governance, dependency-graph analysis, scheduled AWS scanning, tenant credential storage, persistent asset management, and contextual risk scoring remain later increments.
+The built-in scanners support public and explicitly inventoried ECR container images, including bounded sequential batches, plus local filesystem paths, local/remote source repositories, CycloneDX or SPDX 2.2/2.3 JSON SBOM files, authorized network assessments, authenticated Linux/Windows hosts, bounded web DAST, and complementary Grype image analysis. AWS discovery supports explicitly approved ECR, EC2, and ECS resources. Local accounts, tenant-isolated jobs/assets, optional Stripe billing, KEV/EPSS enrichment, persistent assets, and offline-by-default GitHub issue export are available within their documented boundaries. Private GitLab/Azure DevOps authentication, GitHub Enterprise issue export, other workflow providers, broader tenant membership, scheduled reassessment, and production SaaS hardening remain later increments.
 
 ## Security notes
 
@@ -353,6 +365,7 @@ The built-in scanners support public and explicitly inventoried ECR container im
 - [AWS ECR asset discovery and local testing](docs/AWS_ECR_DISCOVERY.md)
 - [Repository scanning](docs/REPOSITORY_SCANNING.md)
 - [GitHub repository authentication](docs/GITHUB_AUTH.md)
+- [GitHub issue export and local/live testing](docs/GITHUB_ISSUES.md)
 - [Web GUI and Docker Compose testing](docs/WEB_UI.md)
 - [Agentless network assessment and local testing](docs/NETWORK_SCANNING.md)
 - [SBOM scanning](docs/SBOM_SCANNING.md)

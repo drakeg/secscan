@@ -24,6 +24,7 @@ from secscan.aws import (
 )
 from secscan.compare import compare_findings, load_baseline
 from secscan.history import HistoryStore, ScanHistoryEntry, StoredFinding
+from secscan.github_issues import build_github_issue_export, submit_github_issue
 from secscan.license_policy import evaluate_license_policy, load_license_policy
 from secscan.policy import Policy, evaluate_policy, load_policy, policy_failed
 from secscan.report import build_report, write_html, write_json, write_raw_json
@@ -229,6 +230,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=Path("/reports/secscan.inventory.policy.json"),
+    )
+
+    export = subparsers.add_parser("export", help="export secscan evidence to external workflows")
+    export_subparsers = export.add_subparsers(dest="export_type", required=True)
+    github_issue = export_subparsers.add_parser(
+        "github-issue", help="prepare or explicitly submit one bounded GitHub issue"
+    )
+    github_issue.add_argument("report", type=Path, help="completed secscan.json report")
+    github_issue.add_argument(
+        "--repository", required=True, help="exact destination in OWNER/REPOSITORY form"
+    )
+    github_issue.add_argument(
+        "--output",
+        type=Path,
+        default=Path("github-issue.json"),
+        help="local export and optional submission receipt",
+    )
+    github_issue.add_argument(
+        "--submit",
+        action="store_true",
+        help="create the issue; otherwise no network request is made",
     )
     return parser
 
@@ -697,6 +719,22 @@ def _run_inventory_check(args: argparse.Namespace) -> int:
     return 2 if summary["violation_count"] else 0
 
 
+def _run_github_issue_export(args: argparse.Namespace) -> int:
+    document = build_github_issue_export(args.report, args.repository)
+    if args.submit:
+        document = submit_github_issue(
+            document, os.environ.get("SECSCAN_GITHUB_ISSUES_TOKEN", "")
+        )
+        submission = document["submission"]
+        assert isinstance(submission, dict)
+        print(f"GitHub issue created: {submission['url']}")
+    else:
+        print("GitHub issue prepared locally; no network request was made")
+    _write_json_atomic(document, args.output)
+    print(f"GitHub issue export written to {args.output}")
+    return 0
+
+
 def _run_ecr_batch(args: argparse.Namespace) -> int:
     image_uris = tuple(args.image_uri)
     assets = load_ecr_assets(args.inventory, image_uris)
@@ -775,6 +813,8 @@ def main(argv: list[str] | None = None) -> int:
             return _run_inventory_compare(args)
         if args.command == "check" and args.check_type == "inventory":
             return _run_inventory_check(args)
+        if args.command == "export" and args.export_type == "github-issue":
+            return _run_github_issue_export(args)
         return 1
     except (AwsDiscoveryError, TrivyError, OSError, ValueError, RuntimeError) as exc:
         print(f"secscan error: {exc}", file=sys.stderr)

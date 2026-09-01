@@ -191,24 +191,31 @@ Delivered deterministic read-only dpkg/RPM installed-package inventory through t
 
 Delivered allow-listed distro/package-manager mapping, temporary Trivy-compatible CycloneDX package metadata, local `trivy sbom` correlation, normalized Linux package CVE findings, and fail-closed inventory-only behavior for unsupported distributions.
 
+### Sprints 45–60 — Accuracy, Risk, Assets, Cloud, Tenancy, and Billing
+
+Delivered Debian source-package correlation, CISA KEV and FIRST EPSS enrichment, explainable web prioritization, persistent asset inventory, authenticated Windows assessment, public Free/Professional plan foundations, bounded network-range and web DAST scanning, a complementary Grype adapter, EC2 and ECS workload association, tenant-isolated job and asset access, and an opt-in verified Stripe subscription lifecycle. Detailed boundaries and test procedures are recorded in `docs/SPRINT_45.md` through `docs/SPRINT_60.md`.
+
 ## Current sprint
 
-### Sprint 45 — Debian Source-Package CVE Accuracy
+### Sprint 61 — Bounded GitHub Issue Export
 
 #### Goal
 
-Improve Debian/Ubuntu CVE correlation by carrying deterministic source-package identity from dpkg metadata into Trivy-compatible CycloneDX properties, while explicitly avoiding heuristic RPM source parsing.
+Turn one completed local secscan report into one bounded GitHub issue, with an offline preparation default and explicit operator-authorized submission.
 
 #### Acceptance boundaries
 
-- source identity comes only from dpkg metadata or Debian's defined same-name/same-version fallback
-- incomplete source metadata fails closed as malformed package inventory
-- `aquasecurity:trivy:SrcName` and `aquasecurity:trivy:SrcVersion` are emitted only when source identity is proven
-- existing RPM correlation remains unchanged and receives no guessed source identity
-- SSH remains fixed-command, read-only, key-only, and strict-host-key verified
+- only supported secscan report schemas and exact `OWNER/REPOSITORY` destinations are accepted
+- the export contains at most 50 deterministically ordered findings and reports omitted counts
+- preparing the export is offline and requires no credential
+- submission requires `--submit` plus a server-side environment token and makes exactly one request to the fixed public GitHub API origin
+- the token is never accepted in arguments, written to the receipt, or included in errors
+- one local JSON file records the prepared payload and, after submission, the returned issue number and URL
+- Jira, Slack, ServiceNow, SIEM, web/API delivery, retries, queues, automatic submission, and GitHub Enterprise remain deferred
+- focused tests, repository preflight, CI, container smoke, and CodeQL must pass before merge
 - current/projected recurring infrastructure and service cost remains **$0**
 
-See [`docs/SPRINT_45.md`](SPRINT_45.md) for the detailed implementation, security, correctness, and validation boundaries.
+See [`docs/SPRINT_61.md`](SPRINT_61.md) and [`docs/GITHUB_ISSUES.md`](GITHUB_ISSUES.md) for implementation, security, cost, and local/live test procedures.
 
 ## Planned feature sprints
 
