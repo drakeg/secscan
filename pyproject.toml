@@ -9,7 +9,7 @@ description = "Container-first security scanner orchestration and normalization"
 requires-python = ">=3.12"
 dependencies = [
   "boto3>=1.40,<2",
-  "cryptography>=45,<48",
+  "cryptography>=45,<51",
   "fastapi>=0.115,<1",
   "paramiko>=5,<6",
   "PyYAML>=6.0,<7",
