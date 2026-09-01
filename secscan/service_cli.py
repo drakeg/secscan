@@ -34,6 +34,7 @@ def main() -> None:
 
     from secscan.assets_web import mount_assets
     from secscan.auth import mount_auth
+    from secscan.network_range_web import mount_network_range_submission
     from secscan.public_navigation import PublicSessionNavigationMiddleware
     from secscan.public_site import mount_public_site
     from secscan.service import create_app
@@ -57,6 +58,7 @@ def main() -> None:
         mount_auth(app, database=database, api_token=api_token)
         mount_ssh_host_trust(app, database=database)
         mount_assets(app, database=database)
+        mount_network_range_submission(app)
 
         @app.get("/app", include_in_schema=False)
         def workspace() -> FileResponse:
