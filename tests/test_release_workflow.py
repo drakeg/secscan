@@ -79,7 +79,7 @@ def test_release_job_generates_and_checksums_a_pinned_source_sbom() -> None:
     stage = next(step for step in steps if step["name"] == "Stage source SBOM")
     checksums = next(step for step in steps if step["name"] == "Generate SHA-256 checksums")
 
-    assert sbom["uses"] == "anchore/sbom-action@v0.24.0"
+    assert sbom["uses"] == "anchore/sbom-action@v0.24.2"
     assert sbom["with"] == {
         "path": ".",
         "format": "spdx-json",
