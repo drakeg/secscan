@@ -61,6 +61,6 @@ def mount_network_range_submission(app: FastAPI) -> FastAPI:
             network_authorized=True,
             web_authorized=False,
         )
-        return submit_job(request=request, submission=job_request)
+        return submit_job(request, job_request)
 
     return app
