@@ -1,14 +1,22 @@
 FROM aquasec/trivy:0.74.0 AS trivy
 
 FROM golang:1.25-bookworm AS gitleaks-builder
-RUN mkdir -p /out \
-    && GOBIN=/out go install github.com/zricethezav/gitleaks/v8@v8.30.1
+ARG X_CRYPTO_VERSION=v0.55.0
+RUN git clone --depth 1 --branch v8.30.1 https://github.com/gitleaks/gitleaks.git /src \
+    && cd /src \
+    && go mod edit -require=golang.org/x/crypto@${X_CRYPTO_VERSION} \
+    && go build -mod=mod -o /out/gitleaks . \
+    && go version -m /out/gitleaks | grep -E "golang.org/x/crypto[[:space:]]+${X_CRYPTO_VERSION}"
 
 FROM golang:1.26-bookworm AS nuclei-builder
+ARG X_CRYPTO_VERSION=v0.55.0
 ARG NUCLEI_TEMPLATES_VERSION=v10.4.7
 ARG NUCLEI_TEMPLATES_COMMIT=83234ce456da3e90dda86dfbc5e605e64a846df3
-RUN mkdir -p /out \
-    && GOBIN=/out go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.11.1 \
+RUN git clone --depth 1 --branch v3.11.1 https://github.com/projectdiscovery/nuclei.git /src \
+    && cd /src \
+    && go mod edit -require=golang.org/x/crypto@${X_CRYPTO_VERSION} \
+    && go build -mod=mod -o /out/nuclei ./cmd/nuclei \
+    && go version -m /out/nuclei | grep -E "golang.org/x/crypto[[:space:]]+${X_CRYPTO_VERSION}" \
     && git init /nuclei-templates \
     && git -C /nuclei-templates remote add origin \
         https://github.com/projectdiscovery/nuclei-templates.git \
@@ -20,7 +28,7 @@ RUN mkdir -p /out \
     && printf '%s\n' "${NUCLEI_TEMPLATES_VERSION}" > /nuclei-templates/.secscan-template-version \
     && printf '%s\n' "${NUCLEI_TEMPLATES_COMMIT}" > /nuclei-templates/.secscan-template-commit
 
-FROM ghcr.io/anchore/grype:v0.116.1 AS grype
+FROM ghcr.io/anchore/grype:v0.118.0 AS grype
 
 FROM python:3.14.7-slim-bookworm AS python-scanner-tools
 RUN python -m venv /opt/semgrep \
