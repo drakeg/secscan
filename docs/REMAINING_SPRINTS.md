@@ -2,19 +2,19 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 62
+## Completed through Sprint 63
 
-Sprints 0–62 are complete, including the capabilities previously summarized here plus an opt-in tenant-bound Stripe subscription lifecycle, a bounded GitHub Issues export that remains offline by default and requires explicit submission with an environment-only token, and offline Ed25519-signed policy/governance bundles with fail-closed verification.
+Sprints 0–63 are complete, including the capabilities previously summarized here plus an opt-in tenant-bound Stripe subscription lifecycle, a bounded GitHub Issues export that remains offline by default and requires explicit submission with an environment-only token, offline Ed25519-signed policy/governance bundles with fail-closed verification, and authenticated Web/API submission for the bounded 16-host sequential `network-range` scanner with oversized-CIDR expansion hardened before materialization.
 
 ## Current sprint
 
-### Sprint 63 — Authenticated Network-Range Web/API Submission
+### Sprint 64 — Authenticated Windows Host Web/API Submission
 
-Expose the existing bounded `network-range` scanner through a dedicated authenticated service endpoint and browser workflow, require explicit authorization acknowledgement before persistence, retain the 16-host sequential execution boundary, and harden CIDR expansion so oversized IPv6 ranges fail before unbounded materialization.
+Expose the existing strict key-only `windows-host` assessment through a dedicated authenticated service endpoint and browser workflow. Reuse encrypted SSH credential profiles for key/trust material, allow a validated per-scan Windows username override for `DOMAIN\\user` cases, retain strict host-key verification and fixed read-only PowerShell checks, require explicit authorization before persistence, and keep authenticated host workflows Professional-entitled.
 
 ## Candidate remaining sprints
 
-No later sprint number is committed yet. After Sprint 63 is accepted, the backlog should be reprioritized before assigning Sprint 64.
+No later sprint number is committed yet. After Sprint 64 is accepted, the backlog should be reprioritized before assigning Sprint 65.
 
 ## Backlog after the numbered candidate sequence
 
@@ -27,7 +27,6 @@ These remain valid ideas but are intentionally not assigned fixed sprint numbers
 - richer billing operations such as invoice history, refunds/credits, taxes, coupons, metering, and billing-admin delegation
 - additional outbound integrations such as Jira, Slack, ServiceNow, and SIEM export after the GitHub issue boundary is accepted
 - EKS/Kubernetes workload association with explicit cluster/namespace/workload allow-lists and least-privilege RBAC
-- Windows web/API submission and reusable credential-profile workflow after the CLI scanner boundary is accepted
 - richer remediation analytics and censored-aware timing metrics
 - additional SBOM formats and complementary SBOM engines such as Syft where they add independent value
 - deeper license/dependency governance
