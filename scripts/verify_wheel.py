@@ -16,6 +16,7 @@ REQUIRED_FILES = {
     "secscan/compare.py",
     "secscan/epss.py",
     "secscan/history.py",
+    "secscan/github_issues.py",
     "secscan/kev.py",
     "secscan/license_policy.py",
     "secscan/models.py",

@@ -306,6 +306,10 @@ API -> job queue -> scanner registry/workers -> normalized findings store
 
 Cloud components remain optional. Storage, queue, discovery, policy distribution, and notification integrations must retain local interfaces for development and small deployments.
 
+### GitHub issue export boundary
+
+GitHub issue export is a CLI adapter over an already completed local `secscan.json` artifact, not a scanner plugin or background notification service. It validates the supported report schema and exact destination, deterministically prepares one bounded Markdown summary, and writes a local review artifact without network access by default. Explicit `--submit` reads a fine-grained token only from the process environment and performs one timed POST to the fixed public GitHub API origin. The adapter does not accept arbitrary API hosts, persist credentials, retry content creation, search for duplicates, or create multiple issues, labels, assignees, milestones, or comments. Web/API delivery, queues, automatic triggers, GitHub Enterprise, and other workflow providers remain outside this boundary.
+
 ### Local service job state
 
 The service stores job metadata in SQLite and report artifacts in UUID-scoped directories. A submitted record is persisted before worker execution. After execution it atomically writes a versioned manifest of allow-listed regular artifacts with deterministic names, sizes, and SHA-256 digests before persisting terminal state. The API exposes that manifest as an artifact collection, maps recorded digests to strong ETags, and supports `HEAD` and conditional revalidation without adding a cache service. Terminal records survive restarts; non-terminal records found at startup are failed explicitly instead of being replayed. The API can cancel queued work, but it does not terminate running scanners.
