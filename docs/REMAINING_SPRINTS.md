@@ -2,21 +2,19 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 60
+## Completed through Sprint 61
 
-Sprints 0–60 are complete, including the capabilities previously summarized here plus an opt-in tenant-bound Stripe Checkout, Billing Portal, verified webhook, and enforced subscription lifecycle that leaves unconfigured local Free usage independent of Stripe.
+Sprints 0–61 are complete, including the capabilities previously summarized here plus an opt-in tenant-bound Stripe subscription lifecycle and a bounded GitHub Issues export that remains offline by default and requires explicit submission with an environment-only token.
 
 ## Current sprint
 
-### Sprint 61 — Bounded GitHub Issue Export
+### Sprint 62 — Signed Policy and Governance Bundles
 
-Prepare one deterministic, bounded issue from one completed local secscan report and submit it only with an explicit flag and narrowly scoped environment token. Offline preparation remains the default and no background integration service is introduced.
+Add offline integrity/authenticity controls for shared secscan policies using schema-versioned Ed25519-signed bundles, independently distributed public keys, deterministic provenance evidence, and fail-closed verification before policy extraction.
 
 ## Candidate remaining sprints
 
-### Sprint 62 — Signed Policy and Governance Bundles
-
-Add integrity/authenticity controls for shared policy bundles, controlled distribution, version/provenance evidence, and enterprise governance workflows.
+No later sprint number is committed yet. After Sprint 62 is accepted, the backlog should be reprioritized before assigning Sprint 63.
 
 ## Backlog after the numbered candidate sequence
 
@@ -40,6 +38,7 @@ These remain valid ideas but are intentionally not assigned fixed sprint numbers
 - automated but bounded reassessment scheduling after persistent assets exist
 - additional cloud providers
 - agent-based assessment only if a later threat/cost review justifies it
+- hosted policy registry, policy key rotation/revocation, multi-signature policy, KMS/HSM signing, and tenant-scoped policy distribution after the Sprint 62 offline trust boundary is accepted
 
 ## Planning rule
 
