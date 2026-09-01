@@ -8,7 +8,10 @@ def test_container_bundles_full_repository_engines() -> None:
 
     assert "semgrep==1.172.0" in dockerfile
     assert "checkov==3.3.8" in dockerfile
-    assert "github.com/zricethezav/gitleaks/v8@v8.30.1" in dockerfile
+    assert "--branch v8.30.1 https://github.com/gitleaks/gitleaks.git" in dockerfile
+    assert "ARG X_CRYPTO_VERSION=v0.55.0" in dockerfile
+    assert "go mod edit -require=golang.org/x/crypto@${X_CRYPTO_VERSION}" in dockerfile
+    assert 'go version -m /out/gitleaks | grep -E "golang.org/x/crypto[[:space:]]+${X_CRYPTO_VERSION}"' in dockerfile
     assert "semgrep --version" in dockerfile
     assert "gitleaks version" in dockerfile
     assert "checkov --version" in dockerfile

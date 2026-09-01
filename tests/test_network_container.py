@@ -7,8 +7,10 @@ def test_container_bundles_network_assessment_engines() -> None:
     dockerfile = (Path(__file__).parents[1] / "Dockerfile").read_text(encoding="utf-8")
 
     assert "nmap" in dockerfile
-    # v3.11.1 upgrades kin-openapi to the release containing the auth-bypass fix.
-    assert "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@v3.11.1" in dockerfile
+    assert "--branch v3.11.1 https://github.com/projectdiscovery/nuclei.git" in dockerfile
+    assert "ARG X_CRYPTO_VERSION=v0.55.0" in dockerfile
+    assert "go mod edit -require=golang.org/x/crypto@${X_CRYPTO_VERSION}" in dockerfile
+    assert 'go version -m /out/nuclei | grep -E "golang.org/x/crypto[[:space:]]+${X_CRYPTO_VERSION}"' in dockerfile
     assert "NUCLEI_TEMPLATES_VERSION=v10.4.7" in dockerfile
     assert "NUCLEI_TEMPLATES_COMMIT=83234ce456da3e90dda86dfbc5e605e64a846df3" in dockerfile
     assert '"refs/tags/${NUCLEI_TEMPLATES_VERSION}"' in dockerfile
