@@ -34,6 +34,7 @@ def main() -> None:
 
     from secscan.assets_web import mount_assets
     from secscan.auth import mount_auth
+    from secscan.public_navigation import PublicSessionNavigationMiddleware
     from secscan.public_site import mount_public_site
     from secscan.service import create_app
     from secscan.ssh_host_trust_web import mount_ssh_host_trust
@@ -62,6 +63,7 @@ def main() -> None:
             return FileResponse(Path(__file__).with_name("web_assets") / "index.html")
 
         mount_web_ui(app, job_root=args.job_root, job_database=args.job_database)
+        app.add_middleware(PublicSessionNavigationMiddleware, database=database)
     uvicorn.run(
         app,
         host=args.host,
