@@ -53,7 +53,7 @@ def test_network_range_rejects_hostnames_urls_lists_and_large_ranges() -> None:
     for target in ("example.com", "https://10.0.0.1", "10.0.0.1,10.0.0.2"):
         with pytest.raises(ValueError, match="literal IP address or CIDR"):
             expand_network_range(target)
-    with pytest.raises(ValueError, match=f"maximum is {MAX_NETWORK_RANGE_TARGETS}"):
+    with pytest.raises(ValueError, match=f"maximum of {MAX_NETWORK_RANGE_TARGETS} hosts"):
         expand_network_range("10.0.0.0/27")
 
 

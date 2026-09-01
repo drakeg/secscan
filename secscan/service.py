@@ -18,13 +18,21 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
-from secscan.scanners.network import validate_network_target
+from secscan.scanners.network import expand_network_range, validate_network_target
 from secscan.scanners.repository import is_remote_repository_url, validate_remote_repository_url
 from secscan.scanners.web_dast import validate_web_target
 from secscan.tenancy import SYSTEM_TENANT_ID, request_tenant_id
 
 JobStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
-ScannerName = Literal["image", "filesystem", "repository", "sbom", "network", "web-dast"]
+ScannerName = Literal[
+    "image",
+    "filesystem",
+    "repository",
+    "sbom",
+    "network",
+    "network-range",
+    "web-dast",
+]
 ScanRunner = Callable[[list[str]], int]
 ARTIFACT_MANIFEST_NAME = "artifacts.json"
 MIN_API_TOKEN_LENGTH = 32
@@ -262,6 +270,11 @@ class JobManager:
             if not request.network_authorized:
                 raise ValueError("network scans require explicit authorization acknowledgement")
             validate_network_target(request.target)
+            return
+        if request.scanner == "network-range":
+            if not request.network_authorized:
+                raise ValueError("network range scans require explicit authorization acknowledgement")
+            expand_network_range(request.target)
             return
         if request.scanner == "web-dast":
             if not request.web_authorized:

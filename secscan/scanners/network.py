@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 import ipaddress
+from itertools import islice
 import json
 from pathlib import Path
 import re
@@ -38,7 +39,7 @@ def expand_network_range(target: str, *, maximum: int = MAX_NETWORK_RANGE_TARGET
     try:
         if "/" in value:
             network = ipaddress.ip_network(value, strict=False)
-            addresses = tuple(str(address) for address in network.hosts())
+            addresses = tuple(str(address) for address in islice(network.hosts(), maximum + 1))
             if not addresses and network.num_addresses == 1:
                 addresses = (str(network.network_address),)
         else:
@@ -48,7 +49,7 @@ def expand_network_range(target: str, *, maximum: int = MAX_NETWORK_RANGE_TARGET
     if not addresses:
         raise ValueError("network range did not contain any scannable host addresses")
     if len(addresses) > maximum:
-        raise ValueError(f"network range expands to {len(addresses)} hosts; maximum is {maximum}")
+        raise ValueError(f"network range exceeds maximum of {maximum} hosts")
     return addresses
 
 

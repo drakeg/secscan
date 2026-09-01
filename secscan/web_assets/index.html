@@ -55,9 +55,10 @@
         <div class="panel narrow">
           <div class="panel-heading"><div><p class="eyebrow">Scanner</p><h2>Start a security scan</h2></div></div>
           <form id="scan-form">
-            <label>Scanner type<select id="scanner" required><option value="image">Container image</option><option value="filesystem">Filesystem</option><option value="repository">Repository — Full security scan</option><option value="sbom">SBOM</option><option value="network">Server / Network — Agentless assessment</option><option value="web-dast">Web application — Bounded DAST</option><option value="linux-host">Linux server — Authenticated assessment</option></select></label>
+            <label>Scanner type<select id="scanner" required><option value="image">Container image</option><option value="filesystem">Filesystem</option><option value="repository">Repository — Full security scan</option><option value="sbom">SBOM</option><option value="network">Server / Network — Agentless assessment</option><option value="network-range">Network range — Bounded assessment</option><option value="web-dast">Web application — Bounded DAST</option><option value="linux-host">Linux server — Authenticated assessment</option></select></label>
             <label>Target<input id="target" required placeholder="alpine:3.20"><span id="target-help" class="remote-repo-help"></span></label>
             <label id="network-authorization" class="hidden"><input id="network-authorized" type="checkbox"> I confirm that I own this host or have explicit authorization to security-test it.</label>
+            <label id="network-range-authorization" class="hidden"><input id="network-range-authorized" type="checkbox"> I confirm that I own every host in this range or have explicit authorization to security-test the entire range.</label>
             <label id="web-dast-authorization" class="hidden"><input id="web-dast-authorized" type="checkbox"> I confirm that I own this web application or have explicit authorization to security-test the exact URL entered above.</label>
             <div id="linux-host-options" class="hidden">
               <label>SSH credential profile<select id="linux-host-profile"><option value="">Default / server fallback</option></select></label>
@@ -103,6 +104,7 @@
   <script src="/app.js"></script>
   <script src="/web_dast.js"></script>
   <script src="/dashboard.js"></script>
+  <script src="/network_range.js"></script>
   <script src="/linux_host.js"></script>
   <script src="/ssh_credentials.js"></script>
   <script src="/delete_scans.js"></script>
