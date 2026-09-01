@@ -1,6 +1,6 @@
 FROM aquasec/trivy:0.74.0 AS trivy
 
-FROM golang:1.25-bookworm AS gitleaks-builder
+FROM golang:1.27-bookworm AS gitleaks-builder
 ARG X_CRYPTO_VERSION=v0.55.0
 RUN git clone --depth 1 --branch v8.30.1 https://github.com/gitleaks/gitleaks.git /src \
     && cd /src \
@@ -8,7 +8,7 @@ RUN git clone --depth 1 --branch v8.30.1 https://github.com/gitleaks/gitleaks.gi
     && go build -mod=mod -o /out/gitleaks . \
     && go version -m /out/gitleaks | grep -E "golang.org/x/crypto[[:space:]]+${X_CRYPTO_VERSION}"
 
-FROM golang:1.26-bookworm AS nuclei-builder
+FROM golang:1.27-bookworm AS nuclei-builder
 ARG X_CRYPTO_VERSION=v0.55.0
 ARG NUCLEI_TEMPLATES_VERSION=v10.4.7
 ARG NUCLEI_TEMPLATES_COMMIT=83234ce456da3e90dda86dfbc5e605e64a846df3
