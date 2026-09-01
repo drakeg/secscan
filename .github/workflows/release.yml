@@ -38,7 +38,7 @@ jobs:
         run: python scripts/release_artifacts.py verify-tag "$GITHUB_REF_NAME" pyproject.toml
 
       - name: Generate source SBOM
-        uses: anchore/sbom-action@v0.24.0
+        uses: anchore/sbom-action@v0.24.2
         with:
           path: .
           format: spdx-json
