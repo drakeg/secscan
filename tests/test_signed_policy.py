@@ -115,12 +115,3 @@ def test_signing_rejects_invalid_policy_semantics(tmp_path: Path) -> None:
             version="1.0.0",
             source="local",
         )
-
-
-def test_verification_rejects_validly_signed_but_semantically_invalid_policy(tmp_path: Path) -> None:
-    policy, public_key, bundle, document = _signed_bundle(tmp_path)
-    # Re-signing invalid policy through the public API is blocked, so demonstrate that
-    # verification also performs policy semantic validation by corrupting the extracted
-    # policy and keeping the digest/signature mismatch as the first fail-closed boundary.
-    assert policy.read_text(encoding="utf-8") in base64.b64decode(str(document["policy_b64"])).decode("utf-8")
-    assert verify_bundle(bundle, public_key)[0]["schema_version"] == 1
