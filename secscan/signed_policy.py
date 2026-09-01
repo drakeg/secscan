@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 import tempfile
 from typing import Any
 
@@ -20,7 +21,9 @@ from secscan.policy import load_policy
 SCHEMA_VERSION = 1
 ALGORITHM = "Ed25519"
 MAX_POLICY_BYTES = 1024 * 1024
+MAX_BUNDLE_BYTES = 2 * 1024 * 1024
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+_HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 BUNDLE_KEYS = {
     "schema_version",
     "bundle_id",
@@ -33,6 +36,12 @@ BUNDLE_KEYS = {
     "signature",
 }
 PROVENANCE_KEYS = {"source"}
+
+
+def _require_string(value: object, label: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a string")
+    return value
 
 
 def _require_identifier(value: str, label: str) -> str:
@@ -82,7 +91,7 @@ def _load_public_key(path: Path) -> Ed25519PublicKey:
         raise ValueError(f"unable to read public key: {path}") from exc
     try:
         key = serialization.load_pem_public_key(data)
-    except ValueError as exc:
+    except (TypeError, ValueError) as exc:
         raise ValueError("public key must be an Ed25519 PEM key") from exc
     if not isinstance(key, Ed25519PublicKey):
         raise ValueError("public key must be Ed25519")
@@ -167,11 +176,15 @@ def build_signed_bundle(
 
 def write_bundle(document: dict[str, Any], path: Path) -> None:
     payload = (json.dumps(document, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    if len(payload) > MAX_BUNDLE_BYTES:
+        raise ValueError(f"policy bundle exceeds maximum size of {MAX_BUNDLE_BYTES} bytes")
     _exclusive_write(path, payload, 0o644)
 
 
 def _load_bundle(path: Path) -> dict[str, Any]:
     try:
+        if path.stat().st_size > MAX_BUNDLE_BYTES:
+            raise ValueError(f"policy bundle exceeds maximum size of {MAX_BUNDLE_BYTES} bytes")
         raw = json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
         raise ValueError(f"unable to read policy bundle: {path}") from exc
@@ -190,20 +203,28 @@ def _load_bundle(path: Path) -> dict[str, Any]:
 
 def verify_bundle(bundle_path: Path, public_key_path: Path) -> tuple[dict[str, Any], bytes]:
     document = _load_bundle(bundle_path)
-    if document["schema_version"] != SCHEMA_VERSION:
-        raise ValueError(f"unsupported policy bundle schema: {document['schema_version']}")
-    if document["algorithm"] != ALGORITHM:
-        raise ValueError(f"unsupported policy bundle algorithm: {document['algorithm']}")
-    _require_identifier(str(document["bundle_id"]), "bundle id")
-    _require_identifier(str(document["version"]), "version")
+    schema_version = document["schema_version"]
+    if not isinstance(schema_version, int) or isinstance(schema_version, bool) or schema_version != SCHEMA_VERSION:
+        raise ValueError(f"unsupported policy bundle schema: {schema_version}")
+    algorithm = _require_string(document["algorithm"], "algorithm")
+    if algorithm != ALGORITHM:
+        raise ValueError(f"unsupported policy bundle algorithm: {algorithm}")
+    _require_identifier(_require_string(document["bundle_id"], "bundle id"), "bundle id")
+    _require_identifier(_require_string(document["version"], "version"), "version")
     provenance = document["provenance"]
     if not isinstance(provenance, dict) or set(provenance) != PROVENANCE_KEYS:
         raise ValueError("policy bundle provenance must contain only source")
-    _require_source(str(provenance["source"]))
+    _require_source(_require_string(provenance["source"], "source"))
+    signer_sha256 = _require_string(document["signer_sha256"], "signer_sha256")
+    policy_sha256 = _require_string(document["policy_sha256"], "policy_sha256")
+    if not _HEX_SHA256.fullmatch(signer_sha256) or not _HEX_SHA256.fullmatch(policy_sha256):
+        raise ValueError("policy bundle SHA-256 fields must be lowercase hexadecimal digests")
+    policy_b64 = _require_string(document["policy_b64"], "policy_b64")
+    signature_b64 = _require_string(document["signature"], "signature")
 
     try:
-        policy_bytes = base64.b64decode(str(document["policy_b64"]), validate=True)
-        signature = base64.b64decode(str(document["signature"]), validate=True)
+        policy_bytes = base64.b64decode(policy_b64, validate=True)
+        signature = base64.b64decode(signature_b64, validate=True)
     except (binascii.Error, ValueError) as exc:
         raise ValueError("policy bundle contains invalid base64") from exc
     if not policy_bytes or len(policy_bytes) > MAX_POLICY_BYTES:
@@ -212,11 +233,11 @@ def verify_bundle(bundle_path: Path, public_key_path: Path) -> tuple[dict[str, A
         policy_bytes.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise ValueError("policy bundle policy must be UTF-8") from exc
-    if hashlib.sha256(policy_bytes).hexdigest() != document["policy_sha256"]:
+    if hashlib.sha256(policy_bytes).hexdigest() != policy_sha256:
         raise ValueError("policy bundle digest does not match policy content")
 
     public_key = _load_public_key(public_key_path)
-    if _public_fingerprint(public_key) != document["signer_sha256"]:
+    if _public_fingerprint(public_key) != signer_sha256:
         raise ValueError("policy bundle signer fingerprint does not match public key")
     unsigned = {key: value for key, value in document.items() if key != "signature"}
     try:
@@ -293,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         return 1
     except ValueError as exc:
-        print(f"secscan-policy error: {exc}", file=os.sys.stderr)
+        print(f"secscan-policy error: {exc}", file=sys.stderr)
         return 1
 
 
