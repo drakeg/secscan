@@ -34,6 +34,7 @@ def main() -> None:
 
     from secscan.assets_web import mount_assets
     from secscan.auth import mount_auth
+    from secscan.credential_tenancy import SshCredentialTenantMiddleware
     from secscan.network_range_web import mount_network_range_submission
     from secscan.public_navigation import PublicSessionNavigationMiddleware
     from secscan.public_site import mount_public_site
@@ -73,6 +74,7 @@ def main() -> None:
 
         mount_web_ui(app, job_root=args.job_root, job_database=args.job_database)
         app.add_middleware(PublicSessionNavigationMiddleware, database=database)
+        app.add_middleware(SshCredentialTenantMiddleware, database=database)
     uvicorn.run(
         app,
         host=args.host,
