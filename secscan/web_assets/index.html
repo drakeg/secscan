@@ -55,7 +55,7 @@
         <div class="panel narrow">
           <div class="panel-heading"><div><p class="eyebrow">Scanner</p><h2>Start a security scan</h2></div></div>
           <form id="scan-form">
-            <label>Scanner type<select id="scanner" required><option value="image">Container image</option><option value="filesystem">Filesystem</option><option value="repository">Repository — Full security scan</option><option value="sbom">SBOM</option><option value="network">Server / Network — Agentless assessment</option><option value="network-range">Network range — Bounded assessment</option><option value="web-dast">Web application — Bounded DAST</option><option value="linux-host">Linux server — Authenticated assessment</option></select></label>
+            <label>Scanner type<select id="scanner" required><option value="image">Container image</option><option value="filesystem">Filesystem</option><option value="repository">Repository — Full security scan</option><option value="sbom">SBOM</option><option value="network">Server / Network — Agentless assessment</option><option value="network-range">Network range — Bounded assessment</option><option value="web-dast">Web application — Bounded DAST</option><option value="linux-host">Linux server — Authenticated assessment</option><option value="windows-host">Windows server — Authenticated assessment</option></select></label>
             <label>Target<input id="target" required placeholder="alpine:3.20"><span id="target-help" class="remote-repo-help"></span></label>
             <label id="network-authorization" class="hidden"><input id="network-authorized" type="checkbox"> I confirm that I own this host or have explicit authorization to security-test it.</label>
             <label id="network-range-authorization" class="hidden"><input id="network-range-authorized" type="checkbox"> I confirm that I own every host in this range or have explicit authorization to security-test the entire range.</label>
@@ -64,6 +64,12 @@
               <label>SSH credential profile<select id="linux-host-profile"><option value="">Default / server fallback</option></select></label>
               <div class="form-grid"><label>SSH port<input id="linux-host-port" type="number" min="1" max="65535" value="22"></label><label><input id="linux-host-remember" type="checkbox"> Remember this profile for this host</label></div>
               <label id="linux-host-authorization"><input id="linux-host-authorized" type="checkbox"> I confirm that I own this Linux host or have explicit authorization to perform an authenticated security assessment.</label>
+            </div>
+            <div id="windows-host-options" class="hidden">
+              <label>SSH credential profile<select id="windows-host-profile"><option value="">Default / server fallback</option></select></label>
+              <label>Windows SSH username override <span class="muted">optional; profile username is used when blank</span><input id="windows-host-user" maxlength="128" placeholder="DOMAIN\\secscan-audit or Administrator"></label>
+              <div class="form-grid"><label>SSH port<input id="windows-host-port" type="number" min="1" max="65535" value="22"></label><label><input id="windows-host-remember" type="checkbox"> Remember this profile for this host</label></div>
+              <label id="windows-host-authorization"><input id="windows-host-authorized" type="checkbox"> I confirm that I own this Windows host or have explicit authorization to perform an authenticated security assessment.</label>
             </div>
             <div class="form-grid"><label>Fail on<select id="fail-on"><option value="">Use default</option><option>NONE</option><option>UNKNOWN</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option></select></label><label>Timeout (seconds)<input id="timeout" type="number" min="1" max="86400" value="600"></label></div>
             <label>Policy path <span class="muted">optional</span><input id="policy" placeholder="/workspace/policy.yaml"></label>
@@ -106,6 +112,7 @@
   <script src="/dashboard.js"></script>
   <script src="/network_range.js"></script>
   <script src="/linux_host.js"></script>
+  <script src="/windows_host.js"></script>
   <script src="/ssh_credentials.js"></script>
   <script src="/delete_scans.js"></script>
 </body>

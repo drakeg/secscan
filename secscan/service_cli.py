@@ -40,6 +40,7 @@ def main() -> None:
     from secscan.service import create_app
     from secscan.ssh_host_trust_web import mount_ssh_host_trust
     from secscan.web import mount_web_ui
+    from secscan.windows_host_web import mount_windows_host_submission
 
     database = (args.job_database or args.job_root / "jobs.db").expanduser().resolve()
     api_token = os.environ.get("SECSCAN_API_TOKEN")
@@ -59,6 +60,12 @@ def main() -> None:
         mount_ssh_host_trust(app, database=database)
         mount_assets(app, database=database)
         mount_network_range_submission(app)
+        mount_windows_host_submission(
+            app,
+            database=database,
+            job_root=args.job_root,
+            job_database=args.job_database,
+        )
 
         @app.get("/app", include_in_schema=False)
         def workspace() -> FileResponse:
