@@ -3,7 +3,9 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 import secrets
+import sqlite3
 
+from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from fastapi.testclient import TestClient
@@ -94,6 +96,89 @@ def test_store_scopes_names_defaults_bindings_and_secret_lookup_by_tenant(tmp_pa
         assert store.resolve_profile_id("shared.example.com") == first.id
     finally:
         reset_credential_tenant(first_token)
+
+
+def test_legacy_credentials_migrate_to_original_admin_tenant_idempotently(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    master_key = _master_key()
+    fernet = Fernet(master_key.encode("ascii"))
+    private_key = _private_key()
+    known_hosts = _known_hosts("legacy.example.com")
+    with sqlite3.connect(database) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE auth_users (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT,
+                email TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL,
+                enabled INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            INSERT INTO auth_users VALUES (
+                'admin-id', 'admin-tenant', 'admin@example.com', 'unused', 'admin', 1,
+                '2026-08-01T00:00:00+00:00'
+            );
+            CREATE TABLE ssh_credential_profiles (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE,
+                username TEXT NOT NULL,
+                private_key_ciphertext BLOB NOT NULL,
+                known_hosts_ciphertext BLOB NOT NULL,
+                is_default INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX ssh_credential_single_default_idx
+                ON ssh_credential_profiles(is_default) WHERE is_default = 1;
+            CREATE TABLE ssh_host_credentials (
+                host TEXT PRIMARY KEY,
+                profile_id TEXT NOT NULL REFERENCES ssh_credential_profiles(id) ON DELETE CASCADE,
+                updated_at TEXT NOT NULL
+            );
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO ssh_credential_profiles VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy-profile",
+                "Legacy",
+                "audit",
+                fernet.encrypt(private_key.encode("utf-8")),
+                fernet.encrypt(known_hosts.encode("utf-8")),
+                1,
+                "2026-08-02T00:00:00+00:00",
+                "2026-08-02T00:00:00+00:00",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO ssh_host_credentials VALUES (?, ?, ?)",
+            ("legacy.example.com", "legacy-profile", "2026-08-02T00:00:00+00:00"),
+        )
+
+    SshCredentialStore(database, master_key)
+    SshCredentialStore(database, master_key)
+
+    with sqlite3.connect(database) as connection:
+        profile_row = connection.execute(
+            "SELECT tenant_id, id FROM ssh_credential_profiles"
+        ).fetchone()
+        binding_row = connection.execute(
+            "SELECT tenant_id, host, profile_id FROM ssh_host_credentials"
+        ).fetchone()
+    assert profile_row == ("admin-tenant", "legacy-profile")
+    assert binding_row == ("admin-tenant", "legacy.example.com", "legacy-profile")
+
+    token = set_credential_tenant("admin-tenant")
+    try:
+        store = SshCredentialStore(database, master_key)
+        assert store.resolve_profile_id("legacy.example.com") == "legacy-profile"
+        assert store.decrypt("legacy-profile").private_key == private_key
+    finally:
+        reset_credential_tenant(token)
 
 
 def test_authenticated_credential_api_does_not_cross_tenant_boundary(
