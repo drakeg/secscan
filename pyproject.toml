@@ -30,6 +30,7 @@ dev = [
 [project.scripts]
 secscan = "secscan.cli:main"
 secscan-service = "secscan.service_cli:main"
+secscan-ec2 = "secscan.aws_compute_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
