@@ -14,6 +14,7 @@ REQUIRED_FILES = {
     "secscan/billing.py",
     "secscan/cli.py",
     "secscan/compare.py",
+    "secscan/credential_tenancy.py",
     "secscan/epss.py",
     "secscan/history.py",
     "secscan/github_issues.py",
