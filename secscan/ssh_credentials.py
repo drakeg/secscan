@@ -9,8 +9,10 @@ from uuid import uuid4
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import serialization
 
+from secscan.credential_tenancy import current_credential_tenant
 from secscan.scanners.linux_host import validate_ssh_user
 from secscan.ssh_host_trust import SshHostTrustStore
+from secscan.tenancy import SYSTEM_TENANT_ID
 
 
 @dataclass(frozen=True)
@@ -49,29 +51,136 @@ class SshCredentialStore:
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
+    @staticmethod
+    def _legacy_tenant_id(connection: sqlite3.Connection) -> str:
+        users_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'auth_users'"
+        ).fetchone()
+        if users_table is None:
+            return SYSTEM_TENANT_ID
+        columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(auth_users)").fetchall()
+        }
+        tenant_expression = "tenant_id" if "tenant_id" in columns else "id"
+        row = connection.execute(
+            f"SELECT {tenant_expression} FROM auth_users WHERE role = 'admin' "
+            "ORDER BY created_at ASC, id ASC LIMIT 1"
+        ).fetchone()
+        if row is None or not isinstance(row[0], str) or not row[0]:
+            return SYSTEM_TENANT_ID
+        return str(row[0])
+
+    @staticmethod
+    def _create_schema(connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS ssh_credential_profiles (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                username TEXT NOT NULL,
+                private_key_ciphertext BLOB NOT NULL,
+                known_hosts_ciphertext BLOB NOT NULL,
+                is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE (tenant_id, name),
+                UNIQUE (id, tenant_id)
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS ssh_credential_single_default_idx
+                ON ssh_credential_profiles(tenant_id) WHERE is_default = 1;
+            CREATE TABLE IF NOT EXISTS ssh_host_credentials (
+                tenant_id TEXT NOT NULL,
+                host TEXT NOT NULL,
+                profile_id TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, host),
+                FOREIGN KEY (profile_id, tenant_id)
+                    REFERENCES ssh_credential_profiles(id, tenant_id) ON DELETE CASCADE
+            );
+            """
+        )
+
     def _migrate(self) -> None:
         with self._connect() as connection:
+            exists = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ssh_credential_profiles'"
+            ).fetchone()
+            if exists is None:
+                self._create_schema(connection)
+                return
+            columns = {
+                str(row[1])
+                for row in connection.execute("PRAGMA table_info(ssh_credential_profiles)").fetchall()
+            }
+            if "tenant_id" in columns:
+                self._create_schema(connection)
+                return
+
+            legacy_tenant = self._legacy_tenant_id(connection)
+            connection.execute("PRAGMA foreign_keys = OFF")
             connection.executescript(
                 """
-                CREATE TABLE IF NOT EXISTS ssh_credential_profiles (
+                CREATE TABLE ssh_credential_profiles_v2 (
                     id TEXT PRIMARY KEY,
-                    name TEXT NOT NULL UNIQUE,
+                    tenant_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
                     username TEXT NOT NULL,
                     private_key_ciphertext BLOB NOT NULL,
                     known_hosts_ciphertext BLOB NOT NULL,
                     is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
                     created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    updated_at TEXT NOT NULL,
+                    UNIQUE (tenant_id, name),
+                    UNIQUE (id, tenant_id)
                 );
-                CREATE UNIQUE INDEX IF NOT EXISTS ssh_credential_single_default_idx
-                    ON ssh_credential_profiles(is_default) WHERE is_default = 1;
-                CREATE TABLE IF NOT EXISTS ssh_host_credentials (
-                    host TEXT PRIMARY KEY,
-                    profile_id TEXT NOT NULL REFERENCES ssh_credential_profiles(id) ON DELETE CASCADE,
-                    updated_at TEXT NOT NULL
+                CREATE TABLE ssh_host_credentials_v2 (
+                    tenant_id TEXT NOT NULL,
+                    host TEXT NOT NULL,
+                    profile_id TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, host),
+                    FOREIGN KEY (profile_id, tenant_id)
+                        REFERENCES ssh_credential_profiles_v2(id, tenant_id) ON DELETE CASCADE
                 );
                 """
             )
+            connection.execute(
+                """
+                INSERT INTO ssh_credential_profiles_v2 (
+                    id, tenant_id, name, username, private_key_ciphertext,
+                    known_hosts_ciphertext, is_default, created_at, updated_at
+                )
+                SELECT id, ?, name, username, private_key_ciphertext,
+                       known_hosts_ciphertext, is_default, created_at, updated_at
+                FROM ssh_credential_profiles
+                """,
+                (legacy_tenant,),
+            )
+            host_table = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ssh_host_credentials'"
+            ).fetchone()
+            if host_table is not None:
+                connection.execute(
+                    """
+                    INSERT INTO ssh_host_credentials_v2 (tenant_id, host, profile_id, updated_at)
+                    SELECT ?, host, profile_id, updated_at FROM ssh_host_credentials
+                    """,
+                    (legacy_tenant,),
+                )
+                connection.execute("DROP TABLE ssh_host_credentials")
+            connection.execute("DROP TABLE ssh_credential_profiles")
+            connection.execute(
+                "ALTER TABLE ssh_credential_profiles_v2 RENAME TO ssh_credential_profiles"
+            )
+            connection.execute(
+                "ALTER TABLE ssh_host_credentials_v2 RENAME TO ssh_host_credentials"
+            )
+            connection.execute(
+                "CREATE UNIQUE INDEX ssh_credential_single_default_idx "
+                "ON ssh_credential_profiles(tenant_id) WHERE is_default = 1"
+            )
+            connection.execute("PRAGMA foreign_keys = ON")
 
     @staticmethod
     def _timestamp() -> str:
@@ -128,6 +237,10 @@ class SshCredentialStore:
             updated_at=str(row["updated_at"]),
         )
 
+    @staticmethod
+    def _tenant() -> str:
+        return current_credential_tenant()
+
     def create(
         self,
         *,
@@ -137,6 +250,7 @@ class SshCredentialStore:
         known_hosts: str,
         is_default: bool = False,
     ) -> SshCredentialProfile:
+        tenant_id = self._tenant()
         profile_id = str(uuid4())
         validated_name = self._validate_name(name)
         validated_user = validate_ssh_user(username)
@@ -147,18 +261,20 @@ class SshCredentialStore:
             try:
                 if is_default:
                     connection.execute(
-                        "UPDATE ssh_credential_profiles SET is_default = 0, updated_at = ? WHERE is_default = 1",
-                        (timestamp,),
+                        "UPDATE ssh_credential_profiles SET is_default = 0, updated_at = ? "
+                        "WHERE tenant_id = ? AND is_default = 1",
+                        (timestamp, tenant_id),
                     )
                 connection.execute(
                     """
                     INSERT INTO ssh_credential_profiles (
-                        id, name, username, private_key_ciphertext, known_hosts_ciphertext,
-                        is_default, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        id, tenant_id, name, username, private_key_ciphertext,
+                        known_hosts_ciphertext, is_default, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         profile_id,
+                        tenant_id,
                         validated_name,
                         validated_user,
                         self._fernet.encrypt(validated_key.encode("utf-8")),
@@ -175,32 +291,43 @@ class SshCredentialStore:
         return profile
 
     def list(self) -> list[SshCredentialProfile]:
+        tenant_id = self._tenant()
         with self._connect() as connection:
             rows = connection.execute(
                 """
                 SELECT id, name, username, is_default, created_at, updated_at
                 FROM ssh_credential_profiles
+                WHERE tenant_id = ?
                 ORDER BY is_default DESC, name COLLATE NOCASE, id
-                """
+                """,
+                (tenant_id,),
             ).fetchall()
         return [self._profile(row) for row in rows]
 
     def get(self, profile_id: str) -> SshCredentialProfile | None:
+        tenant_id = self._tenant()
         with self._connect() as connection:
             row = connection.execute(
                 """
                 SELECT id, name, username, is_default, created_at, updated_at
-                FROM ssh_credential_profiles WHERE id = ?
+                FROM ssh_credential_profiles WHERE id = ? AND tenant_id = ?
                 """,
-                (profile_id,),
+                (profile_id, tenant_id),
             ).fetchone()
         return self._profile(row) if row else None
 
     def decrypt(self, profile_id: str) -> DecryptedSshCredential:
+        tenant_id = self._tenant()
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM ssh_credential_profiles WHERE id = ?", (profile_id,)
-            ).fetchone()
+            if tenant_id == SYSTEM_TENANT_ID:
+                row = connection.execute(
+                    "SELECT * FROM ssh_credential_profiles WHERE id = ?", (profile_id,)
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT * FROM ssh_credential_profiles WHERE id = ? AND tenant_id = ?",
+                    (profile_id, tenant_id),
+                ).fetchone()
         if row is None:
             raise ValueError("SSH credential profile was not found")
         try:
@@ -215,10 +342,6 @@ class SshCredentialStore:
                 "SSH credential profile could not be decrypted with the configured master key"
             ) from exc
 
-        # Host trust is global and public-key-only, independent of the credential
-        # used to authenticate. Merge approved records into the ephemeral
-        # known_hosts content used by this scan; manually supplied entries remain
-        # available as a compatibility trust source.
         trusted_lines = "".join(
             trusted.known_hosts_line() for trusted in SshHostTrustStore(self.database).list()
         )
@@ -227,54 +350,66 @@ class SshCredentialStore:
         return DecryptedSshCredential(self._profile(row), private_key, known_hosts)
 
     def set_default(self, profile_id: str) -> SshCredentialProfile:
+        tenant_id = self._tenant()
         timestamp = self._timestamp()
         with self._connect() as connection:
             exists = connection.execute(
-                "SELECT 1 FROM ssh_credential_profiles WHERE id = ?", (profile_id,)
+                "SELECT 1 FROM ssh_credential_profiles WHERE id = ? AND tenant_id = ?",
+                (profile_id, tenant_id),
             ).fetchone()
             if exists is None:
                 raise ValueError("SSH credential profile was not found")
             connection.execute(
-                "UPDATE ssh_credential_profiles SET is_default = 0, updated_at = ? WHERE is_default = 1",
-                (timestamp,),
+                "UPDATE ssh_credential_profiles SET is_default = 0, updated_at = ? "
+                "WHERE tenant_id = ? AND is_default = 1",
+                (timestamp, tenant_id),
             )
             connection.execute(
-                "UPDATE ssh_credential_profiles SET is_default = 1, updated_at = ? WHERE id = ?",
-                (timestamp, profile_id),
+                "UPDATE ssh_credential_profiles SET is_default = 1, updated_at = ? "
+                "WHERE id = ? AND tenant_id = ?",
+                (timestamp, profile_id, tenant_id),
             )
         profile = self.get(profile_id)
         assert profile is not None
         return profile
 
     def delete(self, profile_id: str) -> bool:
+        tenant_id = self._tenant()
         with self._connect() as connection:
             cursor = connection.execute(
-                "DELETE FROM ssh_credential_profiles WHERE id = ?", (profile_id,)
+                "DELETE FROM ssh_credential_profiles WHERE id = ? AND tenant_id = ?",
+                (profile_id, tenant_id),
             )
         return cursor.rowcount > 0
 
     def bind_host(self, host: str, profile_id: str) -> None:
+        tenant_id = self._tenant()
         if self.get(profile_id) is None:
             raise ValueError("SSH credential profile was not found")
         timestamp = self._timestamp()
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO ssh_host_credentials (host, profile_id, updated_at)
-                VALUES (?, ?, ?)
-                ON CONFLICT(host) DO UPDATE SET profile_id = excluded.profile_id, updated_at = excluded.updated_at
+                INSERT INTO ssh_host_credentials (tenant_id, host, profile_id, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(tenant_id, host) DO UPDATE SET
+                    profile_id = excluded.profile_id,
+                    updated_at = excluded.updated_at
                 """,
-                (host, profile_id, timestamp),
+                (tenant_id, host, profile_id, timestamp),
             )
 
     def resolve_profile_id(self, host: str) -> str | None:
+        tenant_id = self._tenant()
         with self._connect() as connection:
             bound = connection.execute(
-                "SELECT profile_id FROM ssh_host_credentials WHERE host = ?", (host,)
+                "SELECT profile_id FROM ssh_host_credentials WHERE tenant_id = ? AND host = ?",
+                (tenant_id, host),
             ).fetchone()
             if bound is not None:
                 return str(bound["profile_id"])
             default = connection.execute(
-                "SELECT id FROM ssh_credential_profiles WHERE is_default = 1"
+                "SELECT id FROM ssh_credential_profiles WHERE tenant_id = ? AND is_default = 1",
+                (tenant_id,),
             ).fetchone()
         return str(default["id"]) if default is not None else None
