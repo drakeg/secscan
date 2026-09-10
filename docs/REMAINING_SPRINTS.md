@@ -2,25 +2,24 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 64
+## Completed through Sprint 65
 
-Sprints 0–64 are complete, including the capabilities previously summarized here plus an opt-in tenant-bound Stripe subscription lifecycle, a bounded GitHub Issues export that remains offline by default and requires explicit submission with an environment-only token, offline Ed25519-signed policy/governance bundles with fail-closed verification, authenticated Web/API submission for the bounded 16-host sequential `network-range` scanner with oversized-CIDR expansion hardened before materialization, and authenticated Windows host Web/API submission using strict key-only OpenSSH and encrypted credential profiles.
+Sprints 0–65 are complete, including the capabilities previously summarized here plus an opt-in tenant-bound Stripe subscription lifecycle, a bounded GitHub Issues export that remains offline by default and requires explicit submission with an environment-only token, offline Ed25519-signed policy/governance bundles with fail-closed verification, authenticated Web/API submission for the bounded 16-host sequential `network-range` scanner with oversized-CIDR expansion hardened before materialization, authenticated Windows host Web/API submission using strict key-only OpenSSH and encrypted credential profiles, and tenant-scoped encrypted SSH credential names, defaults, remembered host bindings, metadata lookup, and authenticated secret use.
 
 ## Current sprint
 
-### Sprint 65 — Tenant-Isolated SSH Credential Profiles
+### Sprint 66 — Tenant-Isolated SSH Host-Key Trust
 
-Close the cross-tenant credential gap by tenant-scoping encrypted SSH profile names, defaults, remembered host bindings, metadata lookup, and authenticated secret use at the SQLite boundary. Migrate legacy global profiles to the original admin tenant when identifiable, preserve the trusted system/operator execution path, and leave public host-key trust tenancy as an explicit follow-up rather than expanding this security repair.
+Close the remaining cross-tenant SSH trust gap by tenant-scoping pending host-key discoveries and approved trust records at the SQLite boundary. Migrate legacy global trust to the original admin tenant when identifiable, preserve the explicit trusted system/operator context, and ensure authenticated host workflows receive only their tenant's approved trust additions.
 
 ## Candidate remaining sprints
 
-No later sprint number is committed yet. After Sprint 65 is accepted, the backlog should be reprioritized before assigning Sprint 66.
+No later sprint number is committed yet. After Sprint 66 is accepted, the backlog should be reprioritized before assigning Sprint 67.
 
 ## Backlog after the numbered candidate sequence
 
 These remain valid ideas but are intentionally not assigned fixed sprint numbers yet:
 
-- tenant-scoped SSH host-key trust ownership/approval after the Sprint 65 encrypted-credential boundary
 - multi-user tenant membership, invitations, tenant switching, and project-level authorization after the Sprint 59 account-tenant foundation
 - per-tenant API keys or external identity/OIDC before any production SaaS exposure
 - tenant-aware sharing/ownership for cloud discovery configuration and, later, explicit shared SSH credentials within multi-user tenants
