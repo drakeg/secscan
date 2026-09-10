@@ -11,7 +11,9 @@ from uuid import uuid4
 
 import paramiko
 
+from secscan.credential_tenancy import current_credential_tenant
 from secscan.scanners.network import validate_network_target
+from secscan.tenancy import SYSTEM_TENANT_ID
 
 _DISCOVERY_TTL_MINUTES = 10
 _MAX_KEY_TEXT = 16 * 1024
@@ -92,11 +94,7 @@ def _validate_key(key_type: str, key_base64: str) -> tuple[str, str, str]:
 
 
 def discover_host_keys(host: str, port: int = 22, timeout: int = 5) -> list[tuple[str, str, str]]:
-    """Perform an unauthenticated SSH handshake and return the presented host key.
-
-    Discovery is intentionally in-process. No request-derived host, port, or other
-    value is passed to a command-line interpreter or external executable.
-    """
+    """Perform an unauthenticated SSH handshake and return the presented host key."""
     target = validate_network_target(host)
     validated_port = _validate_port(port)
     bounded_timeout = max(1, min(timeout, 10))
@@ -130,34 +128,129 @@ class SshHostTrustStore:
         connection.row_factory = sqlite3.Row
         return connection
 
+    @staticmethod
+    def _tenant() -> str:
+        return current_credential_tenant()
+
+    @staticmethod
+    def _legacy_tenant_id(connection: sqlite3.Connection) -> str:
+        users_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'auth_users'"
+        ).fetchone()
+        if users_table is None:
+            return SYSTEM_TENANT_ID
+        columns = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(auth_users)").fetchall()
+        }
+        tenant_expression = "tenant_id" if "tenant_id" in columns else "id"
+        row = connection.execute(
+            f"SELECT {tenant_expression} FROM auth_users WHERE role = 'admin' "
+            "ORDER BY created_at ASC, id ASC LIMIT 1"
+        ).fetchone()
+        if row is None or not isinstance(row[0], str) or not row[0]:
+            return SYSTEM_TENANT_ID
+        return str(row[0])
+
+    @staticmethod
+    def _create_schema(connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS ssh_host_key_discoveries (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL,
+                host TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                key_type TEXT NOT NULL,
+                key_base64 TEXT NOT NULL,
+                fingerprint TEXT NOT NULL,
+                discovered_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ssh_host_key_discoveries_tenant_expiry_idx
+                ON ssh_host_key_discoveries(tenant_id, expires_at);
+            CREATE TABLE IF NOT EXISTS ssh_trusted_host_keys (
+                tenant_id TEXT NOT NULL,
+                host TEXT NOT NULL,
+                port INTEGER NOT NULL,
+                key_type TEXT NOT NULL,
+                key_base64 TEXT NOT NULL,
+                fingerprint TEXT NOT NULL,
+                approved_at TEXT NOT NULL,
+                approved_by TEXT NOT NULL,
+                PRIMARY KEY(tenant_id, host, port)
+            );
+            """
+        )
+
     def _migrate(self) -> None:
         with self._connect() as connection:
-            connection.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS ssh_host_key_discoveries (
-                    id TEXT PRIMARY KEY,
-                    host TEXT NOT NULL,
-                    port INTEGER NOT NULL,
-                    key_type TEXT NOT NULL,
-                    key_base64 TEXT NOT NULL,
-                    fingerprint TEXT NOT NULL,
-                    discovered_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS ssh_host_key_discoveries_expiry_idx
-                    ON ssh_host_key_discoveries(expires_at);
-                CREATE TABLE IF NOT EXISTS ssh_trusted_host_keys (
-                    host TEXT NOT NULL,
-                    port INTEGER NOT NULL,
-                    key_type TEXT NOT NULL,
-                    key_base64 TEXT NOT NULL,
-                    fingerprint TEXT NOT NULL,
-                    approved_at TEXT NOT NULL,
-                    approved_by TEXT NOT NULL,
-                    PRIMARY KEY(host, port)
-                );
-                """
+            discovery_exists = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ssh_host_key_discoveries'"
+            ).fetchone()
+            trusted_exists = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ssh_trusted_host_keys'"
+            ).fetchone()
+            if discovery_exists is None and trusted_exists is None:
+                self._create_schema(connection)
+                return
+
+            discovery_columns = (
+                {
+                    str(row[1])
+                    for row in connection.execute("PRAGMA table_info(ssh_host_key_discoveries)").fetchall()
+                }
+                if discovery_exists is not None
+                else set()
             )
+            trusted_columns = (
+                {
+                    str(row[1])
+                    for row in connection.execute("PRAGMA table_info(ssh_trusted_host_keys)").fetchall()
+                }
+                if trusted_exists is not None
+                else set()
+            )
+            if (
+                (discovery_exists is None or "tenant_id" in discovery_columns)
+                and (trusted_exists is None or "tenant_id" in trusted_columns)
+            ):
+                self._create_schema(connection)
+                return
+
+            legacy_tenant = self._legacy_tenant_id(connection)
+            if discovery_exists is not None and "tenant_id" not in discovery_columns:
+                connection.execute("ALTER TABLE ssh_host_key_discoveries RENAME TO ssh_host_key_discoveries_legacy")
+            if trusted_exists is not None and "tenant_id" not in trusted_columns:
+                connection.execute("ALTER TABLE ssh_trusted_host_keys RENAME TO ssh_trusted_host_keys_legacy")
+            self._create_schema(connection)
+            if discovery_exists is not None and "tenant_id" not in discovery_columns:
+                connection.execute(
+                    """
+                    INSERT INTO ssh_host_key_discoveries (
+                        id, tenant_id, host, port, key_type, key_base64, fingerprint,
+                        discovered_at, expires_at
+                    )
+                    SELECT id, ?, host, port, key_type, key_base64, fingerprint,
+                           discovered_at, expires_at
+                    FROM ssh_host_key_discoveries_legacy
+                    """,
+                    (legacy_tenant,),
+                )
+                connection.execute("DROP TABLE ssh_host_key_discoveries_legacy")
+            if trusted_exists is not None and "tenant_id" not in trusted_columns:
+                connection.execute(
+                    """
+                    INSERT INTO ssh_trusted_host_keys (
+                        tenant_id, host, port, key_type, key_base64, fingerprint,
+                        approved_at, approved_by
+                    )
+                    SELECT ?, host, port, key_type, key_base64, fingerprint,
+                           approved_at, approved_by
+                    FROM ssh_trusted_host_keys_legacy
+                    """,
+                    (legacy_tenant,),
+                )
+                connection.execute("DROP TABLE ssh_trusted_host_keys_legacy")
 
     @staticmethod
     def _discovery(row: sqlite3.Row) -> DiscoveredHostKey:
@@ -184,14 +277,20 @@ class SshHostTrustStore:
             approved_by=str(row["approved_by"]),
         )
 
-    def record_discovery(self, host: str, port: int, keys: list[tuple[str, str, str]]) -> list[DiscoveredHostKey]:
+    def record_discovery(
+        self, host: str, port: int, keys: list[tuple[str, str, str]]
+    ) -> list[DiscoveredHostKey]:
+        tenant_id = self._tenant()
         target = validate_network_target(host)
         validated_port = _validate_port(port)
         now = _timestamp()
         expires = now + timedelta(minutes=_DISCOVERY_TTL_MINUTES)
         records: list[DiscoveredHostKey] = []
         with self._connect() as connection:
-            connection.execute("DELETE FROM ssh_host_key_discoveries WHERE expires_at <= ?", (now.isoformat(),))
+            connection.execute(
+                "DELETE FROM ssh_host_key_discoveries WHERE tenant_id = ? AND expires_at <= ?",
+                (tenant_id, now.isoformat()),
+            )
             for key_type, key_base64, supplied_fingerprint in keys:
                 normalized_type, normalized_key, fingerprint = _validate_key(key_type, key_base64)
                 if supplied_fingerprint != fingerprint:
@@ -207,11 +306,15 @@ class SshHostTrustStore:
                     expires_at=expires.isoformat(),
                 )
                 connection.execute(
-                    """INSERT INTO ssh_host_key_discoveries
-                    (id, host, port, key_type, key_base64, fingerprint, discovered_at, expires_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    """
+                    INSERT INTO ssh_host_key_discoveries (
+                        id, tenant_id, host, port, key_type, key_base64,
+                        fingerprint, discovered_at, expires_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
                     (
                         record.id,
+                        tenant_id,
                         record.host,
                         record.port,
                         record.key_type,
@@ -228,20 +331,29 @@ class SshHostTrustStore:
         return self.record_discovery(host, port, discover_host_keys(host, port))
 
     def approve(self, discovery_id: str, approved_by: str) -> TrustedHostKey:
+        tenant_id = self._tenant()
         now = _timestamp()
         with self._connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM ssh_host_key_discoveries WHERE id = ? AND expires_at > ?",
-                (discovery_id, now.isoformat()),
-            ).fetchone()
+            if tenant_id == SYSTEM_TENANT_ID:
+                row = connection.execute(
+                    "SELECT * FROM ssh_host_key_discoveries WHERE id = ? AND expires_at > ?",
+                    (discovery_id, now.isoformat()),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    "SELECT * FROM ssh_host_key_discoveries WHERE id = ? AND tenant_id = ? AND expires_at > ?",
+                    (discovery_id, tenant_id, now.isoformat()),
+                ).fetchone()
             if row is None:
                 raise ValueError("SSH host-key discovery was not found or has expired")
             discovery = self._discovery(row)
+            owner_tenant = str(row["tenant_id"])
             connection.execute(
-                """INSERT INTO ssh_trusted_host_keys
-                (host, port, key_type, key_base64, fingerprint, approved_at, approved_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(host, port) DO UPDATE SET
+                """
+                INSERT INTO ssh_trusted_host_keys (
+                    tenant_id, host, port, key_type, key_base64, fingerprint, approved_at, approved_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tenant_id, host, port) DO UPDATE SET
                     key_type = excluded.key_type,
                     key_base64 = excluded.key_base64,
                     fingerprint = excluded.fingerprint,
@@ -249,6 +361,7 @@ class SshHostTrustStore:
                     approved_by = excluded.approved_by
                 """,
                 (
+                    owner_tenant,
                     discovery.host,
                     discovery.port,
                     discovery.key_type,
@@ -259,36 +372,70 @@ class SshHostTrustStore:
                 ),
             )
             connection.execute(
-                "DELETE FROM ssh_host_key_discoveries WHERE host = ? AND port = ?",
-                (discovery.host, discovery.port),
+                "DELETE FROM ssh_host_key_discoveries WHERE tenant_id = ? AND host = ? AND port = ?",
+                (owner_tenant, discovery.host, discovery.port),
             )
-        trusted = self.get(discovery.host, discovery.port)
+        trusted = self._get_for_tenant(owner_tenant, discovery.host, discovery.port)
         assert trusted is not None
         return trusted
 
-    def get(self, host: str, port: int = 22) -> TrustedHostKey | None:
+    def _get_for_tenant(self, tenant_id: str, host: str, port: int) -> TrustedHostKey | None:
         target = validate_network_target(host)
         validated_port = _validate_port(port)
         with self._connect() as connection:
             row = connection.execute(
-                "SELECT * FROM ssh_trusted_host_keys WHERE host = ? AND port = ?",
-                (target, validated_port),
+                "SELECT * FROM ssh_trusted_host_keys WHERE tenant_id = ? AND host = ? AND port = ?",
+                (tenant_id, target, validated_port),
             ).fetchone()
         return self._trusted(row) if row else None
 
-    def list(self) -> list[TrustedHostKey]:
-        with self._connect() as connection:
-            rows = connection.execute(
-                "SELECT * FROM ssh_trusted_host_keys ORDER BY host COLLATE NOCASE, port"
-            ).fetchall()
-        return [self._trusted(row) for row in rows]
-
-    def delete(self, host: str, port: int = 22) -> bool:
+    def get(self, host: str, port: int = 22) -> TrustedHostKey | None:
+        tenant_id = self._tenant()
         target = validate_network_target(host)
         validated_port = _validate_port(port)
         with self._connect() as connection:
-            cursor = connection.execute(
-                "DELETE FROM ssh_trusted_host_keys WHERE host = ? AND port = ?",
-                (target, validated_port),
-            )
+            if tenant_id == SYSTEM_TENANT_ID:
+                rows = connection.execute(
+                    "SELECT * FROM ssh_trusted_host_keys WHERE host = ? AND port = ? ORDER BY tenant_id",
+                    (target, validated_port),
+                ).fetchall()
+                if len(rows) > 1:
+                    raise ValueError("trusted SSH host key is ambiguous across tenants")
+                row = rows[0] if rows else None
+            else:
+                row = connection.execute(
+                    "SELECT * FROM ssh_trusted_host_keys WHERE tenant_id = ? AND host = ? AND port = ?",
+                    (tenant_id, target, validated_port),
+                ).fetchone()
+        return self._trusted(row) if row else None
+
+    def list(self) -> list[TrustedHostKey]:
+        tenant_id = self._tenant()
+        with self._connect() as connection:
+            if tenant_id == SYSTEM_TENANT_ID:
+                rows = connection.execute(
+                    "SELECT * FROM ssh_trusted_host_keys ORDER BY tenant_id, host COLLATE NOCASE, port"
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    "SELECT * FROM ssh_trusted_host_keys WHERE tenant_id = ? ORDER BY host COLLATE NOCASE, port",
+                    (tenant_id,),
+                ).fetchall()
+        return [self._trusted(row) for row in rows]
+
+    def delete(self, host: str, port: int = 22) -> bool:
+        tenant_id = self._tenant()
+        target = validate_network_target(host)
+        validated_port = _validate_port(port)
+        with self._connect() as connection:
+            if tenant_id == SYSTEM_TENANT_ID:
+                cursor = connection.execute(
+                    "DELETE FROM ssh_trusted_host_keys WHERE host = ? AND port = ?",
+                    (target, validated_port),
+                )
+            else:
+                cursor = connection.execute(
+                    "DELETE FROM ssh_trusted_host_keys WHERE tenant_id = ? AND host = ? AND port = ?",
+                    (tenant_id, target, validated_port),
+                )
         return cursor.rowcount > 0
