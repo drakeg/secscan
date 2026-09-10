@@ -31,6 +31,7 @@ dev = [
 secscan = "secscan.cli:main"
 secscan-service = "secscan.service_cli:main"
 secscan-ecs = "secscan.aws_ecs_cli:main"
+secscan-eks = "secscan.aws_eks_cli:main"
 secscan-policy = "secscan.signed_policy:main"
 
 [tool.setuptools.packages.find]
