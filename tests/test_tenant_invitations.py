@@ -65,7 +65,7 @@ def test_owner_can_revoke_and_cross_tenant_owner_cannot_revoke(tmp_path: Path) -
     _auth, owner, invited, outsider = _users(database)
     store = TenantInvitationStore(database)
     invitation, token = store.create(owner, invited.email)
-    with pytest.raises(PermissionError, match="owner"):
+    with pytest.raises(ValueError, match="not found"):
         store.revoke(outsider, invitation.id)
     store.revoke(owner, invitation.id)
     with pytest.raises(ValueError, match="no longer active"):
