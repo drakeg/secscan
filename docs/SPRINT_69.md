@@ -16,25 +16,27 @@ This sprint will:
 - create membership only after successful acceptance
 - make acceptance single-use and fail closed for expired, revoked, already-used, malformed, or mismatched invitations
 - revoke outstanding invitations when an owner directly adds the same registered account to the tenant
-- expose focused authenticated API/UI support for invitation creation, listing, revocation, and acceptance
-- support optional delivery through the existing application mail boundary only when explicitly configured; invitation creation must remain usable without paid email infrastructure
-- add migration, authorization, expiry, replay, email-binding, and tenant-isolation regression tests
+- expose focused authenticated API support for invitation creation, listing, revocation, and acceptance
+- add migration, authorization, expiry, replay, email-binding, direct-membership invalidation, and tenant-isolation regression tests
 
 ## Security boundaries
 
-- Raw invitation tokens are returned only at creation/delivery time and are never stored in SQLite or logs.
-- Invitation lookup uses a SHA-256 token digest and constant-time comparison where token material is compared in application code.
+- Raw invitation tokens are returned only at creation time and are never stored in SQLite or logs.
+- Invitation lookup uses a SHA-256 token digest; raw token material is not persisted or compared against stored plaintext.
 - Invitation tokens are high-entropy, URL-safe values generated with Python `secrets`.
 - Only an owner of the invitation tenant can create, list, or revoke its invitations.
 - The accepting account must be authenticated and its normalized email must exactly match the invitation target.
 - Acceptance never accepts a tenant ID, role, or target email from the client as authority; those values come from the stored invitation.
 - Invitations expire after a bounded lifetime and are single-use.
 - Invitation acceptance cannot create an owner membership.
+- Direct membership creation invalidates matching outstanding invitations for the same tenant/email.
 - Global secscan `admin` status does not bypass tenant invitation or membership authorization.
 - No invitation token, SMTP credential, password, session token, SSH credential, or other secret may appear in logs or persisted job evidence.
 
 ## Explicitly deferred
 
+- invitation management UI
+- invitation email delivery and SMTP integration
 - ownership transfer and owner invitations
 - multiple-owner governance
 - tenant creation/deletion/renaming
