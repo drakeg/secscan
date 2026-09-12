@@ -33,6 +33,13 @@ def test_invitation_persists_only_token_digest_and_accepts_once(tmp_path: Path) 
     assert stored == hashlib.sha256(token.encode()).hexdigest()
     assert token != stored
     assert store.accept(invited, token) == owner.tenant_id
+    with sqlite3.connect(database) as connection:
+        accepted_at, revoked_at = connection.execute(
+            "SELECT accepted_at, revoked_at FROM auth_tenant_invitations WHERE id = ?",
+            (invitation.id,),
+        ).fetchone()
+    assert accepted_at is not None
+    assert revoked_at is None
     with pytest.raises(ValueError, match="no longer active"):
         store.accept(invited, token)
 
@@ -110,3 +117,21 @@ def test_direct_member_addition_revokes_outstanding_invitation(tmp_path: Path) -
     assert row[1] is not None
     with pytest.raises(ValueError, match="no longer active"):
         store.accept(invited, token)
+
+
+def test_expired_and_invalid_invitation_tokens_fail_closed(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    _auth, owner, invited, _outsider = _users(database)
+    store = TenantInvitationStore(database)
+    invitation, token = store.create(owner, invited.email)
+
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE auth_tenant_invitations SET expires_at = ? WHERE id = ?",
+            ("2000-01-01T00:00:00+00:00", invitation.id),
+        )
+
+    with pytest.raises(ValueError, match="expired"):
+        store.accept(invited, token)
+    with pytest.raises(ValueError, match="invalid"):
+        store.accept(invited, "x" * 64)
