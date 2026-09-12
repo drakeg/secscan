@@ -18,6 +18,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field
 
 from secscan.auth import AuthStore, SESSION_COOKIE
+from secscan.credential_tenancy import reset_credential_tenant, set_credential_tenant
 from secscan.public_site import PlanStore
 from secscan.scanners.network import validate_network_target
 from secscan.scanners.windows_host import validate_windows_ssh_user
@@ -136,6 +137,7 @@ def mount_windows_host_submission(
         job_id: str,
         request: WindowsHostWebSubmission,
         profile_id: str,
+        tenant_id: str,
     ) -> None:
         record = store.get(job_id)
         if record is None or record.status != "queued":
@@ -143,6 +145,7 @@ def mount_windows_host_submission(
         record.status = "running"
         record.started_at = datetime.now(UTC).isoformat()
         store.save(record)
+        tenant_token = set_credential_tenant(tenant_id)
         try:
             if credential_store is None:
                 raise ValueError("encrypted SSH credential storage is disabled")
@@ -203,6 +206,7 @@ def mount_windows_host_submission(
             record.status = "failed"
             record.error = str(exc)
         finally:
+            reset_credential_tenant(tenant_token)
             record.completed_at = datetime.now(UTC).isoformat()
             try:
                 _write_manifest(store, resolved_root, record)
@@ -234,7 +238,7 @@ def mount_windows_host_submission(
             tenant_id=tenant_id,
         )
         store.save(record)
-        executor.submit(run_profile_job, job_id, request, profile_id)
+        executor.submit(run_profile_job, job_id, request, profile_id, tenant_id)
         document = asdict(record)
         document.pop("tenant_id", None)
         return document
