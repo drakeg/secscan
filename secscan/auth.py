@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import secrets
 import sqlite3
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -40,6 +40,7 @@ _PUBLIC_PREFIXES = (
     "/ssh_credentials.js",
     "/delete_scans.js",
 )
+TenantRole = Literal["owner", "member"]
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,26 @@ class User:
         }
 
 
+@dataclass(frozen=True)
+class TenantMembership:
+    tenant_id: str
+    tenant_name: str
+    user_id: str
+    email: str
+    role: TenantRole
+    created_at: str
+
+    def public(self) -> dict[str, str]:
+        return {
+            "tenant_id": self.tenant_id,
+            "tenant_name": self.tenant_name,
+            "user_id": self.user_id,
+            "email": self.email,
+            "role": self.role,
+            "created_at": self.created_at,
+        }
+
+
 class RegisterRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=12, max_length=1024)
@@ -70,6 +91,14 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str = Field(min_length=3, max_length=254)
     password: str = Field(min_length=1, max_length=1024)
+
+
+class TenantMemberRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+
+
+class TenantSwitchRequest(BaseModel):
+    tenant_id: str = Field(min_length=1, max_length=128)
 
 
 class AuthStore:
@@ -81,6 +110,7 @@ class AuthStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.path)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
     def migrate(self) -> None:
@@ -105,13 +135,59 @@ class AuthStore:
                 CREATE INDEX IF NOT EXISTS auth_sessions_expiry_idx ON auth_sessions(expires_at);
                 """
             )
-            columns = {
-                str(row[1]) for row in connection.execute("PRAGMA table_info(auth_users)").fetchall()
+            user_columns = {
+                str(row[1])
+                for row in connection.execute("PRAGMA table_info(auth_users)").fetchall()
             }
-            if "tenant_id" not in columns:
+            if "tenant_id" not in user_columns:
                 connection.execute("ALTER TABLE auth_users ADD COLUMN tenant_id TEXT")
             connection.execute(
                 "UPDATE auth_users SET tenant_id = id WHERE tenant_id IS NULL OR tenant_id = ''"
+            )
+            session_columns = {
+                str(row[1])
+                for row in connection.execute("PRAGMA table_info(auth_sessions)").fetchall()
+            }
+            if "active_tenant_id" not in session_columns:
+                connection.execute("ALTER TABLE auth_sessions ADD COLUMN active_tenant_id TEXT")
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS auth_tenants (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS auth_tenant_memberships (
+                    tenant_id TEXT NOT NULL REFERENCES auth_tenants(id) ON DELETE CASCADE,
+                    user_id TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+                    role TEXT NOT NULL CHECK(role IN ('owner', 'member')),
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, user_id)
+                );
+                CREATE INDEX IF NOT EXISTS auth_memberships_user_idx
+                    ON auth_tenant_memberships(user_id);
+                """
+            )
+            users = connection.execute(
+                "SELECT id, tenant_id, email, created_at FROM auth_users"
+            ).fetchall()
+            for row in users:
+                tenant_id = str(row["tenant_id"])
+                connection.execute(
+                    "INSERT OR IGNORE INTO auth_tenants (id, name, created_at) VALUES (?, ?, ?)",
+                    (tenant_id, str(row["email"]), str(row["created_at"])),
+                )
+                connection.execute(
+                    """INSERT OR IGNORE INTO auth_tenant_memberships
+                       (tenant_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)""",
+                    (tenant_id, str(row["id"]), str(row["created_at"])),
+                )
+            connection.execute(
+                """UPDATE auth_sessions
+                   SET active_tenant_id = (
+                       SELECT tenant_id FROM auth_users WHERE auth_users.id = auth_sessions.user_id
+                   )
+                   WHERE active_tenant_id IS NULL OR active_tenant_id = ''"""
             )
 
     def register(self, email: str, password: str) -> User:
@@ -125,8 +201,19 @@ class AuthStore:
             role = "admin" if count == 0 else "user"
             try:
                 connection.execute(
-                    "INSERT INTO auth_users (id, tenant_id, email, password_hash, role, enabled, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)",
+                    """INSERT INTO auth_users
+                       (id, tenant_id, email, password_hash, role, enabled, created_at)
+                       VALUES (?, ?, ?, ?, ?, 1, ?)""",
                     (user_id, tenant_id, normalized, password_hash, role, created_at),
+                )
+                connection.execute(
+                    "INSERT INTO auth_tenants (id, name, created_at) VALUES (?, ?, ?)",
+                    (tenant_id, normalized, created_at),
+                )
+                connection.execute(
+                    """INSERT INTO auth_tenant_memberships
+                       (tenant_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)""",
+                    (tenant_id, user_id, created_at),
                 )
             except sqlite3.IntegrityError as exc:
                 raise ValueError("an account with that email already exists") from exc
@@ -139,7 +226,11 @@ class AuthStore:
             return None
         with self._connect() as connection:
             row = connection.execute("SELECT * FROM auth_users WHERE email = ?", (normalized,)).fetchone()
-        if row is None or not bool(row["enabled"]) or not verify_password(password, str(row["password_hash"])):
+        if (
+            row is None
+            or not bool(row["enabled"])
+            or not verify_password(password, str(row["password_hash"]))
+        ):
             return None
         return _user(row)
 
@@ -148,10 +239,33 @@ class AuthStore:
         created = _now()
         expires = created + timedelta(days=SESSION_DAYS)
         with self._connect() as connection:
-            connection.execute("DELETE FROM auth_sessions WHERE expires_at <= ?", (created.isoformat(),))
+            row = connection.execute(
+                "SELECT tenant_id FROM auth_users WHERE id = ? AND enabled = 1", (user_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError("account was not found")
+            active_tenant_id = str(row["tenant_id"])
+            membership = connection.execute(
+                """SELECT 1 FROM auth_tenant_memberships
+                   WHERE tenant_id = ? AND user_id = ?""",
+                (active_tenant_id, user_id),
+            ).fetchone()
+            if membership is None:
+                raise ValueError("account has no membership in its home tenant")
             connection.execute(
-                "INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-                (_token_hash(token), user_id, created.isoformat(), expires.isoformat()),
+                "DELETE FROM auth_sessions WHERE expires_at <= ?", (created.isoformat(),)
+            )
+            connection.execute(
+                """INSERT INTO auth_sessions
+                   (token_hash, user_id, created_at, expires_at, active_tenant_id)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (
+                    _token_hash(token),
+                    user_id,
+                    created.isoformat(),
+                    expires.isoformat(),
+                    active_tenant_id,
+                ),
             )
         return token
 
@@ -161,11 +275,48 @@ class AuthStore:
         now = _now().isoformat()
         with self._connect() as connection:
             row = connection.execute(
-                """SELECT u.* FROM auth_sessions s JOIN auth_users u ON u.id = s.user_id
+                """SELECT u.*, s.active_tenant_id
+                   FROM auth_sessions s
+                   JOIN auth_users u ON u.id = s.user_id
+                   JOIN auth_tenant_memberships m
+                     ON m.user_id = u.id AND m.tenant_id = s.active_tenant_id
                    WHERE s.token_hash = ? AND s.expires_at > ? AND u.enabled = 1""",
                 (_token_hash(token), now),
             ).fetchone()
-        return _user(row) if row else None
+        if row is None:
+            return None
+        return _user(row, tenant_id=str(row["active_tenant_id"]))
+
+    def switch_session_tenant(self, token: str | None, tenant_id: str) -> User:
+        if not token:
+            raise ValueError("authentication required")
+        token_hash = _token_hash(token)
+        with self._connect() as connection:
+            session = connection.execute(
+                """SELECT user_id FROM auth_sessions
+                   WHERE token_hash = ? AND expires_at > ?""",
+                (token_hash, _now().isoformat()),
+            ).fetchone()
+            if session is None:
+                raise ValueError("authentication required")
+            user_id = str(session["user_id"])
+            membership = connection.execute(
+                """SELECT 1 FROM auth_tenant_memberships
+                   WHERE tenant_id = ? AND user_id = ?""",
+                (tenant_id, user_id),
+            ).fetchone()
+            if membership is None:
+                raise ValueError("tenant membership is required")
+            connection.execute(
+                "UPDATE auth_sessions SET active_tenant_id = ? WHERE token_hash = ?",
+                (tenant_id, token_hash),
+            )
+            row = connection.execute(
+                "SELECT * FROM auth_users WHERE id = ? AND enabled = 1", (user_id,)
+            ).fetchone()
+        if row is None:
+            raise ValueError("account was not found")
+        return _user(row, tenant_id=tenant_id)
 
     def revoke_session(self, token: str | None) -> None:
         if not token:
@@ -177,6 +328,120 @@ class AuthStore:
         with self._connect() as connection:
             rows = connection.execute("SELECT * FROM auth_users ORDER BY created_at ASC").fetchall()
         return [_user(row) for row in rows]
+
+    def list_memberships(self, user_id: str) -> list[TenantMembership]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT m.tenant_id, t.name AS tenant_name, m.user_id, u.email,
+                          m.role, m.created_at
+                   FROM auth_tenant_memberships m
+                   JOIN auth_tenants t ON t.id = m.tenant_id
+                   JOIN auth_users u ON u.id = m.user_id
+                   WHERE m.user_id = ?
+                   ORDER BY t.name COLLATE NOCASE, m.tenant_id""",
+                (user_id,),
+            ).fetchall()
+        return [_membership(row) for row in rows]
+
+    def list_tenant_members(self, actor_user_id: str, tenant_id: str) -> list[TenantMembership]:
+        self._require_membership(actor_user_id, tenant_id)
+        with self._connect() as connection:
+            rows = connection.execute(
+                """SELECT m.tenant_id, t.name AS tenant_name, m.user_id, u.email,
+                          m.role, m.created_at
+                   FROM auth_tenant_memberships m
+                   JOIN auth_tenants t ON t.id = m.tenant_id
+                   JOIN auth_users u ON u.id = m.user_id
+                   WHERE m.tenant_id = ?
+                   ORDER BY CASE m.role WHEN 'owner' THEN 0 ELSE 1 END,
+                            u.email COLLATE NOCASE""",
+                (tenant_id,),
+            ).fetchall()
+        return [_membership(row) for row in rows]
+
+    def add_tenant_member(
+        self, actor_user_id: str, tenant_id: str, email: str
+    ) -> TenantMembership:
+        self._require_owner(actor_user_id, tenant_id)
+        normalized = normalize_email(email)
+        created_at = _now().isoformat()
+        with self._connect() as connection:
+            user = connection.execute(
+                "SELECT id, email FROM auth_users WHERE email = ? AND enabled = 1", (normalized,)
+            ).fetchone()
+            if user is None:
+                raise ValueError("registered account was not found")
+            user_id = str(user["id"])
+            existing = connection.execute(
+                """SELECT 1 FROM auth_tenant_memberships
+                   WHERE tenant_id = ? AND user_id = ?""",
+                (tenant_id, user_id),
+            ).fetchone()
+            if existing is not None:
+                raise ValueError("account is already a member of this tenant")
+            connection.execute(
+                """INSERT INTO auth_tenant_memberships
+                   (tenant_id, user_id, role, created_at) VALUES (?, ?, 'member', ?)""",
+                (tenant_id, user_id, created_at),
+            )
+            tenant = connection.execute(
+                "SELECT name FROM auth_tenants WHERE id = ?", (tenant_id,)
+            ).fetchone()
+        if tenant is None:
+            raise ValueError("tenant was not found")
+        return TenantMembership(
+            tenant_id,
+            str(tenant["name"]),
+            user_id,
+            normalized,
+            "member",
+            created_at,
+        )
+
+    def remove_tenant_member(
+        self, actor_user_id: str, tenant_id: str, member_user_id: str
+    ) -> None:
+        self._require_owner(actor_user_id, tenant_id)
+        if actor_user_id == member_user_id:
+            raise ValueError("owners cannot remove themselves")
+        with self._connect() as connection:
+            target = connection.execute(
+                """SELECT role FROM auth_tenant_memberships
+                   WHERE tenant_id = ? AND user_id = ?""",
+                (tenant_id, member_user_id),
+            ).fetchone()
+            if target is None:
+                raise ValueError("tenant member was not found")
+            if str(target["role"]) == "owner":
+                raise ValueError("owners cannot be removed through the member endpoint")
+            connection.execute(
+                "DELETE FROM auth_tenant_memberships WHERE tenant_id = ? AND user_id = ?",
+                (tenant_id, member_user_id),
+            )
+
+    def membership_role(self, user_id: str, tenant_id: str) -> TenantRole | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT role FROM auth_tenant_memberships
+                   WHERE tenant_id = ? AND user_id = ?""",
+                (tenant_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
+        role = str(row["role"])
+        if role not in {"owner", "member"}:
+            return None
+        return role  # type: ignore[return-value]
+
+    def _require_membership(self, user_id: str, tenant_id: str) -> TenantRole:
+        role = self.membership_role(user_id, tenant_id)
+        if role is None:
+            raise ValueError("tenant membership is required")
+        return role
+
+    def _require_owner(self, user_id: str, tenant_id: str) -> None:
+        if self._require_membership(user_id, tenant_id) != "owner":
+            raise PermissionError("tenant owner access required")
 
 
 def normalize_email(value: str) -> str:
@@ -230,13 +495,27 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def _user(row: sqlite3.Row) -> User:
+def _user(row: sqlite3.Row, *, tenant_id: str | None = None) -> User:
     return User(
         str(row["id"]),
-        str(row["tenant_id"]),
+        tenant_id or str(row["tenant_id"]),
         str(row["email"]),
         str(row["role"]),
         bool(row["enabled"]),
+        str(row["created_at"]),
+    )
+
+
+def _membership(row: sqlite3.Row) -> TenantMembership:
+    role = str(row["role"])
+    if role not in {"owner", "member"}:
+        raise ValueError("invalid tenant membership role")
+    return TenantMembership(
+        str(row["tenant_id"]),
+        str(row["tenant_name"]),
+        str(row["user_id"]),
+        str(row["email"]),
+        role,  # type: ignore[arg-type]
         str(row["created_at"]),
     )
 
@@ -254,13 +533,25 @@ def _auth_page(mode: str, error: str = "") -> str:
     return f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{title} · secscan</title><style>body{{font-family:system-ui;background:#111827;color:#e5e7eb;display:grid;place-items:center;min-height:100vh;margin:0}}main{{width:min(420px,90vw);background:#1f2937;padding:2rem;border-radius:14px}}label{{display:block;margin:1rem 0}}input{{box-sizing:border-box;width:100%;padding:.8rem;margin-top:.35rem}}button{{width:100%;padding:.8rem;font-weight:700}}a{{color:#93c5fd}}#error{{color:#fca5a5;min-height:1.3em}}</style></head><body><main><h1>secscan</h1><h2>{title}</h2><p id='error'>{safe_error}</p><form id='auth'><label>Email<input id='email' type='email' required autocomplete='email'></label><label>Password<input id='password' type='password' required minlength='12' autocomplete='current-password'></label><button type='submit'>{title}</button></form><p>{switch}</p></main><script>document.getElementById('auth').addEventListener('submit',async(e)=>{{e.preventDefault();const r=await fetch('{endpoint}',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{email:document.getElementById('email').value,password:document.getElementById('password').value}})}});if(r.ok){{location.href='/';return;}}let d=await r.json().catch(()=>({{}}));document.getElementById('error').textContent=d.detail||'Authentication failed';}});</script></body></html>"""
 
 
+def _tenant_page() -> str:
+    return """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Tenants · secscan</title><style>body{font-family:system-ui;background:#111827;color:#e5e7eb;margin:0}main{width:min(900px,92vw);margin:3rem auto}.panel{background:#1f2937;padding:1.4rem;border-radius:14px;margin:1rem 0}button,input{padding:.7rem}button{cursor:pointer}a{color:#93c5fd}.row{display:flex;gap:.7rem;align-items:center;justify-content:space-between;border-top:1px solid #374151;padding:.8rem 0}.muted{color:#9ca3af}#error{color:#fca5a5}</style></head><body><main><p><a href='/app'>← Workspace</a></p><h1>Tenant access</h1><p class='muted'>Choose the tenant whose scans, assets, SSH credentials, and trust records you want to use.</p><p id='error'></p><section class='panel'><h2>Your tenants</h2><div id='tenants'>Loading…</div></section><section class='panel'><h2>Current tenant members</h2><div id='members'>Loading…</div><form id='add-member'><p><input id='member-email' type='email' required placeholder='registered-user@example.com'> <button type='submit'>Add existing account</button></p></form></section></main><script>
+const error=document.getElementById('error');
+async function load(){const me=await fetch('/api/v1/auth/me').then(r=>r.json());const tenants=await fetch('/api/v1/auth/tenants').then(r=>r.json());document.getElementById('tenants').innerHTML=tenants.map(t=>`<div class="row"><div><strong>${t.tenant_name}</strong><br><span class="muted">${t.role}${t.tenant_id===me.tenant_id?' · active':''}</span></div>${t.tenant_id===me.tenant_id?'':`<button data-switch="${t.tenant_id}">Switch</button>`}</div>`).join('');document.querySelectorAll('[data-switch]').forEach(b=>b.onclick=async()=>{const r=await fetch('/api/v1/auth/tenants/switch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tenant_id:b.dataset.switch})});if(r.ok){location.reload();return}error.textContent=(await r.json()).detail||'Switch failed';});const membersResponse=await fetch('/api/v1/auth/tenants/current/members');if(!membersResponse.ok){document.getElementById('members').textContent='Member list unavailable.';document.getElementById('add-member').hidden=true;return}const members=await membersResponse.json();document.getElementById('members').innerHTML=members.map(m=>`<div class="row"><div>${m.email}<br><span class="muted">${m.role}</span></div>${m.role==='member'?`<button data-remove="${m.user_id}">Remove</button>`:''}</div>`).join('');document.querySelectorAll('[data-remove]').forEach(b=>b.onclick=async()=>{const r=await fetch(`/api/v1/auth/tenants/current/members/${b.dataset.remove}`,{method:'DELETE'});if(r.ok){load();return}error.textContent=(await r.json()).detail||'Remove failed';});}
+document.getElementById('add-member').addEventListener('submit',async(e)=>{e.preventDefault();error.textContent='';const r=await fetch('/api/v1/auth/tenants/current/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('member-email').value})});if(r.ok){document.getElementById('member-email').value='';load();return}error.textContent=(await r.json()).detail||'Add failed';});load();
+</script></body></html>"""
+
+
 class SessionAuthMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp, store: AuthStore, api_token: str | None) -> None:
         super().__init__(app)
         self.store = store
         self.api_token = api_token
 
-    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    async def dispatch(
+        self,
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
         path = request.url.path
         if (
             path in _PUBLIC_PATHS
@@ -321,6 +612,10 @@ def mount_auth(app: FastAPI, *, database: Path, api_token: str | None = None) ->
             raise HTTPException(status_code=404, detail="registration is disabled")
         return _auth_page("register")
 
+    @app.get("/account/tenants", response_class=HTMLResponse)
+    def tenant_page() -> str:
+        return _tenant_page()
+
     @app.post("/api/v1/auth/register", status_code=201)
     def register(request: RegisterRequest, response: Response) -> dict[str, object]:
         if not registration_enabled:
@@ -368,6 +663,52 @@ def mount_auth(app: FastAPI, *, database: Path, api_token: str | None = None) ->
     @app.get("/api/v1/auth/me")
     def me(request: Request) -> dict[str, object]:
         return current_user(request).public()
+
+    @app.get("/api/v1/auth/tenants")
+    def tenants(request: Request) -> list[dict[str, str]]:
+        user = current_user(request)
+        return [membership.public() for membership in store.list_memberships(user.id)]
+
+    @app.post("/api/v1/auth/tenants/switch")
+    def switch_tenant(request: Request, payload: TenantSwitchRequest) -> dict[str, object]:
+        try:
+            user = store.switch_session_tenant(
+                request.cookies.get(SESSION_COOKIE), payload.tenant_id
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        return user.public()
+
+    @app.get("/api/v1/auth/tenants/current/members")
+    def tenant_members(request: Request) -> list[dict[str, str]]:
+        user = current_user(request)
+        try:
+            memberships = store.list_tenant_members(user.id, user.tenant_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        return [membership.public() for membership in memberships]
+
+    @app.post("/api/v1/auth/tenants/current/members", status_code=201)
+    def add_tenant_member(request: Request, payload: TenantMemberRequest) -> dict[str, str]:
+        user = current_user(request)
+        try:
+            membership = store.add_tenant_member(user.id, user.tenant_id, payload.email)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return membership.public()
+
+    @app.delete("/api/v1/auth/tenants/current/members/{member_user_id}", status_code=204)
+    def remove_tenant_member(request: Request, member_user_id: str) -> Response:
+        user = current_user(request)
+        try:
+            store.remove_tenant_member(user.id, user.tenant_id, member_user_id)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return Response(status_code=204)
 
     @app.get("/api/v1/admin/users")
     def admin_users(request: Request) -> list[dict[str, object]]:
