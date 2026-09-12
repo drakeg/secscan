@@ -11,7 +11,7 @@ from starlette.types import ASGIApp
 from secscan.auth import AuthStore, SESSION_COOKIE
 
 
-_SESSION_AWARE_PATHS = {"/", "/login", "/register", "/account/plan"}
+_SESSION_AWARE_PATHS = {"/", "/login", "/register", "/account/plan", "/account/tenants"}
 
 
 class PublicSessionNavigationMiddleware(BaseHTTPMiddleware):
@@ -38,7 +38,11 @@ class PublicSessionNavigationMiddleware(BaseHTTPMiddleware):
         if path in _SESSION_AWARE_PATHS:
             response.headers["Cache-Control"] = "private, no-store, max-age=0"
             response.headers["Pragma"] = "no-cache"
-            vary = {item.strip() for item in response.headers.get("Vary", "").split(",") if item.strip()}
+            vary = {
+                item.strip()
+                for item in response.headers.get("Vary", "").split(",")
+                if item.strip()
+            }
             vary.add("Cookie")
             response.headers["Vary"] = ", ".join(sorted(vary))
         return response
