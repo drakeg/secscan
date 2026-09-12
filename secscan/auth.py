@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import secrets
 import sqlite3
-from typing import Awaitable, Callable, Literal
+from typing import Awaitable, Callable, Literal, cast
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -431,7 +431,7 @@ class AuthStore:
         role = str(row["role"])
         if role not in {"owner", "member"}:
             return None
-        return role  # type: ignore[return-value]
+        return cast(TenantRole, role)
 
     def _require_membership(self, user_id: str, tenant_id: str) -> TenantRole:
         role = self.membership_role(user_id, tenant_id)
@@ -515,7 +515,7 @@ def _membership(row: sqlite3.Row) -> TenantMembership:
         str(row["tenant_name"]),
         str(row["user_id"]),
         str(row["email"]),
-        role,  # type: ignore[arg-type]
+        cast(TenantRole, role),
         str(row["created_at"]),
     )
 
@@ -536,8 +536,14 @@ def _auth_page(mode: str, error: str = "") -> str:
 def _tenant_page() -> str:
     return """<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Tenants · secscan</title><style>body{font-family:system-ui;background:#111827;color:#e5e7eb;margin:0}main{width:min(900px,92vw);margin:3rem auto}.panel{background:#1f2937;padding:1.4rem;border-radius:14px;margin:1rem 0}button,input{padding:.7rem}button{cursor:pointer}a{color:#93c5fd}.row{display:flex;gap:.7rem;align-items:center;justify-content:space-between;border-top:1px solid #374151;padding:.8rem 0}.muted{color:#9ca3af}#error{color:#fca5a5}</style></head><body><main><p><a href='/app'>← Workspace</a></p><h1>Tenant access</h1><p class='muted'>Choose the tenant whose scans, assets, SSH credentials, and trust records you want to use.</p><p id='error'></p><section class='panel'><h2>Your tenants</h2><div id='tenants'>Loading…</div></section><section class='panel'><h2>Current tenant members</h2><div id='members'>Loading…</div><form id='add-member'><p><input id='member-email' type='email' required placeholder='registered-user@example.com'> <button type='submit'>Add existing account</button></p></form></section></main><script>
 const error=document.getElementById('error');
-async function load(){const me=await fetch('/api/v1/auth/me').then(r=>r.json());const tenants=await fetch('/api/v1/auth/tenants').then(r=>r.json());document.getElementById('tenants').innerHTML=tenants.map(t=>`<div class="row"><div><strong>${t.tenant_name}</strong><br><span class="muted">${t.role}${t.tenant_id===me.tenant_id?' · active':''}</span></div>${t.tenant_id===me.tenant_id?'':`<button data-switch="${t.tenant_id}">Switch</button>`}</div>`).join('');document.querySelectorAll('[data-switch]').forEach(b=>b.onclick=async()=>{const r=await fetch('/api/v1/auth/tenants/switch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tenant_id:b.dataset.switch})});if(r.ok){location.reload();return}error.textContent=(await r.json()).detail||'Switch failed';});const membersResponse=await fetch('/api/v1/auth/tenants/current/members');if(!membersResponse.ok){document.getElementById('members').textContent='Member list unavailable.';document.getElementById('add-member').hidden=true;return}const members=await membersResponse.json();document.getElementById('members').innerHTML=members.map(m=>`<div class="row"><div>${m.email}<br><span class="muted">${m.role}</span></div>${m.role==='member'?`<button data-remove="${m.user_id}">Remove</button>`:''}</div>`).join('');document.querySelectorAll('[data-remove]').forEach(b=>b.onclick=async()=>{const r=await fetch(`/api/v1/auth/tenants/current/members/${b.dataset.remove}`,{method:'DELETE'});if(r.ok){load();return}error.textContent=(await r.json()).detail||'Remove failed';});}
-document.getElementById('add-member').addEventListener('submit',async(e)=>{e.preventDefault();error.textContent='';const r=await fetch('/api/v1/auth/tenants/current/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('member-email').value})});if(r.ok){document.getElementById('member-email').value='';load();return}error.textContent=(await r.json()).detail||'Add failed';});load();
+function text(tag,value,className=''){const node=document.createElement(tag);node.textContent=String(value);if(className)node.className=className;return node;}
+function row(){const node=document.createElement('div');node.className='row';return node;}
+async function switchTenant(tenantId){const r=await fetch('/api/v1/auth/tenants/switch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tenant_id:tenantId})});if(r.ok){location.reload();return}error.textContent=(await r.json()).detail||'Switch failed';}
+async function removeMember(userId){const r=await fetch('/api/v1/auth/tenants/current/members/'+encodeURIComponent(userId),{method:'DELETE'});if(r.ok){await load();return}error.textContent=(await r.json()).detail||'Remove failed';}
+function renderTenants(tenants,me){const container=document.getElementById('tenants');container.replaceChildren();for(const tenant of tenants){const item=row();const details=document.createElement('div');details.append(text('strong',tenant.tenant_name),document.createElement('br'),text('span',tenant.role+(tenant.tenant_id===me.tenant_id?' · active':''),'muted'));item.append(details);if(tenant.tenant_id!==me.tenant_id){const button=text('button','Switch');button.type='button';button.addEventListener('click',()=>switchTenant(tenant.tenant_id));item.append(button);}container.append(item);}}
+function renderMembers(members,isOwner){const container=document.getElementById('members');container.replaceChildren();for(const member of members){const item=row();const details=document.createElement('div');details.append(text('span',member.email),document.createElement('br'),text('span',member.role,'muted'));item.append(details);if(isOwner&&member.role==='member'){const button=text('button','Remove');button.type='button';button.addEventListener('click',()=>removeMember(member.user_id));item.append(button);}container.append(item);}}
+async function load(){error.textContent='';const meResponse=await fetch('/api/v1/auth/me');if(!meResponse.ok){location.href='/login';return}const me=await meResponse.json();const tenantResponse=await fetch('/api/v1/auth/tenants');if(!tenantResponse.ok){error.textContent='Unable to load tenant access.';return}const tenants=await tenantResponse.json();renderTenants(tenants,me);const active=tenants.find(t=>t.tenant_id===me.tenant_id);const isOwner=Boolean(active&&active.role==='owner');const addForm=document.getElementById('add-member');addForm.hidden=!isOwner;const membersResponse=await fetch('/api/v1/auth/tenants/current/members');if(!membersResponse.ok){document.getElementById('members').textContent='Member list unavailable.';addForm.hidden=true;return}renderMembers(await membersResponse.json(),isOwner);}
+document.getElementById('add-member').addEventListener('submit',async(e)=>{e.preventDefault();error.textContent='';const input=document.getElementById('member-email');const r=await fetch('/api/v1/auth/tenants/current/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:input.value})});if(r.ok){input.value='';await load();return}error.textContent=(await r.json()).detail||'Add failed';});load();
 </script></body></html>"""
 
 
