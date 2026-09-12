@@ -2,25 +2,24 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 67
+## Completed through Sprint 68
 
-Sprints 0–67 are complete, including the capabilities previously summarized here plus tenant-isolated SSH credentials and SSH host-key trust, bounded ECS/EKS workload association, an opt-in tenant-bound Stripe subscription lifecycle, bounded GitHub Issues export, offline Ed25519-signed policy/governance bundles, authenticated network-range and Windows host workflows, and the existing account-to-tenant isolation foundation.
+Sprints 0–68 are complete, including the capabilities previously summarized here plus tenant-isolated SSH credentials and SSH host-key trust, bounded ECS/EKS workload association, an opt-in tenant-bound Stripe subscription lifecycle, bounded GitHub Issues export, offline Ed25519-signed policy/governance bundles, authenticated network-range and Windows host workflows, and multi-user tenant membership with session-scoped tenant switching.
 
 ## Current sprint
 
-### Sprint 68 — Multi-User Tenant Membership and Switching
+### Sprint 69 — Tenant Invitations and Acceptance
 
-Add first-class tenant memberships and session-scoped active-tenant switching for already-registered accounts. Preserve existing tenant IDs and isolation, migrate each legacy account as owner of its current tenant, require owner authorization for membership changes, and fail closed when a session no longer has membership in its selected tenant.
+Add owner-controlled, expiring, single-use tenant invitations. Persist only invitation-token digests, bind acceptance to an authenticated account whose normalized email matches the invitation, create only member memberships, and preserve the existing fail-closed tenant-isolation boundary. Optional delivery may use an explicitly configured application mail boundary; no paid email infrastructure is required.
 
 ## Candidate remaining sprints
 
-No later sprint number is committed yet. After Sprint 68 is accepted, reprioritize the remaining backlog before assigning Sprint 69.
+No later sprint number is committed yet. After Sprint 69 is accepted, reprioritize the remaining backlog before assigning Sprint 70.
 
 ## Backlog after the numbered candidate sequence
 
 These remain valid ideas but are intentionally not assigned fixed sprint numbers yet:
 
-- invitation creation/acceptance and email delivery for multi-user tenants
 - project-level authorization and tenant-owned projects
 - per-tenant API keys or external identity/OIDC before any production SaaS exposure
 - tenant-aware sharing/ownership for cloud discovery configuration and, later, explicitly shared SSH credentials within multi-user tenants

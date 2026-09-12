@@ -222,7 +222,7 @@ def test_profile_windows_job_uses_ephemeral_files_and_username_override(
             break
         sleep(0.01)
 
-    assert job["status"] == "completed"
+    assert job["status"] == "completed", job.get("error")
     assert captured["command"][:4] == ["secscan", "scan", "windows-host", "127.0.0.1"]
     assert captured["user"] == "ACME\\secscan-audit"
     assert captured["port"] == "2222"
