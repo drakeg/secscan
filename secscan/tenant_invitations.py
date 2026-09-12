@@ -80,6 +80,16 @@ class TenantInvitationStore:
                     ON auth_tenant_invitations(tenant_id, created_at DESC);
                 CREATE INDEX IF NOT EXISTS auth_tenant_invites_email_idx
                     ON auth_tenant_invitations(tenant_id, email);
+                CREATE TRIGGER IF NOT EXISTS auth_tenant_invites_revoke_on_membership_insert
+                AFTER INSERT ON auth_tenant_memberships
+                BEGIN
+                    UPDATE auth_tenant_invitations
+                    SET revoked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                    WHERE tenant_id = NEW.tenant_id
+                      AND email = (SELECT email FROM auth_users WHERE id = NEW.user_id)
+                      AND accepted_at IS NULL
+                      AND revoked_at IS NULL;
+                END;
                 """
             )
 
@@ -190,13 +200,13 @@ class TenantInvitationStore:
             if existing is not None:
                 raise ValueError("account is already a member of this tenant")
             connection.execute(
+                "UPDATE auth_tenant_invitations SET accepted_at = ? WHERE id = ?",
+                (now.isoformat(), invitation.id),
+            )
+            connection.execute(
                 """INSERT INTO auth_tenant_memberships (tenant_id, user_id, role, created_at)
                    VALUES (?, ?, 'member', ?)""",
                 (invitation.tenant_id, actor.id, now.isoformat()),
-            )
-            connection.execute(
-                "UPDATE auth_tenant_invitations SET accepted_at = ? WHERE id = ?",
-                (now.isoformat(), invitation.id),
             )
         return invitation.tenant_id
 
