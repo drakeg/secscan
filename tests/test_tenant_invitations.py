@@ -90,3 +90,23 @@ def test_existing_member_cannot_be_invited(tmp_path: Path) -> None:
     store = TenantInvitationStore(database)
     with pytest.raises(ValueError, match="already a member"):
         store.create(owner, invited.email)
+
+
+def test_direct_member_addition_revokes_outstanding_invitation(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    auth, owner, invited, _outsider = _users(database)
+    store = TenantInvitationStore(database)
+    invitation, token = store.create(owner, invited.email)
+
+    auth.add_tenant_member(owner.id, owner.tenant_id, invited.email)
+
+    with sqlite3.connect(database) as connection:
+        row = connection.execute(
+            "SELECT accepted_at, revoked_at FROM auth_tenant_invitations WHERE id = ?",
+            (invitation.id,),
+        ).fetchone()
+    assert row is not None
+    assert row[0] is None
+    assert row[1] is not None
+    with pytest.raises(ValueError, match="no longer active"):
+        store.accept(invited, token)
