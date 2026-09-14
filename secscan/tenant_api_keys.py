@@ -11,6 +11,7 @@ from typing import Awaitable, Callable
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.types import ASGIApp
 
@@ -23,6 +24,7 @@ class TenantApiKey:
     tenant_id: str
     name: str
     created_by: str
+    principal_user_id: str
     created_at: str
     expires_at: str | None
     revoked_at: str | None
@@ -33,6 +35,7 @@ class TenantApiKey:
             "tenant_id": self.tenant_id,
             "name": self.name,
             "created_by": self.created_by,
+            "principal_user_id": self.principal_user_id,
             "created_at": self.created_at,
             "expires_at": self.expires_at,
             "revoked_at": self.revoked_at,
@@ -41,6 +44,7 @@ class TenantApiKey:
 
 class TenantApiKeyCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+    principal_user_id: str | None = None
     expires_in_days: int | None = Field(default=None, ge=1, le=365)
 
 
@@ -67,6 +71,7 @@ class TenantApiKeyStore:
                     name TEXT NOT NULL,
                     secret_digest TEXT NOT NULL,
                     created_by TEXT NOT NULL REFERENCES auth_users(id),
+                    principal_user_id TEXT,
                     created_at TEXT NOT NULL,
                     expires_at TEXT,
                     revoked_at TEXT
@@ -77,18 +82,30 @@ class TenantApiKeyStore:
                     ON tenant_api_keys(id, revoked_at, expires_at);
                 """
             )
+            columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(tenant_api_keys)").fetchall()
+            }
+            if "principal_user_id" not in columns:
+                connection.execute("ALTER TABLE tenant_api_keys ADD COLUMN principal_user_id TEXT")
+            connection.execute(
+                "UPDATE tenant_api_keys SET principal_user_id = created_by WHERE principal_user_id IS NULL"
+            )
 
     def create(
         self,
         *,
         actor: User,
         name: str,
+        principal_user_id: str | None = None,
         expires_in_days: int | None = None,
     ) -> tuple[TenantApiKey, str]:
         clean_name = name.strip()
         if not clean_name:
             raise ValueError("API key name is required")
         self._require_owner(actor)
+        principal_id = principal_user_id or actor.id
+        self._require_tenant_principal(actor.tenant_id, principal_id)
         key_id = str(uuid4())
         secret = f"secscan_{key_id}.{secrets.token_urlsafe(32)}"
         created = datetime.now(UTC)
@@ -96,14 +113,16 @@ class TenantApiKeyStore:
         with self._connect() as connection:
             connection.execute(
                 """INSERT INTO tenant_api_keys
-                   (id, tenant_id, name, secret_digest, created_by, created_at, expires_at, revoked_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, NULL)""",
+                   (id, tenant_id, name, secret_digest, created_by, principal_user_id,
+                    created_at, expires_at, revoked_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)""",
                 (
                     key_id,
                     actor.tenant_id,
                     clean_name,
                     _secret_digest(secret),
                     actor.id,
+                    principal_id,
                     created.isoformat(),
                     expires.isoformat() if expires is not None else None,
                 ),
@@ -114,6 +133,7 @@ class TenantApiKeyStore:
                 actor.tenant_id,
                 clean_name,
                 actor.id,
+                principal_id,
                 created.isoformat(),
                 expires.isoformat() if expires is not None else None,
                 None,
@@ -125,7 +145,8 @@ class TenantApiKeyStore:
         self._require_owner(actor)
         with self._connect() as connection:
             rows = connection.execute(
-                """SELECT id, tenant_id, name, created_by, created_at, expires_at, revoked_at
+                """SELECT id, tenant_id, name, created_by, principal_user_id,
+                          created_at, expires_at, revoked_at
                    FROM tenant_api_keys
                    WHERE tenant_id = ?
                    ORDER BY created_at DESC, id""",
@@ -154,10 +175,9 @@ class TenantApiKeyStore:
         with self._connect() as connection:
             row = connection.execute(
                 """SELECT k.secret_digest, k.tenant_id,
-                          u.id, u.email, u.role, u.enabled, u.created_at,
-                          m.role AS tenant_role
+                          u.id, u.email, u.role, u.enabled, u.created_at
                    FROM tenant_api_keys k
-                   JOIN auth_users u ON u.id = k.created_by
+                   JOIN auth_users u ON u.id = k.principal_user_id
                    JOIN auth_tenant_memberships m
                      ON m.user_id = u.id AND m.tenant_id = k.tenant_id
                    WHERE k.id = ?
@@ -187,6 +207,18 @@ class TenantApiKeyStore:
         if row is None or str(row["role"]) != "owner":
             raise PermissionError("tenant owner access required")
 
+    def _require_tenant_principal(self, tenant_id: str, user_id: str) -> None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT 1
+                   FROM auth_users u
+                   JOIN auth_tenant_memberships m ON m.user_id = u.id
+                   WHERE u.id = ? AND m.tenant_id = ? AND u.enabled = 1""",
+                (user_id, tenant_id),
+            ).fetchone()
+        if row is None:
+            raise ValueError("API key principal must be an enabled tenant member")
+
 
 class TenantApiKeyAuthMiddleware(SessionAuthMiddleware):
     def __init__(
@@ -207,8 +239,11 @@ class TenantApiKeyAuthMiddleware(SessionAuthMiddleware):
     ) -> Response:
         authorization = request.headers.get("authorization", "")
         if authorization.startswith("Bearer "):
-            user = self.api_key_store.authenticate(authorization[7:])
-            if user is not None:
+            secret = authorization[7:]
+            if secret.startswith("secscan_"):
+                user = self.api_key_store.authenticate(secret)
+                if user is None:
+                    return JSONResponse(status_code=401, content={"detail": "invalid API key"})
                 request.state.secscan_user = user
                 request.state.secscan_auth_kind = "tenant_api_key"
                 return await call_next(request)
@@ -247,9 +282,12 @@ def mount_tenant_api_keys(
             key, secret = api_key_store.create(
                 actor=actor,
                 name=payload.name,
+                principal_user_id=payload.principal_user_id,
                 expires_in_days=payload.expires_in_days,
             )
-        except (PermissionError, ValueError) as exc:
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {"api_key": key.public(), "secret": secret}
 
@@ -293,11 +331,13 @@ def _key_id(secret: str) -> str | None:
 
 
 def _api_key(row: sqlite3.Row) -> TenantApiKey:
+    principal = row["principal_user_id"] if "principal_user_id" in row.keys() else row["created_by"]
     return TenantApiKey(
         id=str(row["id"]),
         tenant_id=str(row["tenant_id"]),
         name=str(row["name"]),
         created_by=str(row["created_by"]),
+        principal_user_id=str(principal),
         created_at=str(row["created_at"]),
         expires_at=str(row["expires_at"]) if row["expires_at"] is not None else None,
         revoked_at=str(row["revoked_at"]) if row["revoked_at"] is not None else None,
