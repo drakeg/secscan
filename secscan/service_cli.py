@@ -36,6 +36,7 @@ def main() -> None:
     from secscan.auth import mount_auth
     from secscan.credential_tenancy import SshCredentialTenantMiddleware
     from secscan.network_range_web import mount_network_range_submission
+    from secscan.project_jobs import mount_project_job_association
     from secscan.projects import mount_projects
     from secscan.public_navigation import PublicSessionNavigationMiddleware
     from secscan.public_site import mount_public_site
@@ -62,6 +63,7 @@ def main() -> None:
         mount_auth(app, database=database, api_token=api_token)
         mount_tenant_invitations(app, database=database)
         mount_projects(app, database=database)
+        mount_project_job_association(app, database=database)
         mount_ssh_host_trust(app, database=database)
         mount_assets(app, database=database)
         mount_network_range_submission(app)
