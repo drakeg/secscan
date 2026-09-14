@@ -68,6 +68,12 @@ class ProjectAccessStore:
                 );
                 CREATE INDEX IF NOT EXISTS project_memberships_user_project_idx
                     ON project_memberships(user_id, project_id);
+
+                CREATE TABLE IF NOT EXISTS project_access_policies (
+                    project_id TEXT PRIMARY KEY REFERENCES tenant_projects(id) ON DELETE CASCADE,
+                    restricted INTEGER NOT NULL DEFAULT 1 CHECK(restricted IN (0, 1)),
+                    configured_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -78,6 +84,13 @@ class ProjectAccessStore:
 
     def _has_explicit_acl(self, project_id: str) -> bool:
         with self._connect() as connection:
+            policy = connection.execute(
+                "SELECT restricted FROM project_access_policies WHERE project_id = ?", (project_id,)
+            ).fetchone()
+            if policy is not None:
+                return bool(policy["restricted"])
+            # Compatibility for databases created by Sprint 71: any existing ACL row
+            # means the project had already entered restricted mode before this marker existed.
             return connection.execute(
                 "SELECT 1 FROM project_memberships WHERE project_id = ? LIMIT 1", (project_id,)
             ).fetchone() is not None
@@ -141,6 +154,12 @@ class ProjectAccessStore:
                 (project_id, user_id),
             ).fetchone()
             created_at = now if existing is None else str(existing["created_at"])
+            connection.execute(
+                """INSERT INTO project_access_policies (project_id, restricted, configured_at)
+                   VALUES (?, 1, ?)
+                   ON CONFLICT(project_id) DO UPDATE SET restricted = 1""",
+                (project_id, now),
+            )
             connection.execute(
                 """INSERT INTO project_memberships (project_id, user_id, role, created_at, updated_at)
                    VALUES (?, ?, ?, ?, ?)
