@@ -266,7 +266,7 @@ def mount_tenant_api_keys(
 
     replaced = False
     for index, middleware in enumerate(list(app.user_middleware)):
-        if middleware.cls.__name__ == SessionAuthMiddleware.__name__:
+        if getattr(middleware.cls, "__name__", None) == SessionAuthMiddleware.__name__:
             app.user_middleware.pop(index)
             replaced = True
             break
