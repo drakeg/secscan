@@ -49,6 +49,7 @@ def test_owner_creates_key_secret_once_and_digest_only_is_persisted(tmp_path: Pa
     api_key = document["api_key"]
     assert secret.startswith("secscan_")
     assert api_key["tenant_id"] == owner["tenant_id"]
+    assert api_key["principal_user_id"] == owner["id"]
     assert api_key["name"] == "automation"
     assert "secret" not in api_key
 
@@ -59,11 +60,12 @@ def test_owner_creates_key_secret_once_and_digest_only_is_persisted(tmp_path: Pa
 
     with sqlite3.connect(tmp_path / "jobs.db") as connection:
         row = connection.execute(
-            "SELECT secret_digest FROM tenant_api_keys WHERE id = ?", (api_key["id"],)
+            "SELECT secret_digest, principal_user_id FROM tenant_api_keys WHERE id = ?", (api_key["id"],)
         ).fetchone()
     assert row is not None
     assert row[0] != secret
     assert len(row[0]) == 64
+    assert row[1] == owner["id"]
 
 
 def test_api_key_authenticates_to_exact_tenant_and_revocation_is_immediate(tmp_path: Path, monkeypatch) -> None:
@@ -94,6 +96,61 @@ def test_api_key_authenticates_to_exact_tenant_and_revocation_is_immediate(tmp_p
     client.cookies.clear()
     rejected = client.get("/api/v1/probe", headers={"Authorization": f"Bearer {secret}"})
     assert rejected.status_code == 401
+
+
+def test_owner_can_bind_key_to_same_tenant_member_and_member_removal_invalidates_it(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    auth = AuthStore(database)
+    owner = auth.register("owner@example.com", "correct horse battery staple")
+    member_home = auth.register("member@example.com", "another correct horse battery staple")
+    auth.add_tenant_member(owner.id, owner.tenant_id, member_home.email)
+    store = TenantApiKeyStore(database)
+
+    key, secret = store.create(
+        actor=owner,
+        name="member automation",
+        principal_user_id=member_home.id,
+    )
+    assert key.created_by == owner.id
+    assert key.principal_user_id == member_home.id
+
+    authenticated = store.authenticate(secret)
+    assert isinstance(authenticated, User)
+    assert authenticated.id == member_home.id
+    assert authenticated.tenant_id == owner.tenant_id
+
+    auth.remove_tenant_member(owner.id, owner.tenant_id, member_home.id)
+    assert store.authenticate(secret) is None
+
+
+def test_cross_tenant_principal_is_rejected(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    auth = AuthStore(database)
+    owner = auth.register("owner@example.com", "correct horse battery staple")
+    outsider = auth.register("outsider@example.com", "another correct horse battery staple")
+    store = TenantApiKeyStore(database)
+
+    try:
+        store.create(actor=owner, name="bad principal", principal_user_id=outsider.id)
+    except ValueError as exc:
+        assert str(exc) == "API key principal must be an enabled tenant member"
+    else:
+        raise AssertionError("cross-tenant principal unexpectedly accepted")
+
+
+def test_invalid_tenant_key_does_not_fall_back_to_valid_session(tmp_path: Path, monkeypatch) -> None:
+    client = TestClient(_app(tmp_path, monkeypatch))
+    _register_owner(client)
+
+    session_probe = client.get("/api/v1/probe")
+    assert session_probe.status_code == 200
+
+    rejected = client.get(
+        "/api/v1/probe",
+        headers={"Authorization": "Bearer secscan_not-a-real-key.invalid"},
+    )
+    assert rejected.status_code == 401
+    assert rejected.json()["detail"] == "invalid API key"
 
 
 def test_expired_and_invalid_keys_fail_closed(tmp_path: Path) -> None:
