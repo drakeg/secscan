@@ -43,6 +43,7 @@ def main() -> None:
     from secscan.public_site import mount_public_site
     from secscan.service import create_app
     from secscan.ssh_host_trust_web import mount_ssh_host_trust
+    from secscan.tenant_api_keys import mount_tenant_api_keys
     from secscan.tenant_invitations import mount_tenant_invitations
     from secscan.web import mount_web_ui
     from secscan.windows_host_web import mount_windows_host_submission
@@ -62,6 +63,7 @@ def main() -> None:
         # login/register handlers so plan-aware onboarding wins route matching.
         mount_public_site(app, database=database)
         mount_auth(app, database=database, api_token=api_token)
+        mount_tenant_api_keys(app, database=database, api_token=api_token)
         mount_tenant_invitations(app, database=database)
         mount_projects(app, database=database)
         mount_project_access(app, database=database)
