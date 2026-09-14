@@ -58,6 +58,21 @@ def _job_submitter(app: FastAPI) -> Callable[[Request, ScanSubmission], dict[str
     raise RuntimeError("secscan job submission route is unavailable")
 
 
+def _initialize_job_manager(app: FastAPI) -> None:
+    for route in app.routes:
+        if (
+            isinstance(route, APIRoute)
+            and route.path == "/api/v1/jobs"
+            and route.methods is not None
+            and "GET" in route.methods
+        ):
+            endpoint = cast(Callable[..., list[dict[str, object]]], route.endpoint)
+            internal_request = Request({"type": "http", "state": {}})
+            endpoint(request=internal_request, status=None, scanner=None, limit=1)
+            return
+    raise RuntimeError("secscan job listing route is unavailable")
+
+
 def _windows_host_service_ready() -> bool:
     user = os.environ.get("SECSCAN_SSH_USER", "")
     key = os.environ.get("SECSCAN_SSH_KEY", "")
@@ -118,6 +133,7 @@ def mount_windows_host_submission(
     resolved_root = job_root.expanduser().resolve()
     resolved_database = (job_database or resolved_root / "jobs.db").expanduser().resolve()
     submit_job = _job_submitter(app)
+    _initialize_job_manager(app)
     store = JobStore(resolved_database)
     executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="secscan-windows-profile")
     master_key = os.environ.get("SECSCAN_CREDENTIAL_KEY")
