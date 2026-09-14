@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from time import sleep
 from typing import Any, Callable, cast
 
 from fastapi import FastAPI, HTTPException, Request
