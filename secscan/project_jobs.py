@@ -10,7 +10,7 @@ from fastapi.routing import APIRoute
 from pydantic import Field
 
 from secscan.auth import User
-from secscan.projects import ProjectStore
+from secscan.project_access import ProjectAccessStore
 from secscan.service import JobStatus, ScanSubmission, ScannerName
 from secscan.tenancy import request_tenant_id
 
@@ -85,12 +85,7 @@ def _current_user(request: Request) -> User:
     return user
 
 
-def _route(
-    app: FastAPI,
-    *,
-    path: str,
-    method: str,
-) -> APIRoute:
+def _route(app: FastAPI, *, path: str, method: str) -> APIRoute:
     for route in app.routes:
         if (
             isinstance(route, APIRoute)
@@ -103,22 +98,16 @@ def _route(
 
 
 def mount_project_job_association(app: FastAPI, *, database: Path) -> FastAPI:
-    project_store = ProjectStore(database)
+    access_store = ProjectAccessStore(database)
     link_store = ProjectJobStore(database)
 
     submit_route = _route(app, path="/api/v1/jobs", method="POST")
     list_route = _route(app, path="/api/v1/jobs", method="GET")
     get_route = _route(app, path="/api/v1/jobs/{job_id}", method="GET")
 
-    submit_original = cast(
-        Callable[[Request, ScanSubmission], dict[str, object]], submit_route.endpoint
-    )
-    list_original = cast(
-        Callable[..., list[dict[str, object]]], list_route.endpoint
-    )
-    get_original = cast(
-        Callable[[str, Request], dict[str, object]], get_route.endpoint
-    )
+    submit_original = cast(Callable[[Request, ScanSubmission], dict[str, object]], submit_route.endpoint)
+    list_original = cast(Callable[..., list[dict[str, object]]], list_route.endpoint)
+    get_original = cast(Callable[[str, Request], dict[str, object]], get_route.endpoint)
 
     app.router.routes.remove(submit_route)
     app.router.routes.remove(list_route)
@@ -127,15 +116,13 @@ def mount_project_job_association(app: FastAPI, *, database: Path) -> FastAPI:
     @app.post("/api/v1/jobs", status_code=202)
     def submit_job(request: Request, submission: ProjectScanSubmission) -> dict[str, object]:
         project_id = getattr(submission, "project_id", None)
-        base_submission = ScanSubmission.model_validate(
-            submission.model_dump(exclude={"project_id"})
-        )
+        base_submission = ScanSubmission.model_validate(submission.model_dump(exclude={"project_id"}))
         if project_id is None:
             return submit_original(request, base_submission)
 
         user = _current_user(request)
         try:
-            project_store.get(user, project_id, require_enabled=True)
+            access_store.require_operator(user, project_id)
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         except ValueError as exc:
@@ -157,19 +144,33 @@ def mount_project_job_association(app: FastAPI, *, database: Path) -> FastAPI:
         limit: int = Query(default=20, ge=1, le=100),
     ) -> list[dict[str, object]]:
         documents = list_original(request=request, status=status, scanner=scanner, limit=limit)
+        user = getattr(request.state, "secscan_user", None)
         ids = [str(document["id"]) for document in documents if isinstance(document.get("id"), str)]
         links = link_store.project_ids(ids, tenant_id=request_tenant_id(request))
+        visible: list[dict[str, object]] = []
         for document in documents:
             job_id = document.get("id")
-            document["project_id"] = links.get(job_id) if isinstance(job_id, str) else None
-        return documents
+            project_id = links.get(job_id) if isinstance(job_id, str) else None
+            if project_id is not None and isinstance(user, User):
+                try:
+                    access_store.require_read(user, project_id)
+                except (PermissionError, ValueError):
+                    continue
+            document["project_id"] = project_id
+            visible.append(document)
+        return visible
 
     @app.get("/api/v1/jobs/{job_id}")
     def get_job(job_id: str, request: Request) -> dict[str, object]:
         document = get_original(job_id, request)
-        document["project_id"] = link_store.project_id(
-            job_id, tenant_id=request_tenant_id(request)
-        )
+        project_id = link_store.project_id(job_id, tenant_id=request_tenant_id(request))
+        if project_id is not None:
+            user = _current_user(request)
+            try:
+                access_store.require_read(user, project_id)
+            except (PermissionError, ValueError) as exc:
+                raise HTTPException(status_code=404, detail="job not found") from exc
+        document["project_id"] = project_id
         return document
 
     return app
