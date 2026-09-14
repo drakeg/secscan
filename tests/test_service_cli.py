@@ -47,6 +47,7 @@ def test_service_cli_routes_api_token_through_outer_auth_middleware(monkeypatch:
     mount_auth_kwargs: dict[str, object] = {}
     mount_invitation_kwargs: dict[str, object] = {}
     mount_project_kwargs: dict[str, object] = {}
+    mount_project_access_kwargs: dict[str, object] = {}
     mount_project_job_kwargs: dict[str, object] = {}
     mount_trust_kwargs: dict[str, object] = {}
     mount_assets_kwargs: dict[str, object] = {}
@@ -77,6 +78,12 @@ def test_service_cli_routes_api_token_through_outer_auth_middleware(monkeypatch:
     monkeypatch.setattr(
         "secscan.projects.mount_projects",
         lambda _app, **kwargs: mount_order.append("projects") or mount_project_kwargs.update(kwargs) or _app,
+    )
+    monkeypatch.setattr(
+        "secscan.project_access.mount_project_access",
+        lambda _app, **kwargs: mount_order.append("project-access")
+        or mount_project_access_kwargs.update(kwargs)
+        or _app,
     )
     monkeypatch.setattr(
         "secscan.project_jobs.mount_project_job_association",
@@ -111,6 +118,7 @@ def test_service_cli_routes_api_token_through_outer_auth_middleware(monkeypatch:
     assert mount_auth_kwargs["api_token"] == "a" * 32
     assert mount_invitation_kwargs["database"] == Path("/reports/jobs/jobs.db")
     assert mount_project_kwargs["database"] == Path("/reports/jobs/jobs.db")
+    assert mount_project_access_kwargs["database"] == Path("/reports/jobs/jobs.db")
     assert mount_project_job_kwargs["database"] == Path("/reports/jobs/jobs.db")
     assert mount_trust_kwargs["database"] == Path("/reports/jobs/jobs.db")
     assert mount_assets_kwargs["database"] == Path("/reports/jobs/jobs.db")
@@ -121,6 +129,7 @@ def test_service_cli_routes_api_token_through_outer_auth_middleware(monkeypatch:
         "auth",
         "invitations",
         "projects",
+        "project-access",
         "project-jobs",
         "trust",
         "assets",
