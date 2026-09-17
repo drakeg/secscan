@@ -19,6 +19,7 @@ from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from secscan.credential_tenancy import reset_credential_tenant, set_credential_tenant
 from secscan.scanners.linux_host import validate_ssh_user
 from secscan.scanners.network import validate_network_target
 from secscan.service import ARTIFACT_MANIFEST_NAME, ARTIFACT_PATHS, JobRecord, JobStore, ScanSubmission, create_app
@@ -174,7 +175,9 @@ def mount_web_ui(
             raise HTTPException(status_code=409, detail="job output directory is not safe")
         return status, job_dir
 
-    def run_profile_job(job_id: str, request: LinuxHostWebSubmission, profile_id: str) -> None:
+    def run_profile_job(
+        job_id: str, request: LinuxHostWebSubmission, profile_id: str, tenant_id: str
+    ) -> None:
         record = store.get(job_id)
         if record is None or record.status != "queued":
             return
@@ -184,7 +187,11 @@ def mount_web_ui(
         record.started_at = datetime.now(UTC).isoformat()
         store.save(record)
         try:
-            credentials = require_credential_store().decrypt(profile_id)
+            tenant_token = set_credential_tenant(tenant_id)
+            try:
+                credentials = require_credential_store().decrypt(profile_id)
+            finally:
+                reset_credential_tenant(tenant_token)
             with tempfile.TemporaryDirectory(prefix="secscan-ssh-") as temporary_directory:
                 ssh_dir = Path(temporary_directory)
                 private_key = ssh_dir / "id_key"
@@ -268,7 +275,7 @@ def mount_web_ui(
             tenant_id=tenant_id,
         )
         store.save(record)
-        profile_executor.submit(run_profile_job, job_id, request, profile_id)
+        profile_executor.submit(run_profile_job, job_id, request, profile_id, tenant_id)
         document = asdict(record)
         document.pop("tenant_id", None)
         return document
