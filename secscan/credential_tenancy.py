@@ -4,6 +4,7 @@ from contextvars import ContextVar, Token
 from pathlib import Path
 
 from fastapi import Request, Response
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.types import ASGIApp
 
@@ -41,6 +42,16 @@ class SshCredentialTenantMiddleware(BaseHTTPMiddleware):
         tenant_id = user.tenant_id if user is not None else SYSTEM_TENANT_ID
         token = set_credential_tenant(tenant_id)
         try:
+            if (
+                user is not None
+                and request.url.path.startswith("/api/v1/ssh-credentials")
+                and request.method in {"POST", "PUT", "PATCH", "DELETE"}
+                and self.auth.membership_role(user.id, tenant_id) != "owner"
+            ):
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "tenant owner access required"},
+                )
             return await call_next(request)
         finally:
             reset_credential_tenant(token)
