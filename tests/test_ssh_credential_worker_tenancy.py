@@ -56,13 +56,14 @@ def test_linux_host_profile_worker_preserves_request_tenant(monkeypatch, tmp_pat
     assert registered.status_code == 201
     tenant_id = registered.json()["tenant_id"]
 
+    target = "127.0.0.1"
     created = client.post(
         "/api/v1/ssh-credentials",
         json={
             "name": "Production",
             "username": "audit",
             "private_key": _private_key(),
-            "known_hosts": _known_hosts("server.example.com"),
+            "known_hosts": _known_hosts(target),
             "is_default": True,
         },
     )
@@ -86,12 +87,12 @@ def test_linux_host_profile_worker_preserves_request_tenant(monkeypatch, tmp_pat
     submitted = client.post(
         "/api/v1/linux-host-jobs",
         json={
-            "target": "server.example.com",
+            "target": target,
             "linux_host_authorized": True,
             "credential_profile_id": profile_id,
         },
     )
-    assert submitted.status_code == 202
+    assert submitted.status_code == 202, submitted.text
     job_id = submitted.json()["id"]
 
     deadline = time.monotonic() + 5
