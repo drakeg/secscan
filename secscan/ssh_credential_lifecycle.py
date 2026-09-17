@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 import sqlite3
 
-from secscan.credential_tenancy import current_credential_tenant
-
 
 class SshCredentialLifecycleStore:
     """Persist tenant-scoped credential availability without exposing secret material."""
@@ -31,20 +29,15 @@ class SshCredentialLifecycleStore:
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
 
-    @staticmethod
-    def _tenant() -> str:
-        return current_credential_tenant()
-
-    def is_enabled(self, profile_id: str) -> bool:
+    def is_enabled(self, tenant_id: str, profile_id: str) -> bool:
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT enabled FROM ssh_credential_lifecycle WHERE tenant_id = ? AND profile_id = ?",
-                (self._tenant(), profile_id),
+                (tenant_id, profile_id),
             ).fetchone()
         return row is None or bool(row[0])
 
-    def set_enabled(self, profile_id: str, enabled: bool) -> None:
-        tenant_id = self._tenant()
+    def set_enabled(self, tenant_id: str, profile_id: str, enabled: bool) -> None:
         with self._connect() as connection:
             exists = connection.execute(
                 "SELECT 1 FROM ssh_credential_profiles WHERE tenant_id = ? AND id = ?",
