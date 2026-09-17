@@ -41,10 +41,9 @@ class SshCredentialTenantMiddleware(BaseHTTPMiddleware):
     def _disable_profile(self, tenant_id: str, profile_id: str) -> bool:
         lifecycle = SshCredentialLifecycleStore(self.database)
         try:
-            lifecycle.set_enabled(profile_id, False)
+            lifecycle.set_enabled(tenant_id, profile_id, False)
         except ValueError:
             return False
-        # Disabled credentials must no longer be selected implicitly for new work.
         with sqlite3.connect(self.database) as connection:
             connection.execute(
                 "UPDATE ssh_credential_profiles SET is_default = 0 WHERE tenant_id = ? AND id = ?",
@@ -70,10 +69,7 @@ class SshCredentialTenantMiddleware(BaseHTTPMiddleware):
                 and is_admin_write
                 and self.auth.membership_role(user.id, tenant_id) != "owner"
             ):
-                return JSONResponse(
-                    status_code=403,
-                    content={"detail": "tenant owner access required"},
-                )
+                return JSONResponse(status_code=403, content={"detail": "tenant owner access required"})
 
             if credential_path and request.method == "PATCH" and request.url.path.endswith("/enabled"):
                 profile_id = request.url.path.removeprefix("/api/v1/ssh-credentials/").removesuffix("/enabled")
@@ -87,7 +83,7 @@ class SshCredentialTenantMiddleware(BaseHTTPMiddleware):
                 lifecycle = SshCredentialLifecycleStore(self.database)
                 if enabled:
                     try:
-                        lifecycle.set_enabled(profile_id, True)
+                        lifecycle.set_enabled(tenant_id, profile_id, True)
                     except ValueError:
                         return JSONResponse(status_code=404, content={"detail": "SSH credential profile was not found"})
                 elif not self._disable_profile(tenant_id, profile_id):
@@ -102,11 +98,8 @@ class SshCredentialTenantMiddleware(BaseHTTPMiddleware):
                 profile_id = payload.get("credential_profile_id") if isinstance(payload, dict) else None
                 if isinstance(profile_id, str) and profile_id:
                     lifecycle = SshCredentialLifecycleStore(self.database)
-                    if not lifecycle.is_enabled(profile_id):
-                        return JSONResponse(
-                            status_code=422,
-                            content={"detail": "SSH credential profile is disabled"},
-                        )
+                    if not lifecycle.is_enabled(tenant_id, profile_id):
+                        return JSONResponse(status_code=422, content={"detail": "SSH credential profile is disabled"})
             return await call_next(request)
         finally:
             reset_credential_tenant(token)
