@@ -72,7 +72,9 @@ class SshCredentialTenantMiddleware(BaseHTTPMiddleware):
                 return JSONResponse(status_code=403, content={"detail": "tenant owner access required"})
 
             if credential_path and request.method == "PATCH" and request.url.path.endswith("/enabled"):
-                profile_id = request.url.path.removeprefix("/api/v1/ssh-credentials/").removesuffix("/enabled")
+                lifecycle_profile_id = request.url.path.removeprefix(
+                    "/api/v1/ssh-credentials/"
+                ).removesuffix("/enabled")
                 try:
                     payload = await request.json()
                 except ValueError:
@@ -83,23 +85,37 @@ class SshCredentialTenantMiddleware(BaseHTTPMiddleware):
                 lifecycle = SshCredentialLifecycleStore(self.database)
                 if enabled:
                     try:
-                        lifecycle.set_enabled(tenant_id, profile_id, True)
+                        lifecycle.set_enabled(tenant_id, lifecycle_profile_id, True)
                     except ValueError:
-                        return JSONResponse(status_code=404, content={"detail": "SSH credential profile was not found"})
-                elif not self._disable_profile(tenant_id, profile_id):
-                    return JSONResponse(status_code=404, content={"detail": "SSH credential profile was not found"})
-                return JSONResponse(status_code=200, content={"id": profile_id, "enabled": enabled})
+                        return JSONResponse(
+                            status_code=404,
+                            content={"detail": "SSH credential profile was not found"},
+                        )
+                elif not self._disable_profile(tenant_id, lifecycle_profile_id):
+                    return JSONResponse(
+                        status_code=404,
+                        content={"detail": "SSH credential profile was not found"},
+                    )
+                return JSONResponse(
+                    status_code=200,
+                    content={"id": lifecycle_profile_id, "enabled": enabled},
+                )
 
             if request.url.path == "/api/v1/linux-host-jobs" and request.method == "POST":
                 try:
                     payload = await request.json()
                 except ValueError:
                     payload = None
-                profile_id = payload.get("credential_profile_id") if isinstance(payload, dict) else None
-                if isinstance(profile_id, str) and profile_id:
+                requested_profile_id = (
+                    payload.get("credential_profile_id") if isinstance(payload, dict) else None
+                )
+                if isinstance(requested_profile_id, str) and requested_profile_id:
                     lifecycle = SshCredentialLifecycleStore(self.database)
-                    if not lifecycle.is_enabled(tenant_id, profile_id):
-                        return JSONResponse(status_code=422, content={"detail": "SSH credential profile is disabled"})
+                    if not lifecycle.is_enabled(tenant_id, requested_profile_id):
+                        return JSONResponse(
+                            status_code=422,
+                            content={"detail": "SSH credential profile is disabled"},
+                        )
             return await call_next(request)
         finally:
             reset_credential_tenant(token)
