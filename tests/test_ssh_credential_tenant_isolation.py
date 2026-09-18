@@ -98,7 +98,7 @@ def test_store_scopes_names_defaults_bindings_and_secret_lookup_by_tenant(tmp_pa
         reset_credential_tenant(first_token)
 
 
-def test_legacy_credentials_migrate_to_original_admin_tenant_idempotently(tmp_path: Path) -> None:
+def test_legacy_credentials_remain_unowned_and_unusable_after_migration(tmp_path: Path) -> None:
     database = tmp_path / "jobs.db"
     master_key = _master_key()
     fernet = Fernet(master_key.encode("ascii"))
@@ -164,22 +164,31 @@ def test_legacy_credentials_migrate_to_original_admin_tenant_idempotently(tmp_pa
 
     with sqlite3.connect(database) as connection:
         profile_row = connection.execute(
-            "SELECT tenant_id, id FROM ssh_credential_profiles"
+            "SELECT tenant_id, id, is_default, private_key_ciphertext, known_hosts_ciphertext "
+            "FROM ssh_credential_profiles"
         ).fetchone()
-        binding_row = connection.execute(
-            "SELECT tenant_id, host, profile_id FROM ssh_host_credentials"
+        binding_count = connection.execute(
+            "SELECT COUNT(*) FROM ssh_host_credentials"
         ).fetchone()
-    assert profile_row == ("admin-tenant", "legacy-profile")
-    assert binding_row == ("admin-tenant", "legacy.example.com", "legacy-profile")
+    assert profile_row is not None
+    assert profile_row[0:3] == (None, "legacy-profile", 0)
+    assert fernet.decrypt(bytes(profile_row[3])).decode("utf-8") == private_key
+    assert fernet.decrypt(bytes(profile_row[4])).decode("utf-8") == known_hosts
+    assert binding_count == (0,)
 
     token = set_credential_tenant("admin-tenant")
     try:
         store = SshCredentialStore(database, master_key)
-        assert store.resolve_profile_id("legacy.example.com") == "legacy-profile"
-        assert store.decrypt("legacy-profile").private_key == private_key
+        assert store.list() == []
+        assert store.resolve_profile_id("legacy.example.com") is None
+        try:
+            store.decrypt("legacy-profile")
+        except ValueError as exc:
+            assert "not found" in str(exc)
+        else:
+            raise AssertionError("legacy unowned credential must not be tenant-readable")
     finally:
         reset_credential_tenant(token)
-
 
 def test_authenticated_credential_api_does_not_cross_tenant_boundary(
     monkeypatch, tmp_path: Path
