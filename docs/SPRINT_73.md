@@ -71,3 +71,7 @@ Disabled shared SSH credentials are now rejected inside the core credential stor
 ## Credential lifecycle metadata
 
 Shared SSH credential metadata now includes an `enabled` boolean alongside the existing non-secret fields. Newly created and legacy-compatible tenant credentials report `enabled: true` unless explicitly disabled; disabled credentials remain visible with `enabled: false`. Re-enabling updates the metadata but does not restore cleared default or host-binding selections.
+
+## Project boundary for credential-backed Linux scans
+
+Credential-backed `/api/v1/linux-host-jobs` submissions now accept an optional `project_id`. When present, the authenticated tenant principal must have operator-level access to the enabled project before the credential can be used or remembered. Cross-tenant, viewer-only, revoked, or disabled project access fails closed. Successful project-scoped Linux host jobs persist the existing project/job association so downstream job visibility continues to honor project ACLs.

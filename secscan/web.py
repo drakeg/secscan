@@ -19,7 +19,10 @@ from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from secscan.auth import User
 from secscan.credential_tenancy import reset_credential_tenant, set_credential_tenant
+from secscan.project_access import ProjectAccessStore
+from secscan.project_jobs import ProjectJobStore
 from secscan.scanners.linux_host import validate_ssh_user
 from secscan.scanners.network import validate_network_target
 from secscan.service import ARTIFACT_MANIFEST_NAME, ARTIFACT_PATHS, JobRecord, JobStore, ScanSubmission, create_app
@@ -39,6 +42,7 @@ class LinuxHostWebSubmission(BaseModel):
     timeout: int = Field(default=600, ge=1, le=86400)
     linux_host_authorized: bool = False
     credential_profile_id: str | None = None
+    project_id: str | None = Field(default=None, min_length=1, max_length=128)
     remember_credential: bool = False
     ssh_port: int = Field(default=22, ge=1, le=65535)
 
@@ -150,6 +154,8 @@ def mount_web_ui(
     profile_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="secscan-ssh-profile")
     master_key = os.environ.get("SECSCAN_CREDENTIAL_KEY")
     credential_store = SshCredentialStore(database, master_key) if master_key else None
+    project_access_store = ProjectAccessStore(database)
+    project_job_store = ProjectJobStore(database)
 
     def require_credential_store() -> SshCredentialStore:
         if credential_store is None:
@@ -264,7 +270,10 @@ def mount_web_ui(
                 store.save(record)
 
     def submit_profile_job(
-        request: LinuxHostWebSubmission, profile_id: str, tenant_id: str
+        request: LinuxHostWebSubmission,
+        profile_id: str,
+        tenant_id: str,
+        project_id: str | None = None,
     ) -> dict[str, object]:
         job_id = str(uuid4())
         output_dir = (resolved_root / job_id).resolve()
@@ -282,9 +291,17 @@ def mount_web_ui(
             tenant_id=tenant_id,
         )
         store.save(record)
+        if project_id is not None:
+            project_job_store.associate(
+                job_id=job_id,
+                tenant_id=tenant_id,
+                project_id=project_id,
+            )
         profile_executor.submit(run_profile_job, job_id, request, profile_id, tenant_id)
         document = asdict(record)
         document.pop("tenant_id", None)
+        if project_id is not None:
+            document["project_id"] = project_id
         return document
 
     @app.get("/api/v1/ssh-credentials/capability")
@@ -374,6 +391,22 @@ def mount_web_ui(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+        project_id = request.project_id
+        tenant_id = request_tenant_id(http_request) or SYSTEM_TENANT_ID
+        if project_id is not None:
+            actor = getattr(http_request.state, "secscan_user", None)
+            if not isinstance(actor, User):
+                raise HTTPException(
+                    status_code=401,
+                    detail="authenticated tenant user is required",
+                )
+            try:
+                project_access_store.require_operator(actor, project_id)
+            except PermissionError as exc:
+                raise HTTPException(status_code=403, detail=str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
         profile_id = request.credential_profile_id
         if credential_store is not None:
             if profile_id is None:
@@ -383,8 +416,12 @@ def mount_web_ui(
             if profile_id is not None:
                 if request.remember_credential:
                     credential_store.bind_host(target, profile_id)
-                tenant_id = request_tenant_id(http_request) or SYSTEM_TENANT_ID
-                return submit_profile_job(request, profile_id, tenant_id)
+                return submit_profile_job(
+                    request,
+                    profile_id,
+                    tenant_id,
+                    project_id=project_id,
+                )
 
         if not _linux_host_service_ready():
             raise HTTPException(
