@@ -51,3 +51,7 @@ Make reusable SSH credential records tenant-owned so authenticated host scanning
 - Per-project credential ACLs.
 - User-specific private credential vaults.
 - Agent-based host access.
+
+## Legacy migration implementation
+
+Legacy pre-tenant SSH credential rows are preserved encrypted but migrated with no tenant owner. Their former default flag is cleared, legacy host bindings are discarded, and tenant-scoped list/get/decrypt/resolve paths cannot use them. This intentionally requires a future explicit ownership/import action rather than inferring ownership from the first administrator or system tenant.
