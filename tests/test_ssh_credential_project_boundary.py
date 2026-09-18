@@ -6,6 +6,7 @@ import secrets
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from secscan.auth import AuthStore, User, mount_auth
@@ -38,7 +39,7 @@ def _known_hosts() -> str:
     return f"127.0.0.1 {public_key}\n"
 
 
-def _app(monkeypatch, tmp_path: Path):
+def _app(monkeypatch, tmp_path: Path) -> tuple[FastAPI, Path]:
     monkeypatch.setenv("SECSCAN_REGISTRATION_ENABLED", "true")
     monkeypatch.setenv("SECSCAN_CREDENTIAL_KEY", _master_key())
     database = tmp_path / "jobs.db"
@@ -163,14 +164,6 @@ def test_cross_tenant_project_id_fails_closed_for_credential_scan(monkeypatch, t
         json={"email": "second@example.com", "password": "another correct horse battery staple"},
     ).json()
 
-    first_owner = User(
-        id=str(first_user["id"]),
-        tenant_id=str(first_user["tenant_id"]),
-        email=str(first_user["email"]),
-        role=str(first_user["role"]),
-        enabled=bool(first_user["enabled"]),
-        created_at=str(first_user["created_at"]),
-    )
     second_owner = User(
         id=str(second_user["id"]),
         tenant_id=str(second_user["tenant_id"]),
