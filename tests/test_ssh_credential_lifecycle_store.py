@@ -54,3 +54,36 @@ def test_lifecycle_state_is_tenant_scoped(tmp_path: Path) -> None:
         assert str(exc) == "SSH credential profile was not found"
     else:
         raise AssertionError("cross-tenant lifecycle mutation must fail closed")
+
+
+def test_disabled_credential_is_blocked_by_core_store_operations(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    credentials = SshCredentialStore(database, _master_key())
+    token = set_credential_tenant("tenant-a")
+    try:
+        profile = credentials.create(
+            name="Shared",
+            username="audit",
+            private_key=_private_key(),
+            known_hosts=_known_hosts(),
+            is_default=True,
+        )
+        credentials.bind_host("127.0.0.1", profile.id)
+        lifecycle = SshCredentialLifecycleStore(database)
+        lifecycle.set_enabled("tenant-a", profile.id, False)
+
+        assert credentials.resolve_profile_id("127.0.0.1") is None
+
+        for action in (
+            lambda: credentials.decrypt(profile.id),
+            lambda: credentials.set_default(profile.id),
+            lambda: credentials.bind_host("127.0.0.2", profile.id),
+        ):
+            try:
+                action()
+            except ValueError as exc:
+                assert str(exc) == "SSH credential profile is disabled"
+            else:
+                raise AssertionError("disabled SSH credential unexpectedly remained usable")
+    finally:
+        reset_credential_tenant(token)

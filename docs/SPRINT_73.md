@@ -63,3 +63,7 @@ Tenant API keys may use enabled shared SSH credentials inside the bound tenant f
 ## Credential updates
 
 Tenant owners may update shared SSH credential metadata and rotate the stored private key and known_hosts material. Update responses contain metadata only; secret values and ciphertext are never returned. Partial metadata-only updates preserve the existing encrypted secret material.
+
+## Disabled credential hardening
+
+Disabled shared SSH credentials are now rejected inside the core credential store as well as at HTTP scan submission. Decryption, default assignment, and host binding all fail closed for disabled profiles, and implicit resolution ignores stale bindings or defaults that reference a disabled profile. This prevents internal or future call paths from bypassing lifecycle enforcement.
