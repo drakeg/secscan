@@ -98,6 +98,13 @@ def test_tenant_member_can_read_but_not_administer_shared_ssh_credentials(
     assert denied_create.status_code == 403
     assert denied_create.json()["detail"] == "tenant owner access required"
 
+    denied_update = member.patch(
+        f"/api/v1/ssh-credentials/{profile_id}",
+        json={"name": "Member edit"},
+    )
+    assert denied_update.status_code == 403
+    assert denied_update.json()["detail"] == "tenant owner access required"
+
     denied_default = member.put(f"/api/v1/ssh-credentials/{profile_id}/default")
     assert denied_default.status_code == 403
     denied_delete = member.delete(f"/api/v1/ssh-credentials/{profile_id}")
