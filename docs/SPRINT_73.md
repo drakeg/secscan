@@ -55,3 +55,7 @@ Make reusable SSH credential records tenant-owned so authenticated host scanning
 ## Legacy migration implementation
 
 Legacy pre-tenant SSH credential rows are preserved encrypted but migrated with no tenant owner. Their former default flag is cleared, legacy host bindings are discarded, and tenant-scoped list/get/decrypt/resolve paths cannot use them. This intentionally requires a future explicit ownership/import action rather than inferring ownership from the first administrator or system tenant.
+
+## Tenant API-key credential use
+
+Tenant API keys may use enabled shared SSH credentials inside the bound tenant for scan submission, but they do not gain SSH credential-administration rights. A valid bearer key is authoritative over any simultaneously supplied session cookie for credential tenant selection, preventing mixed-auth tenant confusion.
