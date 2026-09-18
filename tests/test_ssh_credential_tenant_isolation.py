@@ -172,8 +172,8 @@ def test_legacy_credentials_remain_unowned_and_unusable_after_migration(tmp_path
         ).fetchone()
     assert profile_row is not None
     assert profile_row[0:3] == (None, "legacy-profile", 0)
-    assert bytes(profile_row[3]) == fernet.encrypt(private_key.encode("utf-8")) or bytes(profile_row[3])
-    assert bytes(profile_row[4])
+    assert fernet.decrypt(bytes(profile_row[3])).decode("utf-8") == private_key
+    assert fernet.decrypt(bytes(profile_row[4])).decode("utf-8") == known_hosts
     assert binding_count == (0,)
 
     token = set_credential_tenant("admin-tenant")
