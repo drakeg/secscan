@@ -11,6 +11,7 @@ from starlette.types import ASGIApp
 
 from secscan.auth import AuthStore, SESSION_COOKIE
 from secscan.ssh_credential_lifecycle import SshCredentialLifecycleStore
+from secscan.tenant_api_keys import TenantApiKeyStore
 from secscan.tenancy import SYSTEM_TENANT_ID
 
 _credential_tenant: ContextVar[str] = ContextVar(
@@ -37,6 +38,7 @@ class SshCredentialTenantMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.database = database.expanduser().resolve()
         self.auth = AuthStore(database)
+        self.api_keys = TenantApiKeyStore(database)
 
     def _disable_profile(self, tenant_id: str, profile_id: str) -> bool:
         lifecycle = SshCredentialLifecycleStore(self.database)
@@ -58,16 +60,28 @@ class SshCredentialTenantMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
-        user = self.auth.user_for_session(request.cookies.get(SESSION_COOKIE))
-        tenant_id = user.tenant_id if user is not None else SYSTEM_TENANT_ID
+        session_user = self.auth.user_for_session(request.cookies.get(SESSION_COOKIE))
+        api_key_user = None
+        authorization = request.headers.get("authorization", "")
+        if authorization.startswith("Bearer "):
+            secret = authorization[7:]
+            if secret.startswith("secscan_"):
+                api_key_user = self.api_keys.authenticate(secret)
+        actor = session_user or api_key_user
+        tenant_id = actor.tenant_id if actor is not None else SYSTEM_TENANT_ID
         token = set_credential_tenant(tenant_id)
         try:
             credential_path = request.url.path.startswith("/api/v1/ssh-credentials")
             is_admin_write = credential_path and request.method in {"POST", "PUT", "PATCH", "DELETE"}
+            if is_admin_write and api_key_user is not None and session_user is None:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "session authentication required"},
+                )
             if (
-                user is not None
+                session_user is not None
                 and is_admin_write
-                and self.auth.membership_role(user.id, tenant_id) != "owner"
+                and self.auth.membership_role(session_user.id, tenant_id) != "owner"
             ):
                 return JSONResponse(status_code=403, content={"detail": "tenant owner access required"})
 
