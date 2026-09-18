@@ -71,8 +71,14 @@ def test_project_acl_remains_additional_boundary_for_api_key_ssh_scan(
     ).json()
 
     auth = AuthStore(database)
-    owner_user = auth.user_by_id(str(owner["id"]))
-    assert isinstance(owner_user, User)
+    owner_user = User(
+        id=str(owner["id"]),
+        tenant_id=str(owner["tenant_id"]),
+        email=str(owner["email"]),
+        role=str(owner["role"]),
+        enabled=bool(owner["enabled"]),
+        created_at=str(owner["created_at"]),
+    )
     auth.add_tenant_member(owner_user.id, owner_user.tenant_id, "member@example.com")
 
     member = User(
@@ -157,11 +163,22 @@ def test_cross_tenant_project_id_fails_closed_for_credential_scan(monkeypatch, t
         json={"email": "second@example.com", "password": "another correct horse battery staple"},
     ).json()
 
-    auth = AuthStore(database)
-    first_owner = auth.user_by_id(str(first_user["id"]))
-    second_owner = auth.user_by_id(str(second_user["id"]))
-    assert isinstance(first_owner, User)
-    assert isinstance(second_owner, User)
+    first_owner = User(
+        id=str(first_user["id"]),
+        tenant_id=str(first_user["tenant_id"]),
+        email=str(first_user["email"]),
+        role=str(first_user["role"]),
+        enabled=bool(first_user["enabled"]),
+        created_at=str(first_user["created_at"]),
+    )
+    second_owner = User(
+        id=str(second_user["id"]),
+        tenant_id=str(second_user["tenant_id"]),
+        email=str(second_user["email"]),
+        role=str(second_user["role"]),
+        enabled=bool(second_user["enabled"]),
+        created_at=str(second_user["created_at"]),
+    )
 
     project = ProjectStore(database).create(second_owner, "Other tenant")
     created = first.post(
