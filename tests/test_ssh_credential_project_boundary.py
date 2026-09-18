@@ -155,10 +155,10 @@ def test_cross_tenant_project_id_fails_closed_for_credential_scan(monkeypatch, t
     first = TestClient(app)
     second = TestClient(app)
 
-    first_user = first.post(
+    first.post(
         "/api/v1/auth/register",
         json={"email": "first@example.com", "password": "correct horse battery staple"},
-    ).json()
+    )
     second_user = second.post(
         "/api/v1/auth/register",
         json={"email": "second@example.com", "password": "another correct horse battery staple"},
