@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives import serialization
 
 from secscan.credential_tenancy import current_credential_tenant
 from secscan.scanners.linux_host import validate_ssh_user
+from secscan.ssh_credential_lifecycle import SshCredentialLifecycleStore
 from secscan.ssh_host_trust import SshHostTrustStore
 from secscan.tenancy import SYSTEM_TENANT_ID
 
@@ -214,6 +215,10 @@ class SshCredentialStore:
     def _tenant() -> str:
         return current_credential_tenant()
 
+    def _require_enabled(self, tenant_id: str, profile_id: str) -> None:
+        if not SshCredentialLifecycleStore(self.database).is_enabled(tenant_id, profile_id):
+            raise ValueError("SSH credential profile is disabled")
+
     def create(
         self,
         *,
@@ -359,6 +364,7 @@ class SshCredentialStore:
                 ).fetchone()
         if row is None:
             raise ValueError("SSH credential profile was not found")
+        self._require_enabled(tenant_id, profile_id)
         try:
             private_key = self._fernet.decrypt(bytes(row["private_key_ciphertext"])).decode(
                 "utf-8"
@@ -388,6 +394,7 @@ class SshCredentialStore:
             ).fetchone()
             if exists is None:
                 raise ValueError("SSH credential profile was not found")
+            self._require_enabled(tenant_id, profile_id)
             connection.execute(
                 "UPDATE ssh_credential_profiles SET is_default = 0, updated_at = ? "
                 "WHERE tenant_id = ? AND is_default = 1",
@@ -415,6 +422,7 @@ class SshCredentialStore:
         tenant_id = self._tenant()
         if self.get(profile_id) is None:
             raise ValueError("SSH credential profile was not found")
+        self._require_enabled(tenant_id, profile_id)
         timestamp = self._timestamp()
         with self._connect() as connection:
             connection.execute(
@@ -436,9 +444,18 @@ class SshCredentialStore:
                 (tenant_id, host),
             ).fetchone()
             if bound is not None:
-                return str(bound["profile_id"])
+                bound_id = str(bound["profile_id"])
+                if SshCredentialLifecycleStore(self.database).is_enabled(tenant_id, bound_id):
+                    return bound_id
             default = connection.execute(
                 "SELECT id FROM ssh_credential_profiles WHERE tenant_id = ? AND is_default = 1",
                 (tenant_id,),
             ).fetchone()
-        return str(default["id"]) if default is not None else None
+        if default is None:
+            return None
+        default_id = str(default["id"])
+        return (
+            default_id
+            if SshCredentialLifecycleStore(self.database).is_enabled(tenant_id, default_id)
+            else None
+        )
