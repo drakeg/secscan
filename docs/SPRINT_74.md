@@ -1,0 +1,62 @@
+# Sprint 74 — External Identity / OpenID Connect Foundation
+
+## Goal
+
+Add a provider-neutral OpenID Connect (OIDC) authentication foundation before any production SaaS exposure, without weakening existing tenant, project, session, invitation, or API-key boundaries.
+
+## Scope
+
+- Add optional OIDC provider configuration using standard issuer discovery.
+- Add browser login initiation and callback handling.
+- Validate OIDC state, nonce, issuer, audience, signature, expiry, and required claims.
+- Map a verified external identity to exactly one local secscan user record.
+- Preserve the existing secscan session cookie and active-tenant model after successful OIDC authentication.
+- Keep password login available unless an operator explicitly disables it in a later sprint.
+- Add focused tests for authentication success, invalid/missing claims, replay-resistant state/nonce handling, disabled local users, and tenant isolation.
+- Preserve the $0 recurring-service baseline; no external IdP account or paid service is activated by this sprint.
+
+## Security boundaries
+
+- OIDC is authentication only. It does not grant tenant membership, tenant ownership, project access, global administration, or API-key privileges.
+- A verified external subject must be linked to an existing local user before it can authenticate.
+- Email alone is not a durable external identity key.
+- External identity linkage is unique by issuer plus subject.
+- A disabled local user cannot authenticate through OIDC.
+- A valid OIDC login creates the same bounded local session model used by password login.
+- OIDC callback parameters and tokens are never logged as secrets.
+- State and nonce values are single-use and expire quickly.
+- Discovery/JWKS retrieval must use HTTPS except for explicit local-development fixtures used only in tests.
+- Provider misconfiguration fails closed.
+
+## Compatibility
+
+- Existing password authentication, invitations, tenant switching, project ACLs, tenant API keys, and historical sessions remain supported.
+- Existing users are not automatically linked to external identities.
+- No tenant or role is inferred from IdP groups, domains, or email claims during Sprint 74.
+- No production IdP is required to run the default local/container development flow.
+
+## Acceptance criteria
+
+- Operator can configure one OIDC issuer, client ID, and client secret through environment/server configuration.
+- Login initiation generates bounded state and nonce values and redirects only to the configured issuer authorization endpoint.
+- Callback validates the authorization response and ID token before creating a local session.
+- A linked, enabled local user can authenticate and receives the same active-tenant session semantics as password login.
+- Unknown external subjects fail closed and do not auto-create users or tenants.
+- Disabled local users fail closed.
+- Replayed, expired, mismatched-state, mismatched-nonce, wrong-issuer, wrong-audience, unsigned/invalid-signature, or expired tokens are rejected.
+- OIDC authentication does not bypass tenant membership or project ACLs.
+- Existing password login remains compatible.
+- Python 3.12/3.14 checks, package build, Docker/Compose smoke tests, Trivy, and CodeQL remain green.
+- No paid service or recurring spend is introduced.
+
+## Deferred
+
+- Just-in-time user provisioning.
+- Domain-based enrollment.
+- IdP group-to-tenant or group-to-project synchronization.
+- Multiple simultaneous OIDC providers.
+- SAML.
+- SCIM.
+- Mandatory SSO / password-login disablement.
+- Organization-managed IdP policy enforcement.
+- Automatic external identity linking by email.
