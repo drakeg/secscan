@@ -263,6 +263,61 @@ class SshCredentialStore:
         assert profile is not None
         return profile
 
+    def update(
+        self,
+        profile_id: str,
+        *,
+        name: str | None = None,
+        username: str | None = None,
+        private_key: str | None = None,
+        known_hosts: str | None = None,
+    ) -> SshCredentialProfile:
+        tenant_id = self._tenant()
+        timestamp = self._timestamp()
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM ssh_credential_profiles WHERE id = ? AND tenant_id = ?",
+                (profile_id, tenant_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError("SSH credential profile was not found")
+
+            validated_name = self._validate_name(name) if name is not None else str(row["name"])
+            validated_user = validate_ssh_user(username) if username is not None else str(row["username"])
+            key_ciphertext = (
+                self._fernet.encrypt(self._validate_private_key(private_key).encode("utf-8"))
+                if private_key is not None
+                else bytes(row["private_key_ciphertext"])
+            )
+            hosts_ciphertext = (
+                self._fernet.encrypt(self._validate_known_hosts(known_hosts).encode("utf-8"))
+                if known_hosts is not None
+                else bytes(row["known_hosts_ciphertext"])
+            )
+            try:
+                connection.execute(
+                    """
+                    UPDATE ssh_credential_profiles
+                    SET name = ?, username = ?, private_key_ciphertext = ?,
+                        known_hosts_ciphertext = ?, updated_at = ?
+                    WHERE id = ? AND tenant_id = ?
+                    """,
+                    (
+                        validated_name,
+                        validated_user,
+                        key_ciphertext,
+                        hosts_ciphertext,
+                        timestamp,
+                        profile_id,
+                        tenant_id,
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise ValueError("credential profile name already exists") from exc
+        profile = self.get(profile_id)
+        assert profile is not None
+        return profile
+
     def list(self) -> list[SshCredentialProfile]:
         tenant_id = self._tenant()
         with self._connect() as connection:

@@ -51,6 +51,13 @@ class SshCredentialCreate(BaseModel):
     is_default: bool = False
 
 
+class SshCredentialUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    username: str | None = Field(default=None, min_length=1, max_length=32)
+    private_key: str | None = Field(default=None, min_length=1, max_length=1024 * 1024)
+    known_hosts: str | None = Field(default=None, min_length=1, max_length=1024 * 1024)
+
+
 def _linux_host_service_ready() -> bool:
     user = os.environ.get("SECSCAN_SSH_USER", "")
     key = os.environ.get("SECSCAN_SSH_KEY", "")
@@ -300,6 +307,29 @@ def mount_web_ui(
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return profile.as_public_dict()
+
+    @app.patch("/api/v1/ssh-credentials/{profile_id}")
+    def update_ssh_credential(
+        profile_id: str, request: SshCredentialUpdate
+    ) -> dict[str, object]:
+        if not any(
+            value is not None
+            for value in (request.name, request.username, request.private_key, request.known_hosts)
+        ):
+            raise HTTPException(status_code=422, detail="at least one credential field is required")
+        try:
+            profile = require_credential_store().update(
+                profile_id,
+                name=request.name,
+                username=request.username,
+                private_key=request.private_key,
+                known_hosts=request.known_hosts,
+            )
+        except ValueError as exc:
+            detail = str(exc)
+            status = 404 if detail == "SSH credential profile was not found" else 422
+            raise HTTPException(status_code=status, detail=detail) from exc
         return profile.as_public_dict()
 
     @app.put("/api/v1/ssh-credentials/{profile_id}/default")

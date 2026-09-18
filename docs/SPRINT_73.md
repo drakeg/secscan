@@ -59,3 +59,7 @@ Legacy pre-tenant SSH credential rows are preserved encrypted but migrated with 
 ## Tenant API-key credential use
 
 Tenant API keys may use enabled shared SSH credentials inside the bound tenant for scan submission, but they do not gain SSH credential-administration rights. A valid bearer key is authoritative over any simultaneously supplied session cookie for credential tenant selection, preventing mixed-auth tenant confusion.
+
+## Credential updates
+
+Tenant owners may update shared SSH credential metadata and rotate the stored private key and known_hosts material. Update responses contain metadata only; secret values and ciphertext are never returned. Partial metadata-only updates preserve the existing encrypted secret material.
