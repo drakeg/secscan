@@ -2,25 +2,24 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 71
+## Completed through Sprint 73
 
-Sprints 0–71 are complete, including the capabilities previously summarized here plus tenant-isolated SSH credentials and SSH host-key trust, bounded ECS/EKS workload association, an opt-in tenant-bound Stripe subscription lifecycle, bounded GitHub Issues export, offline Ed25519-signed policy/governance bundles, authenticated network-range and Windows host workflows, multi-user tenant membership with session-scoped tenant switching, owner-controlled expiring tenant invitations with authenticated single-use acceptance, tenant-owned projects with validated optional scan-job association, and project-specific viewer/operator member access control.
+Sprints 0–73 are complete, including the capabilities previously summarized here plus tenant-isolated SSH credentials and SSH host-key trust, bounded ECS/EKS workload association, an opt-in tenant-bound Stripe subscription lifecycle, bounded GitHub Issues export, offline Ed25519-signed policy/governance bundles, authenticated network-range and Windows host workflows, multi-user tenant membership with session-scoped tenant switching, owner-controlled expiring tenant invitations with authenticated single-use acceptance, tenant-owned projects with validated optional scan-job association and project-specific viewer/operator access control, tenant-scoped API keys, and tenant-owned reusable SSH credentials with owner administration, safe legacy migration, disabled-state enforcement, API-key use, and project ACL enforcement.
 
 ## Current sprint
 
-### Sprint 72 — Tenant-Scoped API Keys
+### Sprint 74 — External Identity / OpenID Connect Foundation
 
-Add durable tenant-owned API keys for automation without weakening the tenant/project boundaries established in Sprints 68–71. Owners administer keys, bearer secrets are shown only once and stored only as digests, revoked/expired keys fail closed, and authenticated key requests resolve to exactly one tenant while continuing to honor project authorization.
+Add an optional provider-neutral OIDC authentication path before production SaaS exposure. External identity verifies authentication only; existing local tenant membership, project ACLs, session semantics, invitations, and API-key boundaries remain authoritative. Unknown external identities do not auto-create users or tenants, and the sprint introduces no paid identity service.
 
 ## Candidate remaining sprints
 
-No later sprint number is committed yet. After Sprint 72 is accepted, reprioritize the remaining backlog before assigning Sprint 73.
+No later sprint number is committed yet. After Sprint 74 is accepted, reprioritize the remaining backlog before assigning Sprint 75.
 
 ## Backlog after the numbered candidate sequence
 
 These remain valid ideas but are intentionally not assigned fixed sprint numbers yet:
 
-- external identity/OIDC before any production SaaS exposure
 - tenant-aware sharing/ownership for cloud discovery configuration and, later, explicitly shared SSH credentials within multi-user tenants
 - production secret-manager integration for Stripe and other service credentials before public SaaS deployment
 - richer billing operations such as invoice history, refunds/credits, taxes, coupons, metering, and billing-admin delegation
