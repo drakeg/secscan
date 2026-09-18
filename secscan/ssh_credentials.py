@@ -52,31 +52,12 @@ class SshCredentialStore:
         return connection
 
     @staticmethod
-    def _legacy_tenant_id(connection: sqlite3.Connection) -> str:
-        users_table = connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'auth_users'"
-        ).fetchone()
-        if users_table is None:
-            return SYSTEM_TENANT_ID
-        columns = {
-            str(row[1]) for row in connection.execute("PRAGMA table_info(auth_users)").fetchall()
-        }
-        tenant_expression = "tenant_id" if "tenant_id" in columns else "id"
-        row = connection.execute(
-            f"SELECT {tenant_expression} FROM auth_users WHERE role = 'admin' "
-            "ORDER BY created_at ASC, id ASC LIMIT 1"
-        ).fetchone()
-        if row is None or not isinstance(row[0], str) or not row[0]:
-            return SYSTEM_TENANT_ID
-        return str(row[0])
-
-    @staticmethod
     def _create_schema(connection: sqlite3.Connection) -> None:
         connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS ssh_credential_profiles (
                 id TEXT PRIMARY KEY,
-                tenant_id TEXT NOT NULL,
+                tenant_id TEXT,
                 name TEXT NOT NULL,
                 username TEXT NOT NULL,
                 private_key_ciphertext BLOB NOT NULL,
@@ -117,13 +98,13 @@ class SshCredentialStore:
                 self._create_schema(connection)
                 return
 
-            legacy_tenant = self._legacy_tenant_id(connection)
             connection.execute("PRAGMA foreign_keys = OFF")
             connection.executescript(
                 """
+                DROP INDEX IF EXISTS ssh_credential_single_default_idx;
                 CREATE TABLE ssh_credential_profiles_v2 (
                     id TEXT PRIMARY KEY,
-                    tenant_id TEXT NOT NULL,
+                    tenant_id TEXT,
                     name TEXT NOT NULL,
                     username TEXT NOT NULL,
                     private_key_ciphertext BLOB NOT NULL,
@@ -151,23 +132,15 @@ class SshCredentialStore:
                     id, tenant_id, name, username, private_key_ciphertext,
                     known_hosts_ciphertext, is_default, created_at, updated_at
                 )
-                SELECT id, ?, name, username, private_key_ciphertext,
-                       known_hosts_ciphertext, is_default, created_at, updated_at
+                SELECT id, NULL, name, username, private_key_ciphertext,
+                       known_hosts_ciphertext, 0, created_at, updated_at
                 FROM ssh_credential_profiles
-                """,
-                (legacy_tenant,),
+                """
             )
             host_table = connection.execute(
                 "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ssh_host_credentials'"
             ).fetchone()
             if host_table is not None:
-                connection.execute(
-                    """
-                    INSERT INTO ssh_host_credentials_v2 (tenant_id, host, profile_id, updated_at)
-                    SELECT ?, host, profile_id, updated_at FROM ssh_host_credentials
-                    """,
-                    (legacy_tenant,),
-                )
                 connection.execute("DROP TABLE ssh_host_credentials")
             connection.execute("DROP TABLE ssh_credential_profiles")
             connection.execute(
@@ -321,7 +294,8 @@ class SshCredentialStore:
         with self._connect() as connection:
             if tenant_id == SYSTEM_TENANT_ID:
                 row = connection.execute(
-                    "SELECT * FROM ssh_credential_profiles WHERE id = ?", (profile_id,)
+                    "SELECT * FROM ssh_credential_profiles WHERE id = ? AND tenant_id = ?",
+                    (profile_id, SYSTEM_TENANT_ID),
                 ).fetchone()
             else:
                 row = connection.execute(
