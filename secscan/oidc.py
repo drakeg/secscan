@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import sqlite3
 from collections.abc import Mapping
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 
 @dataclass(frozen=True)
@@ -102,12 +102,14 @@ def normalize_oidc_issuer(value: str, *, allow_insecure_localhost: bool = False)
     )
     if parsed.scheme != "https" and not local_http_allowed:
         raise ValueError("OIDC issuer must use HTTPS")
-    if parsed.port is not None and not (1 <= parsed.port <= 65535):
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("OIDC issuer port is invalid") from exc
+    if port is not None and not (1 <= port <= 65535):
         raise ValueError("OIDC issuer port is invalid")
 
-    path = parsed.path.rstrip("/")
-    normalized = urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
-    return normalized
+    return issuer
 
 
 def _validate_subject(subject: str) -> str:
