@@ -56,6 +56,7 @@ def test_credential_store_encrypts_secrets_and_returns_metadata_only(tmp_path: P
         "name": "Default Linux",
         "username": "secscan-audit",
         "is_default": True,
+        "enabled": True,
         "created_at": profile.created_at,
         "updated_at": profile.updated_at,
     }

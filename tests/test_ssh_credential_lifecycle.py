@@ -65,6 +65,7 @@ def test_owner_can_disable_credential_and_new_scan_fails_closed(monkeypatch, tmp
         },
     )
     assert created.status_code == 201, created.text
+    assert created.json()["enabled"] is True
     profile_id = created.json()["id"]
 
     disabled = client.patch(
@@ -77,6 +78,7 @@ def test_owner_can_disable_credential_and_new_scan_fails_closed(monkeypatch, tmp
     listed = client.get("/api/v1/ssh-credentials")
     assert listed.status_code == 200
     assert [item["id"] for item in listed.json()] == [profile_id]
+    assert listed.json()[0]["enabled"] is False
 
     explicit = client.post(
         "/api/v1/linux-host-jobs",
@@ -93,6 +95,14 @@ def test_owner_can_disable_credential_and_new_scan_fails_closed(monkeypatch, tmp
     resolved = client.get("/api/v1/ssh-credentials/resolve", params={"host": "127.0.0.1"})
     assert resolved.status_code == 200
     assert resolved.json()["profile"] is None
+
+    reenabled = client.patch(
+        f"/api/v1/ssh-credentials/{profile_id}/enabled", json={"enabled": True}
+    )
+    assert reenabled.status_code == 200
+    refreshed = client.get("/api/v1/ssh-credentials").json()
+    assert refreshed[0]["enabled"] is True
+    assert refreshed[0]["is_default"] is False
 
 
 def test_member_cannot_change_credential_enabled_state(monkeypatch, tmp_path: Path) -> None:

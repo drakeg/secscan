@@ -67,3 +67,7 @@ Tenant owners may update shared SSH credential metadata and rotate the stored pr
 ## Disabled credential hardening
 
 Disabled shared SSH credentials are now rejected inside the core credential store as well as at HTTP scan submission. Decryption, default assignment, and host binding all fail closed for disabled profiles, and implicit resolution ignores stale bindings or defaults that reference a disabled profile. This prevents internal or future call paths from bypassing lifecycle enforcement.
+
+## Credential lifecycle metadata
+
+Shared SSH credential metadata now includes an `enabled` boolean alongside the existing non-secret fields. Newly created and legacy-compatible tenant credentials report `enabled: true` unless explicitly disabled; disabled credentials remain visible with `enabled: false`. Re-enabling updates the metadata but does not restore cleared default or host-binding selections.
