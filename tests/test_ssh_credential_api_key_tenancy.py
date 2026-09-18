@@ -152,6 +152,8 @@ def test_api_key_cannot_cross_tenant_ssh_credential_boundary(monkeypatch, tmp_pa
     second.cookies.clear()
     headers = {"Authorization": f"Bearer {secret}"}
 
+    # A bearer key is authoritative even if another tenant's session cookie is present.
+    assert first.get("/api/v1/ssh-credentials", headers=headers).json() == []
     assert second.get("/api/v1/ssh-credentials", headers=headers).json() == []
     rejected = second.post(
         "/api/v1/linux-host-jobs",
