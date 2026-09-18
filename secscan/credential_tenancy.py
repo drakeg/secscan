@@ -67,13 +67,13 @@ class SshCredentialTenantMiddleware(BaseHTTPMiddleware):
             secret = authorization[7:]
             if secret.startswith("secscan_"):
                 api_key_user = self.api_keys.authenticate(secret)
-        actor = session_user or api_key_user
+        actor = api_key_user or session_user
         tenant_id = actor.tenant_id if actor is not None else SYSTEM_TENANT_ID
         token = set_credential_tenant(tenant_id)
         try:
             credential_path = request.url.path.startswith("/api/v1/ssh-credentials")
             is_admin_write = credential_path and request.method in {"POST", "PUT", "PATCH", "DELETE"}
-            if is_admin_write and api_key_user is not None and session_user is None:
+            if is_admin_write and api_key_user is not None:
                 return JSONResponse(
                     status_code=401,
                     content={"detail": "session authentication required"},
