@@ -22,6 +22,7 @@ class SshCredentialProfile:
     name: str
     username: str
     is_default: bool
+    enabled: bool
     created_at: str
     updated_at: str
 
@@ -200,13 +201,15 @@ class SshCredentialStore:
             raise ValueError("known_hosts contains a malformed host-key entry")
         return value
 
-    @staticmethod
-    def _profile(row: sqlite3.Row) -> SshCredentialProfile:
+    def _profile(self, row: sqlite3.Row) -> SshCredentialProfile:
+        tenant_id = str(row["tenant_id"])
+        profile_id = str(row["id"])
         return SshCredentialProfile(
-            id=str(row["id"]),
+            id=profile_id,
             name=str(row["name"]),
             username=str(row["username"]),
             is_default=bool(row["is_default"]),
+            enabled=SshCredentialLifecycleStore(self.database).is_enabled(tenant_id, profile_id),
             created_at=str(row["created_at"]),
             updated_at=str(row["updated_at"]),
         )
@@ -328,7 +331,7 @@ class SshCredentialStore:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT id, name, username, is_default, created_at, updated_at
+                SELECT id, tenant_id, name, username, is_default, created_at, updated_at
                 FROM ssh_credential_profiles
                 WHERE tenant_id = ?
                 ORDER BY is_default DESC, name COLLATE NOCASE, id
@@ -342,7 +345,7 @@ class SshCredentialStore:
         with self._connect() as connection:
             row = connection.execute(
                 """
-                SELECT id, name, username, is_default, created_at, updated_at
+                SELECT id, tenant_id, name, username, is_default, created_at, updated_at
                 FROM ssh_credential_profiles WHERE id = ? AND tenant_id = ?
                 """,
                 (profile_id, tenant_id),
