@@ -20,12 +20,12 @@ def test_oidc_configuration_is_optional_and_never_exposes_client_secret() -> Non
         }
     )
     assert config is not None
-    assert config.issuer == "https://login.example.com/tenant"
+    assert config.issuer == "https://login.example.com/tenant/"
     assert config.client_id == "secscan-web"
     assert config.client_secret == "super-secret"
     assert config.public() == {
         "configured": True,
-        "issuer": "https://login.example.com/tenant",
+        "issuer": "https://login.example.com/tenant/",
         "client_id": "secscan-web",
     }
     assert "super-secret" not in str(config.public())
@@ -70,7 +70,7 @@ def test_insecure_oidc_issuer_is_limited_to_explicit_localhost_fixtures() -> Non
             "http://127.0.0.1:8080/issuer/",
             allow_insecure_localhost=True,
         )
-        == "http://127.0.0.1:8080/issuer"
+        == "http://127.0.0.1:8080/issuer/"
     )
     with pytest.raises(ValueError, match="HTTPS"):
         normalize_oidc_issuer(
@@ -91,15 +91,16 @@ def test_external_identity_linkage_is_exact_and_does_not_use_email(tmp_path: Pat
         subject="provider-subject-123",
         user_id=first.id,
     )
-    assert linked.issuer == "https://login.example.com"
+    assert linked.issuer == "https://login.example.com/"
     assert linked.subject == "provider-subject-123"
     assert linked.user_id == first.id
     assert identities.resolve("https://login.example.com/", "provider-subject-123") == linked
-    assert identities.resolve("https://login.example.com", "PROVIDER-SUBJECT-123") is None
+    assert identities.resolve("https://login.example.com", "provider-subject-123") is None
+    assert identities.resolve("https://login.example.com/", "PROVIDER-SUBJECT-123") is None
 
     with pytest.raises(ValueError, match="already linked"):
         identities.link(
-            issuer="https://login.example.com",
+            issuer="https://login.example.com/",
             subject="provider-subject-123",
             user_id=second.id,
         )
@@ -123,7 +124,7 @@ def test_external_identity_linkage_is_unique_per_issuer_and_local_user(tmp_path:
     identities = ExternalIdentityStore(database)
 
     first = identities.link(
-        issuer="https://login.example.com",
+        issuer="https://login.example.com/",
         subject="subject-one",
         user_id=user.id,
     )
@@ -136,7 +137,7 @@ def test_external_identity_linkage_is_unique_per_issuer_and_local_user(tmp_path:
 
     with pytest.raises(ValueError, match="already linked to this OIDC issuer"):
         identities.link(
-            issuer="https://login.example.com",
+            issuer="https://login.example.com/",
             subject="subject-two",
             user_id=user.id,
         )
@@ -147,7 +148,7 @@ def test_external_identity_linkage_is_unique_per_issuer_and_local_user(tmp_path:
         user_id=user.id,
     )
     assert [item.issuer for item in identities.list_for_user(user.id)] == [
-        "https://login.example.com",
+        "https://login.example.com/",
         "https://other-idp.example.com",
     ]
     assert second_issuer.user_id == user.id
