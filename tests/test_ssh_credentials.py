@@ -133,6 +133,64 @@ def test_credential_api_never_returns_secret_material(monkeypatch, tmp_path: Pat
     assert known_hosts.encode("utf-8") not in bytes(stored[1])
 
 
+
+def test_credential_update_rotates_selected_secrets_without_returning_them(monkeypatch, tmp_path: Path) -> None:
+    master_key = _master_key()
+    original_key = _private_key()
+    replacement_key = _private_key()
+    original_hosts = _known_hosts("old.example.com")
+    replacement_hosts = _known_hosts("new.example.com")
+    monkeypatch.setenv("SECSCAN_CREDENTIAL_KEY", master_key)
+    client = TestClient(create_web_app(job_root=tmp_path / "jobs", runner=lambda _args: 0))
+
+    created = client.post(
+        "/api/v1/ssh-credentials",
+        json={
+            "name": "Rotating",
+            "username": "audit-old",
+            "private_key": original_key,
+            "known_hosts": original_hosts,
+        },
+    )
+    assert created.status_code == 201
+    profile_id = created.json()["id"]
+
+    updated = client.patch(
+        f"/api/v1/ssh-credentials/{profile_id}",
+        json={
+            "name": "Rotated",
+            "username": "audit-new",
+            "private_key": replacement_key,
+            "known_hosts": replacement_hosts,
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    body = updated.json()
+    assert body["id"] == profile_id
+    assert body["name"] == "Rotated"
+    assert body["username"] == "audit-new"
+    assert "private_key" not in body
+    assert "known_hosts" not in body
+    assert replacement_key not in updated.text
+    assert replacement_hosts not in updated.text
+
+    store = SshCredentialStore(tmp_path / "jobs" / "jobs.db", master_key)
+    decrypted = store.decrypt(profile_id)
+    assert decrypted.private_key == replacement_key
+    assert decrypted.known_hosts == replacement_hosts
+
+    unchanged = client.patch(
+        f"/api/v1/ssh-credentials/{profile_id}",
+        json={"name": "Metadata only"},
+    )
+    assert unchanged.status_code == 200
+    decrypted = store.decrypt(profile_id)
+    assert decrypted.private_key == replacement_key
+    assert decrypted.known_hosts == replacement_hosts
+
+    empty = client.patch(f"/api/v1/ssh-credentials/{profile_id}", json={})
+    assert empty.status_code == 422
+
 def test_profile_backed_job_uses_isolated_temporary_ssh_files(monkeypatch, tmp_path: Path) -> None:
     private_key = _private_key()
     known_hosts = _known_hosts("127.0.0.1")
