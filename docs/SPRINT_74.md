@@ -64,3 +64,7 @@ Add a provider-neutral OpenID Connect (OIDC) authentication foundation before an
 ## Identity foundation implementation
 
 The first Sprint 74 increment adds strict optional OIDC provider configuration and durable external-identity linkage without enabling live redirects or token exchange yet. Configuration requires issuer, client ID, and client secret together; issuer URLs are HTTPS-only outside explicit localhost test fixtures, and public configuration metadata never includes the client secret. External identities are keyed only by the exact validated issuer identifier plus exact subject and link to an existing local user. Email, domain, tenant, role, and project claims are not persisted or inferred. Linkage collisions fail closed, and one local user may have at most one subject per issuer unless the old link is explicitly removed first.
+
+## Login transaction state
+
+OIDC browser login state now has a dedicated persistence boundary before any live provider callback is enabled. Each login attempt receives cryptographically random state and nonce values, while only SHA-256 digests are persisted. Transactions expire after 10 minutes, state is single-use, expired state is burned even when rejected, and nonce verification uses constant-time digest comparison. Malformed state/nonce input fails closed. This increment does not yet perform discovery, redirects, token exchange, or ID-token validation.
