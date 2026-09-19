@@ -353,6 +353,7 @@ class OidcLoginTransactionStore:
         state_digest = _opaque_digest(validated_state)
         current = _utc(now)
 
+        expired = False
         with self._connect() as connection:
             row = connection.execute(
                 """
@@ -370,8 +371,10 @@ class OidcLoginTransactionStore:
                 (state_digest,),
             )
             expires_at = datetime.fromisoformat(str(row["expires_at"]))
-            if expires_at <= current:
-                raise ValueError("OIDC login transaction is invalid or expired")
+            expired = expires_at <= current
+
+        if expired:
+            raise ValueError("OIDC login transaction is invalid or expired")
 
         return ConsumedOidcLoginTransaction(
             nonce_digest=str(row["nonce_digest"]),
