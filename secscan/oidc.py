@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+import hashlib
+import hmac
 import os
 from pathlib import Path
+import secrets
 import sqlite3
 from collections.abc import Mapping
 from urllib.parse import urlsplit
@@ -247,3 +250,138 @@ def _identity(row: sqlite3.Row) -> ExternalIdentity:
         user_id=str(row["user_id"]),
         linked_at=str(row["linked_at"]),
     )
+
+
+OIDC_LOGIN_TRANSACTION_MINUTES = 10
+
+
+@dataclass(frozen=True)
+class OidcLoginTransaction:
+    state: str
+    nonce: str
+    expires_at: str
+
+
+@dataclass(frozen=True)
+class ConsumedOidcLoginTransaction:
+    nonce_digest: str
+    created_at: str
+    expires_at: str
+
+    def matches_nonce(self, nonce: str) -> bool:
+        candidate = _opaque_digest(_validate_opaque_value(nonce, "OIDC nonce"))
+        return hmac.compare_digest(self.nonce_digest, candidate)
+
+
+def _opaque_digest(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _validate_opaque_value(value: str, label: str) -> str:
+    if not value or len(value) > 1024:
+        raise ValueError(f"{label} is invalid")
+    if any(ord(character) < 0x21 or ord(character) > 0x7E for character in value):
+        raise ValueError(f"{label} is invalid")
+    return value
+
+
+class OidcLoginTransactionStore:
+    def __init__(self, database: Path) -> None:
+        self.database = database.expanduser().resolve()
+        self.migrate()
+
+    def _connect(self) -> sqlite3.Connection:
+        self.database.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(self.database)
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def migrate(self) -> None:
+        with self._connect() as connection:
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS auth_oidc_login_transactions (
+                    state_digest TEXT PRIMARY KEY,
+                    nonce_digest TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS auth_oidc_login_transactions_expiry_idx
+                    ON auth_oidc_login_transactions(expires_at);
+                """
+            )
+
+    def create(self, *, now: datetime | None = None) -> OidcLoginTransaction:
+        created = _utc(now)
+        expires = created + timedelta(minutes=OIDC_LOGIN_TRANSACTION_MINUTES)
+        state = secrets.token_urlsafe(32)
+        nonce = secrets.token_urlsafe(32)
+        state_digest = _opaque_digest(state)
+        nonce_digest = _opaque_digest(nonce)
+
+        with self._connect() as connection:
+            connection.execute(
+                "DELETE FROM auth_oidc_login_transactions WHERE expires_at <= ?",
+                (created.isoformat(),),
+            )
+            connection.execute(
+                """
+                INSERT INTO auth_oidc_login_transactions
+                    (state_digest, nonce_digest, created_at, expires_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (
+                    state_digest,
+                    nonce_digest,
+                    created.isoformat(),
+                    expires.isoformat(),
+                ),
+            )
+        return OidcLoginTransaction(
+            state=state,
+            nonce=nonce,
+            expires_at=expires.isoformat(),
+        )
+
+    def consume(
+        self,
+        state: str,
+        *,
+        now: datetime | None = None,
+    ) -> ConsumedOidcLoginTransaction:
+        validated_state = _validate_opaque_value(state, "OIDC state")
+        state_digest = _opaque_digest(validated_state)
+        current = _utc(now)
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT nonce_digest, created_at, expires_at
+                FROM auth_oidc_login_transactions
+                WHERE state_digest = ?
+                """,
+                (state_digest,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("OIDC login transaction is invalid or expired")
+
+            connection.execute(
+                "DELETE FROM auth_oidc_login_transactions WHERE state_digest = ?",
+                (state_digest,),
+            )
+            expires_at = datetime.fromisoformat(str(row["expires_at"]))
+            if expires_at <= current:
+                raise ValueError("OIDC login transaction is invalid or expired")
+
+        return ConsumedOidcLoginTransaction(
+            nonce_digest=str(row["nonce_digest"]),
+            created_at=str(row["created_at"]),
+            expires_at=str(row["expires_at"]),
+        )
+
+
+def _utc(value: datetime | None) -> datetime:
+    current = datetime.now(UTC) if value is None else value
+    if current.tzinfo is None:
+        raise ValueError("OIDC transaction time must be timezone-aware")
+    return current.astimezone(UTC)
