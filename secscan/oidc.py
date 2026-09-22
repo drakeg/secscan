@@ -158,14 +158,12 @@ def _required_string(document: Mapping[str, object], name: str) -> str:
 
 def _required_string_sequence(document: Mapping[str, object], name: str) -> tuple[str, ...]:
     value = document.get(name)
-    if (
-        not isinstance(value, Sequence)
-        or isinstance(value, (str, bytes))
-        or not value
-        or any(not isinstance(item, str) or not item for item in value)
-    ):
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise ValueError(f"OIDC discovery field {name} is required")
-    return tuple(value)
+    items = tuple(value)
+    if not items or any(not isinstance(item, str) or not item for item in items):
+        raise ValueError(f"OIDC discovery field {name} is required")
+    return tuple(item for item in items if isinstance(item, str))
 
 
 def _validate_oidc_endpoint(
