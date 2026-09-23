@@ -69,13 +69,27 @@ def test_oidc_discovery_rejects_insecure_provider_endpoints(field: str) -> None:
         )
 
 
-def test_oidc_discovery_requires_signed_id_token_algorithm() -> None:
+def test_oidc_discovery_requires_supported_id_token_algorithm() -> None:
     config = _config()
-    with pytest.raises(ValueError, match="signed ID-token"):
-        OidcDiscoveryDocument.from_mapping(
-            config,
-            _document(id_token_signing_alg_values_supported=["none"]),
-        )
+    for algorithms in (["none"], ["HS256"], ["ES256"], ["none", "HS256"]):
+        with pytest.raises(ValueError, match="supported ID-token"):
+            OidcDiscoveryDocument.from_mapping(
+                config,
+                _document(id_token_signing_alg_values_supported=algorithms),
+            )
+
+    discovery = OidcDiscoveryDocument.from_mapping(
+        config,
+        _document(
+            id_token_signing_alg_values_supported=[
+                "none",
+                "HS256",
+                "RS512",
+                "RS256",
+            ]
+        ),
+    )
+    assert discovery.id_token_signing_alg_values_supported == ("RS512", "RS256")
 
 
 def test_authorization_url_is_built_only_from_validated_metadata(tmp_path: Path) -> None:
