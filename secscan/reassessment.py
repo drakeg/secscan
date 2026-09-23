@@ -7,6 +7,9 @@ import sqlite3
 from typing import List
 from uuid import uuid4
 
+from secscan.auth import AuthStore, User
+from secscan.project_access import ProjectAccessStore
+
 
 CADENCE_INTERVALS = {
     "daily": timedelta(days=1),
@@ -56,6 +59,34 @@ def next_run_for(cadence: str, *, now: datetime) -> datetime:
     except KeyError as exc:
         raise ValueError("cadence must be daily or weekly") from exc
     return _utc(now) + interval
+
+
+class ReassessmentScheduleAuthorizer:
+    def __init__(self, database: Path) -> None:
+        self.auth = AuthStore(database)
+        self.projects = ProjectAccessStore(database)
+
+    def require_manage(self, actor: User, *, project_id: str | None) -> None:
+        tenant_role = self.auth.membership_role(actor.id, actor.tenant_id)
+        if tenant_role == "owner":
+            if project_id is not None:
+                self.projects.require_operator(actor, project_id)
+            return
+        if project_id is None:
+            raise PermissionError("tenant owner access required")
+        try:
+            self.projects.require_operator(actor, project_id)
+        except ValueError as exc:
+            raise PermissionError("project operator access required") from exc
+
+    def require_schedule_access(
+        self,
+        actor: User,
+        schedule: ReassessmentSchedule,
+    ) -> None:
+        if schedule.tenant_id != actor.tenant_id:
+            raise ValueError("reassessment schedule was not found")
+        self.require_manage(actor, project_id=schedule.project_id)
 
 
 class ReassessmentScheduleStore:
