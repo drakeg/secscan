@@ -2,19 +2,31 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 73
+## Completed through Sprint 74
 
-Sprints 0–73 are complete, including the capabilities previously summarized here plus tenant-isolated SSH credentials and SSH host-key trust, bounded ECS/EKS workload association, an opt-in tenant-bound Stripe subscription lifecycle, bounded GitHub Issues export, offline Ed25519-signed policy/governance bundles, authenticated network-range and Windows host workflows, multi-user tenant membership with session-scoped tenant switching, owner-controlled expiring tenant invitations with authenticated single-use acceptance, tenant-owned projects with validated optional scan-job association and project-specific viewer/operator access control, tenant-scoped API keys, and tenant-owned reusable SSH credentials with owner administration, safe legacy migration, disabled-state enforcement, API-key use, and project ACL enforcement.
+Sprints 0–74 are complete, including the capabilities previously summarized here plus tenant-isolated SSH credentials and SSH host-key trust, bounded ECS/EKS workload association, an opt-in tenant-bound Stripe subscription lifecycle, bounded GitHub Issues export, offline Ed25519-signed policy/governance bundles, authenticated network-range and Windows host workflows, multi-user tenant membership with session-scoped tenant switching, owner-controlled expiring tenant invitations with authenticated single-use acceptance, tenant-owned projects with validated optional scan-job association and project-specific viewer/operator access control, tenant-scoped API keys, tenant-owned reusable SSH credentials with owner administration, safe legacy migration, disabled-state enforcement, API-key use, and project ACL enforcement, and an optional provider-neutral OIDC login flow with bounded discovery/JWKS/token exchange, replay-safe state/nonce validation, cryptographic ID-token verification, explicit issuer/subject linking, and reuse of the existing local session and tenant model.
 
 ## Current sprint
 
-### Sprint 74 — External Identity / OpenID Connect Foundation
+### Sprint 75 — Reassessment Scheduling Foundation
 
-Add an optional provider-neutral OIDC authentication path before production SaaS exposure. External identity verifies authentication only; existing local tenant membership, project ACLs, session semantics, invitations, and API-key boundaries remain authoritative. Unknown external identities do not auto-create users or tenants, and the sprint introduces no paid identity service.
+Add local, bounded reassessment scheduling for persistent assets without introducing a hosted scheduler, paid queue, or autonomous unbounded scanning. Scheduling remains tenant/project scoped, reuses the existing job and authorization boundaries, and requires an explicitly supported persistent asset/scan profile rather than arbitrary commands or targets.
+
+Initial planning priorities:
+- persist an opt-in reassessment schedule owned by exactly one tenant and, when applicable, one project
+- support bounded daily/weekly cadence rather than arbitrary cron expressions
+- require an existing supported asset and validated scan configuration
+- expose next-run/last-run/status metadata without leaking credentials
+- enqueue through the existing job path so tenant/project ACLs and scanner validation still apply
+- prevent overlapping duplicate runs for one schedule
+- allow owner/operator pause/resume while preserving audit metadata
+- keep local/container operation at $0 with no external scheduler or recurring service
+
+Before implementation, define the exact supported asset types, authorization matrix, misfire/restart behavior, concurrency rules, and deterministic local test clock.
 
 ## Candidate remaining sprints
 
-No later sprint number is committed yet. After Sprint 74 is accepted, reprioritize the remaining backlog before assigning Sprint 75.
+No later sprint number is committed yet. After Sprint 75 is accepted, reprioritize the remaining backlog before assigning Sprint 76.
 
 ## Backlog after the numbered candidate sequence
 
