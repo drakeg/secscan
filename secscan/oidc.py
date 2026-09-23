@@ -84,6 +84,7 @@ class OidcDiscoveryDocument:
     token_endpoint: str
     jwks_uri: str
     id_token_signing_alg_values_supported: tuple[str, ...]
+    token_endpoint_auth_methods_supported: tuple[str, ...]
 
     @classmethod
     def from_mapping(
@@ -127,12 +128,25 @@ class OidcDiscoveryDocument:
         if not algorithms:
             raise ValueError("OIDC provider must advertise a supported ID-token algorithm")
 
+        raw_auth_methods = document.get("token_endpoint_auth_methods_supported")
+        auth_methods: tuple[str, ...]
+        if raw_auth_methods is None:
+            auth_methods = ("client_secret_basic",)
+        else:
+            auth_methods = _required_string_sequence(
+                document,
+                "token_endpoint_auth_methods_supported",
+            )
+        if "client_secret_basic" not in auth_methods:
+            raise ValueError("OIDC provider must support client_secret_basic")
+
         return cls(
             issuer=issuer,
             authorization_endpoint=authorization_endpoint,
             token_endpoint=token_endpoint,
             jwks_uri=jwks_uri,
             id_token_signing_alg_values_supported=algorithms,
+            token_endpoint_auth_methods_supported=auth_methods,
         )
 
     def authorization_url(
