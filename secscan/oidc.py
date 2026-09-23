@@ -121,10 +121,11 @@ class OidcDiscoveryDocument:
             document,
             "id_token_signing_alg_values_supported",
         )
-        if "none" in algorithms:
-            algorithms = tuple(value for value in algorithms if value != "none")
+        algorithms = tuple(
+            value for value in algorithms if value in {"RS256", "RS384", "RS512"}
+        )
         if not algorithms:
-            raise ValueError("OIDC provider must advertise a signed ID-token algorithm")
+            raise ValueError("OIDC provider must advertise a supported ID-token algorithm")
 
         return cls(
             issuer=issuer,
@@ -905,27 +906,20 @@ class OidcLoginTransactionStore:
         state_digest = _opaque_digest(validated_state)
         current = _utc(now)
 
-        expired = False
         with self._connect() as connection:
             row = connection.execute(
                 """
-                SELECT nonce_digest, created_at, expires_at
-                FROM auth_oidc_login_transactions
+                DELETE FROM auth_oidc_login_transactions
                 WHERE state_digest = ?
+                RETURNING nonce_digest, created_at, expires_at
                 """,
                 (state_digest,),
             ).fetchone()
-            if row is None:
-                raise ValueError("OIDC login transaction is invalid or expired")
+        if row is None:
+            raise ValueError("OIDC login transaction is invalid or expired")
 
-            connection.execute(
-                "DELETE FROM auth_oidc_login_transactions WHERE state_digest = ?",
-                (state_digest,),
-            )
-            expires_at = datetime.fromisoformat(str(row["expires_at"]))
-            expired = expires_at <= current
-
-        if expired:
+        expires_at = datetime.fromisoformat(str(row["expires_at"]))
+        if expires_at <= current:
             raise ValueError("OIDC login transaction is invalid or expired")
 
         return ConsumedOidcLoginTransaction(
