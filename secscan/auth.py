@@ -27,6 +27,8 @@ _PUBLIC_PATHS = {
     "/register",
     "/api/v1/auth/login",
     "/api/v1/auth/register",
+    "/api/v1/auth/oidc/login",
+    "/api/v1/auth/oidc/callback",
     "/api/v1/billing/webhook",
 }
 _PUBLIC_PREFIXES = (
@@ -602,6 +604,28 @@ def mount_auth(app: FastAPI, *, database: Path, api_token: str | None = None) ->
         "on",
     }
 
+    from secscan.oidc import (
+        ExternalIdentityStore,
+        OidcLoginTransactionStore,
+        OidcProviderConfig,
+        create_oidc_session,
+        exchange_oidc_code,
+        fetch_oidc_discovery,
+        fetch_oidc_jwks,
+        verify_oidc_id_token,
+    )
+
+    oidc_config = OidcProviderConfig.from_environment()
+    oidc_redirect_uri = os.environ.get("SECSCAN_OIDC_REDIRECT_URI", "").strip()
+    oidc_transactions = OidcLoginTransactionStore(database)
+    oidc_identities = ExternalIdentityStore(database)
+    if oidc_config is not None:
+        from secscan.oidc import _validate_redirect_uri
+
+        if not oidc_redirect_uri:
+            raise ValueError("SECSCAN_OIDC_REDIRECT_URI is required when OIDC is configured")
+        _validate_redirect_uri(oidc_redirect_uri)
+
     def current_user(request: Request) -> User:
         user = store.user_for_session(request.cookies.get(SESSION_COOKIE))
         if user is None:
@@ -658,6 +682,71 @@ def mount_auth(app: FastAPI, *, database: Path, api_token: str | None = None) ->
             path="/",
         )
         return user.public()
+
+    @app.get("/api/v1/auth/oidc/login")
+    def oidc_login() -> Response:
+        if oidc_config is None:
+            raise HTTPException(status_code=404, detail="OIDC login is not configured")
+        try:
+            discovery = fetch_oidc_discovery(oidc_config)
+            transaction = oidc_transactions.create()
+            authorization_url = discovery.authorization_url(
+                oidc_config,
+                transaction,
+                oidc_redirect_uri,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail="OIDC login is unavailable") from exc
+        return RedirectResponse(authorization_url, status_code=303)
+
+    @app.get("/api/v1/auth/oidc/callback")
+    def oidc_callback(
+        response: Response,
+        state: str = "",
+        code: str = "",
+        error: str = "",
+    ) -> Response:
+        if oidc_config is None:
+            raise HTTPException(status_code=404, detail="OIDC login is not configured")
+        if error:
+            raise HTTPException(status_code=401, detail="OIDC authentication was not completed")
+        if not state or not code:
+            raise HTTPException(status_code=400, detail="OIDC callback is invalid")
+        try:
+            transaction = oidc_transactions.consume(state)
+            discovery = fetch_oidc_discovery(oidc_config)
+            token_response = exchange_oidc_code(
+                oidc_config,
+                discovery,
+                code=code,
+                redirect_uri=oidc_redirect_uri,
+            )
+            jwks = fetch_oidc_jwks(discovery)
+            identity = verify_oidc_id_token(
+                token_response.id_token,
+                config=oidc_config,
+                discovery=discovery,
+                jwks=jwks,
+                transaction=transaction,
+            )
+            authenticated = create_oidc_session(
+                identity,
+                identity_store=oidc_identities,
+                auth_store=store,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=401, detail="OIDC authentication failed") from exc
+        redirect = RedirectResponse("/app", status_code=303)
+        redirect.set_cookie(
+            SESSION_COOKIE,
+            authenticated.session_token,
+            httponly=True,
+            secure=secure_cookie,
+            samesite="strict",
+            max_age=SESSION_DAYS * 86400,
+            path="/",
+        )
+        return redirect
 
     @app.post("/api/v1/auth/logout", status_code=204)
     def logout(request: Request, response: Response) -> Response:
