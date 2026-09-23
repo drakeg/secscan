@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sqlite3
+from typing import List
 from uuid import uuid4
 
 
@@ -146,7 +147,7 @@ class ReassessmentScheduleStore:
             raise ValueError("reassessment schedule was not found")
         return _schedule(row)
 
-    def list(self, *, tenant_id: str) -> list[ReassessmentSchedule]:
+    def list(self, *, tenant_id: str) -> List[ReassessmentSchedule]:
         with self._connect() as connection:
             rows = connection.execute(
                 """
@@ -158,7 +159,7 @@ class ReassessmentScheduleStore:
             ).fetchall()
         return [_schedule(row) for row in rows]
 
-    def due(self, *, now: datetime, limit: int = 100) -> list[ReassessmentSchedule]:
+    def due(self, *, now: datetime, limit: int = 100) -> List[ReassessmentSchedule]:
         if limit < 1 or limit > 100:
             raise ValueError("due schedule limit must be between 1 and 100")
         current = _utc(now)
