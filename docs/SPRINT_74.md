@@ -96,3 +96,7 @@ The isolated OIDC layers are now composed into public login and callback routes.
 ## Final OIDC transaction and algorithm hardening
 
 Before treating the browser flow as complete, discovery metadata is now reduced to the exact RSA algorithms the verifier implements: `RS256`, `RS384`, and `RS512`. Providers advertising only `none`, symmetric HMAC algorithms, EC algorithms, or other unsupported values fail closed instead of carrying those values deeper into the flow. One-time login state consumption now uses a single SQLite `DELETE ... RETURNING` statement, making the claim-and-burn operation atomic across concurrent callbacks. Regression coverage races two consumers against the same state and requires exactly one success.
+
+## Token endpoint authentication contract
+
+The token exchange uses HTTP Basic client authentication, so discovery now validates that contract explicitly. When `token_endpoint_auth_methods_supported` is omitted, secscan applies the OIDC-defined default of `client_secret_basic`. When the provider supplies the field, `client_secret_basic` must be present; providers advertising only `client_secret_post`, `private_key_jwt`, or other unsupported methods fail closed during discovery rather than later during callback exchange. This completes the Sprint 74 provider metadata contract for the implemented confidential-client flow.
