@@ -72,3 +72,7 @@ OIDC browser login state now has a dedicated persistence boundary before any liv
 ## Discovery and authorization request validation
 
 Sprint 74 now validates provider discovery metadata before constructing any browser authorization request. The discovery issuer must exactly match the configured issuer, authorization/token/JWKS endpoints must use HTTPS outside explicit localhost fixtures, authorization-code flow must be advertised, and at least one signed ID-token algorithm must remain after excluding `none`. Authorization URLs are then built only from this validated metadata with the configured client ID, an HTTPS redirect URI, `response_type=code`, `scope=openid`, and the one-time state/nonce pair. Client secrets are never included in the browser URL. Network retrieval, token exchange, and callback authentication remain separate follow-up boundaries.
+
+## Bounded discovery retrieval
+
+Provider discovery can now be retrieved using the OIDC well-known URL derived from the configured issuer. Retrieval uses a five-second timeout, a 256 KiB hard response limit, JSON content-type enforcement, UTF-8 JSON object validation, and an HTTP client path that does not follow redirects. The resulting document still passes through the exact issuer and endpoint validator before it can be used. This keeps network retrieval from expanding the trust boundary to a redirect target or oversized/non-JSON response. Token exchange, JWKS retrieval, ID-token verification, and session creation remain separate follow-up increments.
