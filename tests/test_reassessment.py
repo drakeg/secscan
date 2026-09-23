@@ -5,7 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from secscan.reassessment import ReassessmentScheduleStore, next_run_for
+from secscan.auth import AuthStore, User
+from secscan.project_access import ProjectAccessStore
+from secscan.projects import ProjectStore
+from secscan.reassessment import (
+    ReassessmentScheduleAuthorizer,
+    ReassessmentScheduleStore,
+    next_run_for,
+)
 
 
 NOW = datetime(2026, 9, 23, 18, 0, tzinfo=UTC)
@@ -174,3 +181,73 @@ def test_due_limit_is_bounded(tmp_path: Path) -> None:
         store.due(now=NOW, limit=0)
     with pytest.raises(ValueError, match="between 1 and 100"):
         store.due(now=NOW, limit=101)
+
+
+def _member_in_tenant(auth: AuthStore, owner: User, email: str) -> User:
+    account = auth.register(email, "correct-horse-battery-staple")
+    auth.add_tenant_member(owner.id, owner.tenant_id, email)
+    return User(account.id, owner.tenant_id, account.email, account.role, True, account.created_at)
+
+
+def test_tenant_owner_can_manage_tenant_and_project_schedules(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    auth = AuthStore(database)
+    projects = ProjectStore(database)
+    authorizer = ReassessmentScheduleAuthorizer(database)
+    owner = auth.register("owner@example.com", "correct-horse-battery-staple")
+    project = projects.create(owner, "Production")
+
+    authorizer.require_manage(owner, project_id=None)
+    authorizer.require_manage(owner, project_id=project.id)
+
+
+def test_tenant_member_cannot_manage_unscoped_schedule(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    auth = AuthStore(database)
+    authorizer = ReassessmentScheduleAuthorizer(database)
+    owner = auth.register("owner@example.com", "correct-horse-battery-staple")
+    member = _member_in_tenant(auth, owner, "member@example.com")
+
+    with pytest.raises(PermissionError, match="tenant owner"):
+        authorizer.require_manage(member, project_id=None)
+
+
+def test_project_operator_can_manage_only_authorized_project_schedule(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    auth = AuthStore(database)
+    projects = ProjectStore(database)
+    access = ProjectAccessStore(database)
+    authorizer = ReassessmentScheduleAuthorizer(database)
+    owner = auth.register("owner@example.com", "correct-horse-battery-staple")
+    operator = _member_in_tenant(auth, owner, "operator@example.com")
+    viewer = _member_in_tenant(auth, owner, "viewer@example.com")
+    project = projects.create(owner, "Production")
+    access.grant(owner, project.id, operator.id, "operator")
+    access.grant(owner, project.id, viewer.id, "viewer")
+
+    authorizer.require_manage(operator, project_id=project.id)
+    with pytest.raises(PermissionError, match="project operator"):
+        authorizer.require_manage(viewer, project_id=project.id)
+
+    access.revoke(owner, project.id, operator.id)
+    with pytest.raises(PermissionError, match="project operator"):
+        authorizer.require_manage(operator, project_id=project.id)
+
+
+def test_schedule_access_fails_closed_across_tenants(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    auth = AuthStore(database)
+    schedules = ReassessmentScheduleStore(database)
+    authorizer = ReassessmentScheduleAuthorizer(database)
+    owner = auth.register("owner@example.com", "correct-horse-battery-staple")
+    outsider = auth.register("outsider@example.com", "correct-horse-battery-staple")
+    schedule = schedules.create(
+        tenant_id=owner.tenant_id,
+        asset_id="asset-1",
+        created_by=owner.id,
+        cadence="daily",
+        now=NOW,
+    )
+
+    with pytest.raises(ValueError, match="not found"):
+        authorizer.require_schedule_access(outsider, schedule)
