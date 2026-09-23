@@ -70,3 +70,7 @@ Planning starts with persistent asset types that already have a deterministic ex
 5. bounded scheduler loop and restart/misfire behavior
 6. lifecycle API/UI surfaces and documentation
 7. acceptance/security review
+
+## Increment 1 — schedule persistence and deterministic timing
+
+The first implementation increment adds a standalone SQLite-backed schedule store without launching scans. Records are tenant-owned, may carry an optional project binding, accept only `daily` or `weekly` cadence, and expose non-secret public metadata. Due evaluation requires an injected timezone-aware clock and is capped at 100 records per evaluation. Recording an attempted run advances `next_run_at` from the current evaluation time rather than replaying missed intervals, implementing the bounded restart/misfire rule. Job enqueueing, authorization, asset validation, pause/resume, and atomic due claiming remain deliberately outside this increment.
