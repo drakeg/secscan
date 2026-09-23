@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sqlite3
+import threading
 
 import pytest
 
@@ -74,3 +75,32 @@ def test_oidc_login_transaction_requires_timezone_aware_time(tmp_path: Path) -> 
     store = OidcLoginTransactionStore(tmp_path / "jobs.db")
     with pytest.raises(ValueError, match="timezone-aware"):
         store.create(now=datetime(2026, 9, 19, 14, 0))
+
+
+def test_oidc_login_transaction_allows_only_one_concurrent_consumer(tmp_path: Path) -> None:
+    store = OidcLoginTransactionStore(tmp_path / "jobs.db")
+    now = datetime(2026, 9, 19, 14, 0, tzinfo=UTC)
+    issued = store.create(now=now)
+    barrier = threading.Barrier(2)
+    outcomes: list[str] = []
+    lock = threading.Lock()
+
+    def consume() -> None:
+        barrier.wait()
+        try:
+            store.consume(issued.state, now=now + timedelta(seconds=1))
+        except ValueError:
+            outcome = "rejected"
+        else:
+            outcome = "consumed"
+        with lock:
+            outcomes.append(outcome)
+
+    threads = [threading.Thread(target=consume) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+    assert sorted(outcomes) == ["consumed", "rejected"]
