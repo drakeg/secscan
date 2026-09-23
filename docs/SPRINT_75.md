@@ -74,3 +74,7 @@ Planning starts with persistent asset types that already have a deterministic ex
 ## Increment 1 — schedule persistence and deterministic timing
 
 The first implementation increment adds a standalone SQLite-backed schedule store without launching scans. Records are tenant-owned, may carry an optional project binding, accept only `daily` or `weekly` cadence, and expose non-secret public metadata. Due evaluation requires an injected timezone-aware clock and is capped at 100 records per evaluation. Recording an attempted run advances `next_run_at` from the current evaluation time rather than replaying missed intervals, implementing the bounded restart/misfire rule. Job enqueueing, authorization, asset validation, pause/resume, and atomic due claiming remain deliberately outside this increment.
+
+## Increment 2 — authorization boundary
+
+Schedule mutation now has an explicit authorization layer before API or scheduler integration. Tenant owners may manage tenant-wide schedules and schedules for enabled projects in their active tenant. Non-owner members cannot manage tenant-wide schedules; project-scoped management requires current project operator access, so viewers and revoked operators fail closed. Schedule access also checks the schedule's tenant before project authorization, preventing cross-tenant schedule probing. This layer deliberately reuses the existing tenant membership and project ACL stores rather than creating parallel authorization semantics.
