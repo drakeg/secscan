@@ -42,6 +42,7 @@ def test_oidc_discovery_requires_exact_issuer_and_code_flow() -> None:
     discovery = OidcDiscoveryDocument.from_mapping(config, _document())
     assert discovery.issuer == config.issuer
     assert discovery.id_token_signing_alg_values_supported == ("RS256",)
+    assert discovery.token_endpoint_auth_methods_supported == ("client_secret_basic",)
 
     with pytest.raises(ValueError, match="issuer does not match"):
         OidcDiscoveryDocument.from_mapping(
@@ -148,3 +149,32 @@ def test_discovery_metadata_does_not_follow_unvalidated_authorization_endpoint(
     parsed = urlsplit(url)
     assert parsed.hostname == "idp.example.net"
     assert parse_qs(parsed.query)["tenant"] == ["one"]
+
+
+def test_oidc_discovery_validates_token_endpoint_authentication_method() -> None:
+    config = _config()
+
+    discovery = OidcDiscoveryDocument.from_mapping(
+        config,
+        _document(
+            token_endpoint_auth_methods_supported=[
+                "private_key_jwt",
+                "client_secret_basic",
+            ]
+        ),
+    )
+    assert discovery.token_endpoint_auth_methods_supported == (
+        "private_key_jwt",
+        "client_secret_basic",
+    )
+
+    with pytest.raises(ValueError, match="client_secret_basic"):
+        OidcDiscoveryDocument.from_mapping(
+            config,
+            _document(
+                token_endpoint_auth_methods_supported=[
+                    "client_secret_post",
+                    "private_key_jwt",
+                ]
+            ),
+        )
