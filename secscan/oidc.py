@@ -3,13 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import hashlib
+import json
 import hmac
 import os
 from pathlib import Path
 import secrets
 import sqlite3
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit, urlunsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 @dataclass(frozen=True)
@@ -206,6 +209,103 @@ def _validate_redirect_uri(value: str) -> str:
     ):
         raise ValueError("OIDC redirect URI must be an absolute HTTPS URL")
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
+
+
+
+
+OIDC_DISCOVERY_MAX_BYTES = 256 * 1024
+OIDC_DISCOVERY_TIMEOUT_SECONDS = 5.0
+
+
+def oidc_discovery_url(issuer: str) -> str:
+    validated = normalize_oidc_issuer(issuer)
+    parsed = urlsplit(validated)
+    suffix = parsed.path if parsed.path not in {"", "/"} else ""
+    path = "/.well-known/openid-configuration" + suffix
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
+class _NoOidcRedirects(HTTPRedirectHandler):
+    def redirect_request(
+        self,
+        req: Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: object,
+        newurl: str,
+    ) -> None:
+        return None
+
+
+def _fetch_oidc_json(url: str, max_bytes: int, timeout: float) -> tuple[str, bytes]:
+    opener = build_opener(_NoOidcRedirects())
+    request = Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "secscan-oidc-discovery/1",
+        },
+        method="GET",
+    )
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            final_url = response.geturl()
+            if final_url != url:
+                raise ValueError("OIDC discovery redirects are not allowed")
+            content_type = response.headers.get("Content-Type", "")
+            length_header = response.headers.get("Content-Length")
+            if length_header:
+                try:
+                    declared_length = int(length_header)
+                except ValueError as exc:
+                    raise ValueError("OIDC discovery response has invalid Content-Length") from exc
+                if declared_length < 0 or declared_length > max_bytes:
+                    raise ValueError("OIDC discovery response exceeds size limit")
+            body = response.read(max_bytes + 1)
+    except HTTPError as exc:
+        if 300 <= exc.code < 400:
+            raise ValueError("OIDC discovery redirects are not allowed") from exc
+        raise ValueError(f"OIDC discovery request failed with HTTP {exc.code}") from exc
+    except URLError as exc:
+        raise ValueError("OIDC discovery request failed") from exc
+    if len(body) > max_bytes:
+        raise ValueError("OIDC discovery response exceeds size limit")
+    return content_type, body
+
+
+def fetch_oidc_discovery(
+    config: OidcProviderConfig,
+    *,
+    fetcher: Callable[[str, int, float], tuple[str, bytes]] | None = None,
+    allow_insecure_localhost: bool = False,
+) -> OidcDiscoveryDocument:
+    url = oidc_discovery_url(config.issuer)
+    fetch = _fetch_oidc_json if fetcher is None else fetcher
+    content_type, body = fetch(
+        url,
+        OIDC_DISCOVERY_MAX_BYTES,
+        OIDC_DISCOVERY_TIMEOUT_SECONDS,
+    )
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    if media_type != "application/json" and not (
+        media_type.startswith("application/") and media_type.endswith("+json")
+    ):
+        raise ValueError("OIDC discovery response must be JSON")
+    if len(body) > OIDC_DISCOVERY_MAX_BYTES:
+        raise ValueError("OIDC discovery response exceeds size limit")
+    try:
+        decoded = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("OIDC discovery response is not valid UTF-8 JSON") from exc
+    if not isinstance(decoded, dict):
+        raise ValueError("OIDC discovery response must be a JSON object")
+    document = {str(key): value for key, value in decoded.items()}
+    return OidcDiscoveryDocument.from_mapping(
+        config,
+        document,
+        allow_insecure_localhost=allow_insecure_localhost,
+    )
 
 
 @dataclass(frozen=True)
