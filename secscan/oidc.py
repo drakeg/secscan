@@ -363,6 +363,109 @@ def normalize_oidc_issuer(value: str, *, allow_insecure_localhost: bool = False)
 
 
 
+OIDC_TOKEN_MAX_BYTES = 256 * 1024
+OIDC_TOKEN_TIMEOUT_SECONDS = 5.0
+
+
+@dataclass(frozen=True)
+class OidcTokenResponse:
+    id_token: str
+
+
+def _exchange_oidc_form(
+    url: str,
+    form_body: bytes,
+    authorization: str,
+    max_bytes: int,
+    timeout: float,
+) -> tuple[str, bytes]:
+    opener = build_opener(_NoOidcRedirects())
+    request = Request(
+        url,
+        data=form_body,
+        headers={
+            "Accept": "application/json",
+            "Authorization": authorization,
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "secscan-oidc-token/1",
+        },
+        method="POST",
+    )
+    try:
+        with opener.open(request, timeout=timeout) as response:
+            if response.geturl() != url:
+                raise ValueError("OIDC token redirects are not allowed")
+            content_type = response.headers.get("Content-Type", "")
+            length_header = response.headers.get("Content-Length")
+            if length_header:
+                try:
+                    declared_length = int(length_header)
+                except ValueError as exc:
+                    raise ValueError("OIDC token response has invalid Content-Length") from exc
+                if declared_length < 0 or declared_length > max_bytes:
+                    raise ValueError("OIDC token response exceeds size limit")
+            body = response.read(max_bytes + 1)
+    except HTTPError as exc:
+        if 300 <= exc.code < 400:
+            raise ValueError("OIDC token redirects are not allowed") from exc
+        raise ValueError(f"OIDC token request failed with HTTP {exc.code}") from exc
+    except URLError as exc:
+        raise ValueError("OIDC token request failed") from exc
+    if len(body) > max_bytes:
+        raise ValueError("OIDC token response exceeds size limit")
+    return content_type, body
+
+
+def exchange_oidc_code(
+    config: OidcProviderConfig,
+    discovery: OidcDiscoveryDocument,
+    *,
+    code: str,
+    redirect_uri: str,
+    exchanger: Callable[[str, bytes, str, int, float], tuple[str, bytes]] | None = None,
+) -> OidcTokenResponse:
+    if discovery.issuer != config.issuer:
+        raise ValueError("OIDC discovery issuer does not match configured issuer")
+    validated_code = _validate_opaque_value(code, "authorization code")
+    validated_redirect = _validate_redirect_uri(redirect_uri)
+    form_body = urlencode(
+        {
+            "grant_type": "authorization_code",
+            "code": validated_code,
+            "redirect_uri": validated_redirect,
+        }
+    ).encode("ascii")
+    credentials = base64.b64encode(
+        f"{config.client_id}:{config.client_secret}".encode("utf-8")
+    ).decode("ascii")
+    authorization = f"Basic {credentials}"
+    exchange = _exchange_oidc_form if exchanger is None else exchanger
+    content_type, body = exchange(
+        discovery.token_endpoint,
+        form_body,
+        authorization,
+        OIDC_TOKEN_MAX_BYTES,
+        OIDC_TOKEN_TIMEOUT_SECONDS,
+    )
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    if media_type != "application/json" and not (
+        media_type.startswith("application/") and media_type.endswith("+json")
+    ):
+        raise ValueError("OIDC token response must be JSON")
+    if len(body) > OIDC_TOKEN_MAX_BYTES:
+        raise ValueError("OIDC token response exceeds size limit")
+    try:
+        decoded = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("OIDC token response is not valid UTF-8 JSON") from exc
+    if not isinstance(decoded, dict):
+        raise ValueError("OIDC token response must be a JSON object")
+    id_token = decoded.get("id_token")
+    if not isinstance(id_token, str) or not id_token or len(id_token) > 1024 * 1024:
+        raise ValueError("OIDC token response must include a valid id_token")
+    return OidcTokenResponse(id_token=id_token)
+
+
 OIDC_JWKS_MAX_BYTES = 256 * 1024
 OIDC_JWKS_TIMEOUT_SECONDS = 5.0
 _SUPPORTED_RSA_ALGORITHMS: dict[str, hashes.HashAlgorithm] = {
