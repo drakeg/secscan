@@ -18,6 +18,18 @@ from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
+from secscan.oidc import (
+    ExternalIdentityStore,
+    OidcLoginTransactionStore,
+    OidcProviderConfig,
+    _validate_redirect_uri,
+    create_oidc_session,
+    exchange_oidc_code,
+    fetch_oidc_discovery,
+    fetch_oidc_jwks,
+    verify_oidc_id_token,
+)
+
 SESSION_COOKIE = "secscan_session"
 SESSION_DAYS = 7
 _PUBLIC_PATHS = {
@@ -604,24 +616,11 @@ def mount_auth(app: FastAPI, *, database: Path, api_token: str | None = None) ->
         "on",
     }
 
-    from secscan.oidc import (
-        ExternalIdentityStore,
-        OidcLoginTransactionStore,
-        OidcProviderConfig,
-        create_oidc_session,
-        exchange_oidc_code,
-        fetch_oidc_discovery,
-        fetch_oidc_jwks,
-        verify_oidc_id_token,
-    )
-
     oidc_config = OidcProviderConfig.from_environment()
     oidc_redirect_uri = os.environ.get("SECSCAN_OIDC_REDIRECT_URI", "").strip()
     oidc_transactions = OidcLoginTransactionStore(database)
     oidc_identities = ExternalIdentityStore(database)
     if oidc_config is not None:
-        from secscan.oidc import _validate_redirect_uri
-
         if not oidc_redirect_uri:
             raise ValueError("SECSCAN_OIDC_REDIRECT_URI is required when OIDC is configured")
         _validate_redirect_uri(oidc_redirect_uri)
