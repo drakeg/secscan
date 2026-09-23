@@ -635,6 +635,38 @@ def verify_oidc_id_token(
     return VerifiedOidcIdentity(issuer=config.issuer, subject=subject)
 
 
+@dataclass(frozen=True)
+class OidcAuthenticatedSession:
+    user_id: str
+    session_token: str
+
+
+def create_oidc_session(
+    identity: VerifiedOidcIdentity,
+    *,
+    identity_store: ExternalIdentityStore,
+    auth_store: object,
+) -> OidcAuthenticatedSession:
+    linked = identity_store.resolve(identity.issuer, identity.subject)
+    if linked is None:
+        raise ValueError("OIDC identity is not linked to a local account")
+
+    list_users = getattr(auth_store, "list_users", None)
+    create_session = getattr(auth_store, "create_session", None)
+    if not callable(list_users) or not callable(create_session):
+        raise TypeError("auth store does not provide the required session interface")
+
+    user = next((item for item in list_users() if item.id == linked.user_id), None)
+    if user is None or not user.enabled:
+        raise ValueError("OIDC local account is unavailable")
+
+    try:
+        session_token = create_session(user.id)
+    except ValueError as exc:
+        raise ValueError("OIDC local account is unavailable") from exc
+    return OidcAuthenticatedSession(user_id=user.id, session_token=session_token)
+
+
 def _validate_subject(subject: str) -> str:
     if not subject:
         raise ValueError("OIDC subject is required")
