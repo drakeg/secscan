@@ -68,3 +68,7 @@ The first Sprint 74 increment adds strict optional OIDC provider configuration a
 ## Login transaction state
 
 OIDC browser login state now has a dedicated persistence boundary before any live provider callback is enabled. Each login attempt receives cryptographically random state and nonce values, while only SHA-256 digests are persisted. Transactions expire after 10 minutes, state is single-use, expired state is burned even when rejected, and nonce verification uses constant-time digest comparison. Malformed state/nonce input fails closed. This increment does not yet perform discovery, redirects, token exchange, or ID-token validation.
+
+## Discovery and authorization request validation
+
+Sprint 74 now validates provider discovery metadata before constructing any browser authorization request. The discovery issuer must exactly match the configured issuer, authorization/token/JWKS endpoints must use HTTPS outside explicit localhost fixtures, authorization-code flow must be advertised, and at least one signed ID-token algorithm must remain after excluding `none`. Authorization URLs are then built only from this validated metadata with the configured client ID, an HTTPS redirect URI, `response_type=code`, `scope=openid`, and the one-time state/nonce pair. Client secrets are never included in the browser URL. Network retrieval, token exchange, and callback authentication remain separate follow-up boundaries.

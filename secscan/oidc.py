@@ -8,8 +8,8 @@ import os
 from pathlib import Path
 import secrets
 import sqlite3
-from collections.abc import Mapping
-from urllib.parse import urlsplit
+from collections.abc import Mapping, Sequence
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 
 @dataclass(frozen=True)
@@ -65,6 +65,147 @@ class OidcProviderConfig:
             "issuer": self.issuer,
             "client_id": self.client_id,
         }
+
+
+
+
+@dataclass(frozen=True)
+class OidcDiscoveryDocument:
+    issuer: str
+    authorization_endpoint: str
+    token_endpoint: str
+    jwks_uri: str
+    id_token_signing_alg_values_supported: tuple[str, ...]
+
+    @classmethod
+    def from_mapping(
+        cls,
+        config: OidcProviderConfig,
+        document: Mapping[str, object],
+        *,
+        allow_insecure_localhost: bool = False,
+    ) -> OidcDiscoveryDocument:
+        issuer = _required_string(document, "issuer")
+        if issuer != config.issuer:
+            raise ValueError("OIDC discovery issuer does not match configured issuer")
+
+        authorization_endpoint = _validate_oidc_endpoint(
+            _required_string(document, "authorization_endpoint"),
+            "authorization_endpoint",
+            allow_insecure_localhost=allow_insecure_localhost,
+        )
+        token_endpoint = _validate_oidc_endpoint(
+            _required_string(document, "token_endpoint"),
+            "token_endpoint",
+            allow_insecure_localhost=allow_insecure_localhost,
+        )
+        jwks_uri = _validate_oidc_endpoint(
+            _required_string(document, "jwks_uri"),
+            "jwks_uri",
+            allow_insecure_localhost=allow_insecure_localhost,
+        )
+
+        response_types = _required_string_sequence(document, "response_types_supported")
+        if "code" not in response_types:
+            raise ValueError("OIDC provider must support authorization code flow")
+
+        algorithms = _required_string_sequence(
+            document,
+            "id_token_signing_alg_values_supported",
+        )
+        if "none" in algorithms:
+            algorithms = tuple(value for value in algorithms if value != "none")
+        if not algorithms:
+            raise ValueError("OIDC provider must advertise a signed ID-token algorithm")
+
+        return cls(
+            issuer=issuer,
+            authorization_endpoint=authorization_endpoint,
+            token_endpoint=token_endpoint,
+            jwks_uri=jwks_uri,
+            id_token_signing_alg_values_supported=algorithms,
+        )
+
+    def authorization_url(
+        self,
+        config: OidcProviderConfig,
+        transaction: OidcLoginTransaction,
+        redirect_uri: str,
+    ) -> str:
+        if self.issuer != config.issuer:
+            raise ValueError("OIDC discovery issuer does not match configured issuer")
+        validated_redirect = _validate_redirect_uri(redirect_uri)
+        query = urlencode(
+            {
+                "client_id": config.client_id,
+                "redirect_uri": validated_redirect,
+                "response_type": "code",
+                "scope": "openid",
+                "state": transaction.state,
+                "nonce": transaction.nonce,
+            }
+        )
+        separator = "&" if urlsplit(self.authorization_endpoint).query else "?"
+        return f"{self.authorization_endpoint}{separator}{query}"
+
+
+def _required_string(document: Mapping[str, object], name: str) -> str:
+    value = document.get(name)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"OIDC discovery field {name} is required")
+    return value
+
+
+def _required_string_sequence(document: Mapping[str, object], name: str) -> tuple[str, ...]:
+    value = document.get(name)
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise ValueError(f"OIDC discovery field {name} is required")
+    items = tuple(value)
+    if not items or any(not isinstance(item, str) or not item for item in items):
+        raise ValueError(f"OIDC discovery field {name} is required")
+    return tuple(item for item in items if isinstance(item, str))
+
+
+def _validate_oidc_endpoint(
+    value: str,
+    field: str,
+    *,
+    allow_insecure_localhost: bool,
+) -> str:
+    if len(value) > 4096:
+        raise ValueError(f"OIDC discovery field {field} is invalid")
+    parsed = urlsplit(value)
+    if not parsed.hostname or parsed.username is not None or parsed.password is not None:
+        raise ValueError(f"OIDC discovery field {field} is invalid")
+    if parsed.fragment:
+        raise ValueError(f"OIDC discovery field {field} is invalid")
+    local_http_allowed = (
+        allow_insecure_localhost
+        and parsed.scheme == "http"
+        and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+    )
+    if parsed.scheme != "https" and not local_http_allowed:
+        raise ValueError(f"OIDC discovery field {field} must use HTTPS")
+    try:
+        parsed.port
+    except ValueError as exc:
+        raise ValueError(f"OIDC discovery field {field} is invalid") from exc
+    return value
+
+
+def _validate_redirect_uri(value: str) -> str:
+    if not value or len(value) > 4096:
+        raise ValueError("OIDC redirect URI is invalid")
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise ValueError("OIDC redirect URI must be an absolute HTTPS URL")
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, parsed.query, ""))
 
 
 @dataclass(frozen=True)
