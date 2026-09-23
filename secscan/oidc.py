@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+import base64
 import hashlib
 import json
 import hmac
@@ -9,6 +10,10 @@ import os
 from pathlib import Path
 import secrets
 import sqlite3
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from collections.abc import Callable, Mapping, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit, urlunsplit
@@ -354,6 +359,177 @@ def normalize_oidc_issuer(value: str, *, allow_insecure_localhost: bool = False)
         raise ValueError("OIDC issuer port is invalid")
 
     return issuer
+
+
+
+
+OIDC_JWKS_MAX_BYTES = 256 * 1024
+OIDC_JWKS_TIMEOUT_SECONDS = 5.0
+_SUPPORTED_RSA_ALGORITHMS: dict[str, hashes.HashAlgorithm] = {
+    "RS256": hashes.SHA256(),
+    "RS384": hashes.SHA384(),
+    "RS512": hashes.SHA512(),
+}
+
+
+@dataclass(frozen=True)
+class VerifiedOidcIdentity:
+    issuer: str
+    subject: str
+
+
+def _decode_base64url(value: str, label: str) -> bytes:
+    if not value:
+        raise ValueError(f"OIDC {label} is invalid")
+    padding_length = (-len(value)) % 4
+    try:
+        return base64.urlsafe_b64decode(value + ("=" * padding_length))
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"OIDC {label} is invalid") from exc
+
+
+def _decode_json_segment(value: str, label: str) -> dict[str, object]:
+    try:
+        decoded = json.loads(_decode_base64url(value, label).decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"OIDC {label} is not valid JSON") from exc
+    if not isinstance(decoded, dict):
+        raise ValueError(f"OIDC {label} must be a JSON object")
+    return {str(key): item for key, item in decoded.items()}
+
+
+def _jwk_rsa_public_key(jwk: Mapping[str, object]) -> rsa.RSAPublicKey:
+    if jwk.get("kty") != "RSA":
+        raise ValueError("OIDC JWKS key type is unsupported")
+    n_value = jwk.get("n")
+    e_value = jwk.get("e")
+    if not isinstance(n_value, str) or not isinstance(e_value, str):
+        raise ValueError("OIDC JWKS RSA key is invalid")
+    modulus = int.from_bytes(_decode_base64url(n_value, "JWKS modulus"), "big")
+    exponent = int.from_bytes(_decode_base64url(e_value, "JWKS exponent"), "big")
+    if modulus.bit_length() < 2048 or exponent < 3 or exponent % 2 == 0:
+        raise ValueError("OIDC JWKS RSA key is invalid")
+    try:
+        return rsa.RSAPublicNumbers(exponent, modulus).public_key()
+    except ValueError as exc:
+        raise ValueError("OIDC JWKS RSA key is invalid") from exc
+
+
+def fetch_oidc_jwks(
+    discovery: OidcDiscoveryDocument,
+    *,
+    fetcher: Callable[[str, int, float], tuple[str, bytes]] | None = None,
+) -> dict[str, object]:
+    fetch = _fetch_oidc_json if fetcher is None else fetcher
+    content_type, body = fetch(
+        discovery.jwks_uri,
+        OIDC_JWKS_MAX_BYTES,
+        OIDC_JWKS_TIMEOUT_SECONDS,
+    )
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    if media_type != "application/json" and not (
+        media_type.startswith("application/") and media_type.endswith("+json")
+    ):
+        raise ValueError("OIDC JWKS response must be JSON")
+    if len(body) > OIDC_JWKS_MAX_BYTES:
+        raise ValueError("OIDC JWKS response exceeds size limit")
+    try:
+        decoded = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("OIDC JWKS response is not valid UTF-8 JSON") from exc
+    if not isinstance(decoded, dict):
+        raise ValueError("OIDC JWKS response must be a JSON object")
+    keys = decoded.get("keys")
+    if not isinstance(keys, list) or not keys:
+        raise ValueError("OIDC JWKS response must contain keys")
+    return {str(key): value for key, value in decoded.items()}
+
+
+def verify_oidc_id_token(
+    token: str,
+    *,
+    config: OidcProviderConfig,
+    discovery: OidcDiscoveryDocument,
+    jwks: Mapping[str, object],
+    transaction: ConsumedOidcLoginTransaction,
+    now: datetime | None = None,
+) -> VerifiedOidcIdentity:
+    parts = token.split(".")
+    if len(parts) != 3:
+        raise ValueError("OIDC ID token is malformed")
+    encoded_header, encoded_payload, encoded_signature = parts
+    header = _decode_json_segment(encoded_header, "ID-token header")
+    payload = _decode_json_segment(encoded_payload, "ID-token payload")
+
+    algorithm = header.get("alg")
+    key_id = header.get("kid")
+    if not isinstance(algorithm, str) or algorithm not in _SUPPORTED_RSA_ALGORITHMS:
+        raise ValueError("OIDC ID-token algorithm is unsupported")
+    if algorithm not in discovery.id_token_signing_alg_values_supported:
+        raise ValueError("OIDC ID-token algorithm was not advertised by provider")
+    if not isinstance(key_id, str) or not key_id:
+        raise ValueError("OIDC ID-token key identifier is required")
+
+    keys = jwks.get("keys")
+    if not isinstance(keys, list):
+        raise ValueError("OIDC JWKS response must contain keys")
+    matches = [
+        key
+        for key in keys
+        if isinstance(key, dict)
+        and key.get("kid") == key_id
+        and (key.get("use") in {None, "sig"})
+        and (key.get("alg") in {None, algorithm})
+    ]
+    if len(matches) != 1:
+        raise ValueError("OIDC ID-token signing key was not found")
+    public_key = _jwk_rsa_public_key(matches[0])
+
+    signature = _decode_base64url(encoded_signature, "ID-token signature")
+    signing_input = f"{encoded_header}.{encoded_payload}".encode("ascii")
+    try:
+        public_key.verify(
+            signature,
+            signing_input,
+            padding.PKCS1v15(),
+            _SUPPORTED_RSA_ALGORITHMS[algorithm],
+        )
+    except InvalidSignature as exc:
+        raise ValueError("OIDC ID-token signature is invalid") from exc
+
+    issuer = payload.get("iss")
+    subject = payload.get("sub")
+    audience = payload.get("aud")
+    expires_at = payload.get("exp")
+    nonce = payload.get("nonce")
+
+    if issuer != config.issuer or issuer != discovery.issuer:
+        raise ValueError("OIDC ID-token issuer is invalid")
+    if not isinstance(subject, str):
+        raise ValueError("OIDC ID-token subject is invalid")
+    subject = _validate_subject(subject)
+    if isinstance(audience, str):
+        audiences = {audience}
+    elif isinstance(audience, list) and all(isinstance(item, str) for item in audience):
+        audiences = set(audience)
+    else:
+        raise ValueError("OIDC ID-token audience is invalid")
+    if config.client_id not in audiences:
+        raise ValueError("OIDC ID-token audience is invalid")
+    if len(audiences) > 1:
+        authorized_party = payload.get("azp")
+        if authorized_party != config.client_id:
+            raise ValueError("OIDC ID-token authorized party is invalid")
+
+    current = _utc(now)
+    if isinstance(expires_at, bool) or not isinstance(expires_at, (int, float)):
+        raise ValueError("OIDC ID-token expiry is invalid")
+    if datetime.fromtimestamp(float(expires_at), tz=UTC) <= current:
+        raise ValueError("OIDC ID token is expired")
+    if not isinstance(nonce, str) or not transaction.matches_nonce(nonce):
+        raise ValueError("OIDC ID-token nonce is invalid")
+
+    return VerifiedOidcIdentity(issuer=config.issuer, subject=subject)
 
 
 def _validate_subject(subject: str) -> str:
