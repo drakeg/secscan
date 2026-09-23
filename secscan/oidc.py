@@ -129,6 +129,7 @@ class OidcDiscoveryDocument:
             raise ValueError("OIDC provider must advertise a supported ID-token algorithm")
 
         raw_auth_methods = document.get("token_endpoint_auth_methods_supported")
+        auth_methods: tuple[str, ...]
         if raw_auth_methods is None:
             auth_methods = ("client_secret_basic",)
         else:
