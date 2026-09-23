@@ -78,3 +78,7 @@ The first implementation increment adds a standalone SQLite-backed schedule stor
 ## Increment 2 — authorization boundary
 
 Schedule mutation now has an explicit authorization layer before API or scheduler integration. Tenant owners may manage tenant-wide schedules and schedules for enabled projects in their active tenant. Non-owner members cannot manage tenant-wide schedules; project-scoped management requires current project operator access, so viewers and revoked operators fail closed. Schedule access also checks the schedule's tenant before project authorization, preventing cross-tenant schedule probing. This layer deliberately reuses the existing tenant membership and project ACL stores rather than creating parallel authorization semantics.
+
+## Increment 3 — supported asset-to-job adapter
+
+Scheduled execution can now reconstruct a fresh validated `ScanSubmission` only for persistent image and remote-repository assets whose latest job remains in the same tenant and whose project association exactly matches the schedule. The current asset inventory does not persist policy, baseline, explicit network/web authorization acknowledgements, or a durable safe local-path profile, so filesystem, SBOM, network, network-range, and web-DAST assets deliberately remain unschedulable instead of guessing or weakening their original validation. Broader scanner support requires a future durable scan-profile model.
