@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from secscan.assets import AssetStore
 from secscan.auth import AuthStore, User
 from secscan.project_access import ProjectAccessStore
 from secscan.projects import ProjectStore
@@ -288,7 +289,7 @@ def test_asset_adapter_reconstructs_safe_image_submission(tmp_path: Path) -> Non
         scanner="image",
         target="python:3.14",
     )
-    assets = __import__("secscan.assets", fromlist=["AssetStore"]).AssetStore(database)
+    assets = AssetStore(database)
     asset = assets.list(tenant_id="tenant-a")[0]
     schedule = ReassessmentScheduleStore(database).create(
         tenant_id="tenant-a",
@@ -319,7 +320,7 @@ def test_asset_adapter_rejects_scanners_without_persisted_safe_profile(
         scanner=scanner,
         target="example",
     )
-    assets = __import__("secscan.assets", fromlist=["AssetStore"]).AssetStore(database)
+    assets = AssetStore(database)
     asset = assets.list(tenant_id="tenant-a")[0]
     schedule = ReassessmentScheduleStore(database).create(
         tenant_id="tenant-a",
@@ -351,7 +352,7 @@ def test_asset_adapter_requires_exact_project_binding(tmp_path: Path) -> None:
         tenant_id=owner.tenant_id,
         project_id=project.id,
     )
-    assets = __import__("secscan.assets", fromlist=["AssetStore"]).AssetStore(database)
+    assets = AssetStore(database)
     asset = assets.list(tenant_id=owner.tenant_id)[0]
     schedule = ReassessmentScheduleStore(database).create(
         tenant_id=owner.tenant_id,
@@ -374,7 +375,7 @@ def test_asset_adapter_rejects_cross_tenant_asset_reference(tmp_path: Path) -> N
         scanner="image",
         target="python:3.14",
     )
-    assets = __import__("secscan.assets", fromlist=["AssetStore"]).AssetStore(database)
+    assets = AssetStore(database)
     asset = assets.list(tenant_id="tenant-a")[0]
     schedule = ReassessmentScheduleStore(database).create(
         tenant_id="tenant-b",
