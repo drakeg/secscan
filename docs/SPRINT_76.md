@@ -52,3 +52,7 @@ Harden reassessment persistence and execution boundaries identified during Sprin
 3. execution-time authorization
 4. project-aware enqueue ordering
 5. acceptance/security review and roadmap closeout
+
+## Increment 1 — persistence migration and claim integrity
+
+Reassessment startup now detects pre-claim schedule tables and adds the claim token/expiry columns idempotently before creating claim-dependent indexes. Existing schedule rows are preserved. Attempt completion now distinguishes an unclaimed schedule from an actively claimed schedule: passing no token can complete only an unclaimed row, while an active claim requires the exact matching token. Regression coverage constructs the older schema directly and verifies in-place upgrade plus failed tokenless completion of an active claim.
