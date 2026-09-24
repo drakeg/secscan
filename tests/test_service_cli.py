@@ -195,3 +195,53 @@ def test_service_cli_public_landing_and_protected_workspace_precede_static_catch
     workspace = client.get("/app", follow_redirects=False)
     assert workspace.status_code == 303
     assert workspace.headers["location"] == "/login"
+
+
+def test_reassessment_scheduler_is_disabled_by_default(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(service_cli.uvicorn, "run", lambda app, **_kwargs: captured.update(app=app))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["secscan-service", "--job-root", str(tmp_path / "jobs")],
+    )
+    monkeypatch.delenv("SECSCAN_REASSESSMENT_SCHEDULER", raising=False)
+
+    service_cli.main()
+
+    app = captured["app"]
+    assert isinstance(app, FastAPI)
+    assert not hasattr(app.state, "reassessment_scheduler")
+
+
+def test_reassessment_scheduler_can_be_explicitly_enabled(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[str] = []
+
+    class StubScheduler:
+        def __init__(self, _executor: object) -> None:
+            calls.append("init")
+
+        def start(self) -> None:
+            calls.append("start")
+
+        def stop(self) -> None:
+            calls.append("stop")
+
+    monkeypatch.setattr("secscan.reassessment.ReassessmentScheduler", StubScheduler)
+    monkeypatch.setattr(service_cli.uvicorn, "run", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "secscan-service",
+            "--job-root",
+            str(tmp_path / "jobs"),
+            "--reassessment-scheduler",
+        ],
+    )
+
+    service_cli.main()
+
+    assert calls[:2] == ["init", "start"]

@@ -21,6 +21,12 @@ def main() -> None:
     )
     parser.add_argument("--workers", type=int, default=2, help="maximum concurrent scan jobs")
     parser.add_argument(
+        "--reassessment-scheduler",
+        action="store_true",
+        default=os.environ.get("SECSCAN_REASSESSMENT_SCHEDULER", "").lower() == "true",
+        help="enable the local recurring reassessment scheduler",
+    )
+    parser.add_argument(
         "--allowed-input-root",
         action="append",
         type=Path,
@@ -41,7 +47,11 @@ def main() -> None:
     from secscan.projects import mount_projects
     from secscan.public_navigation import PublicSessionNavigationMiddleware
     from secscan.public_site import mount_public_site
-    from secscan.reassessment import mount_reassessment_schedules
+    from secscan.reassessment import (
+        ReassessmentExecutor,
+        ReassessmentScheduler,
+        mount_reassessment_schedules,
+    )
     from secscan.service import create_app
     from secscan.ssh_host_trust_web import mount_ssh_host_trust
     from secscan.tenant_api_keys import mount_tenant_api_keys
@@ -72,6 +82,19 @@ def main() -> None:
         mount_ssh_host_trust(app, database=database)
         mount_assets(app, database=database)
         mount_reassessment_schedules(app, database=database)
+        if args.reassessment_scheduler:
+            get_manager = getattr(app.state, "secscan_get_manager", None)
+            if not callable(get_manager):
+                raise RuntimeError("secscan job manager factory is unavailable")
+            scheduler = ReassessmentScheduler(
+                ReassessmentExecutor(database, get_manager()),
+            )
+            scheduler.start()
+            app.state.reassessment_scheduler = scheduler
+
+            @app.on_event("shutdown")
+            def stop_reassessment_scheduler() -> None:
+                scheduler.stop()
         mount_network_range_submission(app)
         mount_windows_host_submission(
             app,
