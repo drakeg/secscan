@@ -433,6 +433,19 @@ class AuthStore:
                 (tenant_id, member_user_id),
             )
 
+    def enabled_user_in_tenant(self, user_id: str, tenant_id: str) -> User | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT u.*
+                   FROM auth_users u
+                   JOIN auth_tenant_memberships m ON m.user_id = u.id
+                   WHERE u.id = ? AND m.tenant_id = ? AND u.enabled = 1""",
+                (user_id, tenant_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return _user(row, tenant_id=tenant_id)
+
     def membership_role(self, user_id: str, tenant_id: str) -> TenantRole | None:
         with self._connect() as connection:
             row = connection.execute(
