@@ -52,6 +52,7 @@ def test_service_cli_routes_api_token_through_outer_auth_middleware(monkeypatch:
     mount_project_job_kwargs: dict[str, object] = {}
     mount_trust_kwargs: dict[str, object] = {}
     mount_assets_kwargs: dict[str, object] = {}
+    mount_reassessment_kwargs: dict[str, object] = {}
     mount_windows_kwargs: dict[str, object] = {}
     mount_order: list[str] = []
     app = FastAPI()
@@ -105,6 +106,12 @@ def test_service_cli_routes_api_token_through_outer_auth_middleware(monkeypatch:
         lambda _app, **kwargs: mount_order.append("assets") or mount_assets_kwargs.update(kwargs) or _app,
     )
     monkeypatch.setattr(
+        "secscan.reassessment.mount_reassessment_schedules",
+        lambda _app, **kwargs: mount_order.append("reassessment")
+        or mount_reassessment_kwargs.update(kwargs)
+        or _app,
+    )
+    monkeypatch.setattr(
         "secscan.windows_host_web.mount_windows_host_submission",
         lambda _app, **kwargs: mount_order.append("windows") or mount_windows_kwargs.update(kwargs) or _app,
     )
@@ -129,6 +136,7 @@ def test_service_cli_routes_api_token_through_outer_auth_middleware(monkeypatch:
     assert mount_project_job_kwargs["database"] == Path("/reports/jobs/jobs.db")
     assert mount_trust_kwargs["database"] == Path("/reports/jobs/jobs.db")
     assert mount_assets_kwargs["database"] == Path("/reports/jobs/jobs.db")
+    assert mount_reassessment_kwargs["database"] == Path("/reports/jobs/jobs.db")
     assert mount_windows_kwargs["database"] == Path("/reports/jobs/jobs.db")
     assert mount_windows_kwargs["job_root"] == Path("/reports/jobs")
     assert mount_order == [
@@ -141,6 +149,7 @@ def test_service_cli_routes_api_token_through_outer_auth_middleware(monkeypatch:
         "project-jobs",
         "trust",
         "assets",
+        "reassessment",
         "windows",
         "web",
     ]
