@@ -18,7 +18,6 @@ from secscan.project_access import ProjectAccessStore
 from secscan.project_jobs import ProjectJobStore
 from secscan.service import JobManager, JobRecord, JobStore, ScanSubmission
 from secscan.scanners.repository import is_remote_repository_url, validate_remote_repository_url
-from secscan.scanners.repository import is_remote_repository_url, validate_remote_repository_url
 
 
 CADENCE_INTERVALS = {
