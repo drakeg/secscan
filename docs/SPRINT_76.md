@@ -56,3 +56,7 @@ Harden reassessment persistence and execution boundaries identified during Sprin
 ## Increment 1 — persistence migration and claim integrity
 
 Reassessment startup now detects pre-claim schedule tables and adds the claim token/expiry columns idempotently before creating claim-dependent indexes. Existing schedule rows are preserved. Attempt completion now distinguishes an unclaimed schedule from an actively claimed schedule: passing no token can complete only an unclaimed row, while an active claim requires the exact matching token. Regression coverage constructs the older schema directly and verifies in-place upgrade plus failed tokenless completion of an active claim.
+
+## Increment 2 — remote repository target hardening
+
+Repository reassessment now requires the persisted target to be a remote repository URL and reuses the repository scanner's existing HTTPS, credential-free URL validator before reconstructing a scheduled submission. Local repository paths are rejected even if they originated from a valid manual repository scan. This prevents recurring execution from turning historical local-path metadata into unattended filesystem access while preserving validated remote Git repository reassessment.
