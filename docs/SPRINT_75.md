@@ -100,3 +100,9 @@ The one-shot executor now has a local scheduler primitive with an injected UTC c
 Authenticated tenant users now have lifecycle endpoints for reassessment schedules. Creation reuses the owner/project-operator authorization boundary and immediately validates the referenced asset through the fail-closed adapter; listing filters schedules through current authorization; pause, resume, and delete re-evaluate authorization at mutation time. Pausing clears any outstanding execution claim. Persistence now also uses partial unique indexes so tenant-wide schedules with a NULL project cannot be duplicated under SQLite's NULL uniqueness semantics.
 
 The local scheduler still does not auto-start in this increment. Explicit operator configuration for enabling the recurring loop remains the final service-wiring step.
+
+## Increment 8 — explicit service activation
+
+Recurring reassessment execution is now available only through explicit operator opt-in. The service accepts `--reassessment-scheduler` or `SECSCAN_REASSESSMENT_SCHEDULER=true`; the default remains disabled. When enabled, the scheduler reuses the service's existing lazy `JobManager`, starts after API composition, and is stopped during application shutdown. This avoids a second job executor and preserves the configured worker bound, scanner validation, tenant persistence, and allowed-input-root behavior.
+
+This completes the Sprint 75 execution path without adding an external scheduler, hosted queue, or recurring infrastructure cost.
