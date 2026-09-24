@@ -60,3 +60,7 @@ Reassessment startup now detects pre-claim schedule tables and adds the claim to
 ## Increment 2 — remote repository target hardening
 
 Repository reassessment now requires the persisted target to be a remote repository URL and reuses the repository scanner's existing HTTPS, credential-free URL validator before reconstructing a scheduled submission. Local repository paths are rejected even if they originated from a valid manual repository scan. This prevents recurring execution from turning historical local-path metadata into unattended filesystem access while preserving validated remote Git repository reassessment.
+
+## Increment 3 — execution-time authorization
+
+Scheduled execution now resolves the schedule creator from current persisted auth state immediately after claiming a due schedule. The creator must still be an enabled member of the schedule tenant, and the existing reassessment authorizer rechecks current tenant-owner or project-operator authority before any submission reaches the JobManager. Revoked or disabled authority records a failed bounded attempt and advances the schedule without enqueueing a job. This prevents historical schedule creation authority from becoming permanent execution authority.
