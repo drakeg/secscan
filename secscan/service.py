@@ -542,6 +542,7 @@ def create_app(
             return manager
 
     app = FastAPI(title="secscan API", version="1.0.0")
+    app.state.secscan_get_manager = get_manager
 
     @app.middleware("http")
     async def authenticate(
