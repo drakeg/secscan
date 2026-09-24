@@ -2,31 +2,30 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 74
+## Completed through Sprint 75
 
-Sprints 0–74 are complete, including the capabilities previously summarized here plus tenant-isolated SSH credentials and SSH host-key trust, bounded ECS/EKS workload association, an opt-in tenant-bound Stripe subscription lifecycle, bounded GitHub Issues export, offline Ed25519-signed policy/governance bundles, authenticated network-range and Windows host workflows, multi-user tenant membership with session-scoped tenant switching, owner-controlled expiring tenant invitations with authenticated single-use acceptance, tenant-owned projects with validated optional scan-job association and project-specific viewer/operator access control, tenant-scoped API keys, tenant-owned reusable SSH credentials with owner administration, safe legacy migration, disabled-state enforcement, API-key use, and project ACL enforcement, and an optional provider-neutral OIDC login flow with bounded discovery/JWKS/token exchange, replay-safe state/nonce validation, cryptographic ID-token verification, explicit issuer/subject linking, and reuse of the existing local session and tenant model.
+Sprints 0–75 are complete, including the capabilities previously summarized here plus tenant-isolated SSH credentials and SSH host-key trust, bounded ECS/EKS workload association, an opt-in tenant-bound Stripe subscription lifecycle, bounded GitHub Issues export, offline Ed25519-signed policy/governance bundles, authenticated network-range and Windows host workflows, multi-user tenant membership with session-scoped tenant switching, owner-controlled expiring tenant invitations with authenticated single-use acceptance, tenant-owned projects with validated optional scan-job association and project-specific viewer/operator access control, tenant-scoped API keys, tenant-owned reusable SSH credentials with owner administration, safe legacy migration, disabled-state enforcement, API-key use, and project ACL enforcement, and an optional provider-neutral OIDC login flow with bounded discovery/JWKS/token exchange, replay-safe state/nonce validation, cryptographic ID-token verification, explicit issuer/subject linking, and reuse of the existing local session and tenant model.
 
 ## Current sprint
 
-### Sprint 75 — Reassessment Scheduling Foundation
+### Sprint 76 — Security Boundary Hardening
 
-Add local, bounded reassessment scheduling for persistent assets without introducing a hosted scheduler, paid queue, or autonomous unbounded scanning. Scheduling remains tenant/project scoped, reuses the existing job and authorization boundaries, and requires an explicitly supported persistent asset/scan profile rather than arbitrary commands or targets.
+Close security/correctness gaps discovered during the Sprint 75 review before expanding feature scope. This sprint prioritizes upgrade-safe persistence, strict reassessment target validation, execution-time authorization, and claim integrity.
 
 Initial planning priorities:
-- persist an opt-in reassessment schedule owned by exactly one tenant and, when applicable, one project
-- support bounded daily/weekly cadence rather than arbitrary cron expressions
-- require an existing supported asset and validated scan configuration
-- expose next-run/last-run/status metadata without leaking credentials
-- enqueue through the existing job path so tenant/project ACLs and scanner validation still apply
-- prevent overlapping duplicate runs for one schedule
-- allow owner/operator pause/resume while preserving audit metadata
-- keep local/container operation at $0 with no external scheduler or recurring service
+- migrate existing reassessment databases safely when newer claim columns/indexes are absent
+- require scheduled repository reassessments to use validated remote repository URLs rather than local repository paths
+- require matching claim tokens when completing an actively claimed schedule
+- re-evaluate the schedule creator/current operator authorization at execution time so revoked or disabled access fails closed
+- review project-job association ordering so scheduled jobs cannot begin before required project association is safely established
+- add restart, migration, revocation, and concurrency regression coverage
+- keep all behavior local/container-first with no new paid service or recurring cost
 
-Before implementation, define the exact supported asset types, authorization matrix, misfire/restart behavior, concurrency rules, and deterministic local test clock.
+Before implementation, define compatibility behavior for existing databases and the exact execution-time authorization semantics.
 
 ## Candidate remaining sprints
 
-No later sprint number is committed yet. After Sprint 75 is accepted, reprioritize the remaining backlog before assigning Sprint 76.
+No later sprint number is committed yet. After Sprint 76 is accepted, reprioritize the remaining backlog before assigning Sprint 77.
 
 ## Backlog after the numbered candidate sequence
 
