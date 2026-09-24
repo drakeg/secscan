@@ -122,3 +122,17 @@ Work is done only when:
 - required CI and CodeQL checks pass
 - no unauthorized recurring cost or external dependency was introduced
 - deferred work is recorded rather than implied complete
+
+
+## Pre-PR validation gate
+
+Before opening or updating a pull request, contributors and automation should run the repository preflight locally whenever the environment permits:
+
+```bash
+python -m pip install -e '.[dev]'
+bash scripts/preflight.sh --quick
+```
+
+The quick gate runs Ruff, mypy, and the complete pytest suite—the same first-line Python checks used by CI—without rebuilding/reinstalling the wheel. Before merge/release, `bash scripts/preflight.sh` remains the full package-integrity gate, and `bash scripts/preflight.sh --container` adds the local container security check.
+
+When repository-writing automation cannot execute the checkout locally, it must still inspect changed test structure and the existing preflight/CI contract before opening the PR, and CI failures must be treated as regressions in the development process rather than normal validation.

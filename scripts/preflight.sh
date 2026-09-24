@@ -2,18 +2,27 @@
 set -euo pipefail
 
 run_container=false
-if [[ "${1:-}" == "--container" ]]; then
-  run_container=true
-elif [[ $# -gt 0 ]]; then
-  echo "usage: scripts/preflight.sh [--container]" >&2
-  exit 2
-fi
+quick=false
+for argument in "$@"; do
+  case "$argument" in
+    --container) run_container=true ;;
+    --quick) quick=true ;;
+    *)
+      echo "usage: scripts/preflight.sh [--quick] [--container]" >&2
+      exit 2
+      ;;
+  esac
+done
 
 rm -rf dist /tmp/secscan-wheel-test
 
 ruff check .
 mypy
 pytest
+if [[ "$quick" == true ]]; then
+  echo "secscan quick preflight passed"
+  exit 0
+fi
 python -m build --wheel
 python scripts/verify_wheel.py dist/secscan-*.whl
 

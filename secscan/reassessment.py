@@ -119,6 +119,7 @@ class ReassessmentExecutor:
         self.schedules = ReassessmentScheduleStore(database)
         self.assets = ReassessmentAssetAdapter(database)
         self.project_jobs = ProjectJobStore(database)
+        self.authorizer = ReassessmentScheduleAuthorizer(database)
         self.manager = manager
 
     def run_one(self, *, now: datetime) -> JobRecord | None:
@@ -129,6 +130,13 @@ class ReassessmentExecutor:
         if token is None:
             raise RuntimeError("claimed reassessment schedule is missing its claim token")
         try:
+            actor = self.authorizer.auth.enabled_user_in_tenant(
+                schedule.created_by,
+                schedule.tenant_id,
+            )
+            if actor is None:
+                raise PermissionError("schedule creator is no longer an enabled tenant member")
+            self.authorizer.require_manage(actor, project_id=schedule.project_id)
             submission = self.assets.submission_for(schedule)
             job = self.manager.submit(submission, tenant_id=schedule.tenant_id)
             if schedule.project_id is not None:
@@ -137,7 +145,7 @@ class ReassessmentExecutor:
                     tenant_id=schedule.tenant_id,
                     project_id=schedule.project_id,
                 )
-        except (OSError, RuntimeError, ValueError):
+        except (OSError, PermissionError, RuntimeError, ValueError):
             self.schedules.record_attempt(
                 schedule.id,
                 tenant_id=schedule.tenant_id,
