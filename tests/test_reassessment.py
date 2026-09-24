@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+import sqlite3
 
 import pytest
 
@@ -700,3 +701,66 @@ def test_schedule_delete_is_tenant_scoped(tmp_path: Path) -> None:
     store.delete(schedule.id, tenant_id="tenant-a")
     with pytest.raises(ValueError, match="not found"):
         store.get(schedule.id, tenant_id="tenant-a")
+
+
+def test_migrate_adds_claim_columns_to_preclaim_database(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """
+            CREATE TABLE reassessment_schedules (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL,
+                asset_id TEXT NOT NULL,
+                project_id TEXT,
+                cadence TEXT NOT NULL,
+                enabled INTEGER NOT NULL DEFAULT 1,
+                next_run_at TEXT NOT NULL,
+                last_attempted_at TEXT,
+                last_enqueued_at TEXT,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(tenant_id, asset_id, project_id)
+            )
+            """
+        )
+
+    ReassessmentScheduleStore(database)
+
+    with sqlite3.connect(database) as connection:
+        columns = {
+            str(row[1])
+            for row in connection.execute(
+                "PRAGMA table_info(reassessment_schedules)"
+            ).fetchall()
+        }
+    assert {"claim_token", "claim_expires_at"} <= columns
+
+
+def test_record_attempt_without_token_cannot_complete_active_claim(tmp_path: Path) -> None:
+    store = ReassessmentScheduleStore(tmp_path / "jobs.db")
+    schedule = store.create(
+        tenant_id="tenant-a",
+        asset_id="asset-1",
+        created_by="user-a",
+        cadence="daily",
+        now=NOW,
+    )
+    due_time = NOW + timedelta(days=1)
+    claimed = store.claim_due(now=due_time)
+    assert claimed is not None
+    assert claimed.claim_token is not None
+
+    with pytest.raises(ValueError, match="not found"):
+        store.record_attempt(
+            schedule.id,
+            tenant_id="tenant-a",
+            enqueued=True,
+            now=due_time,
+            claim_token=None,
+        )
+
+    persisted = store.get(schedule.id, tenant_id="tenant-a")
+    assert persisted.claim_token == claimed.claim_token
+    assert persisted.last_attempted_at is None
