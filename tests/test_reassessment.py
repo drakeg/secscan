@@ -788,3 +788,35 @@ def test_executor_fails_closed_when_schedule_creator_is_disabled(tmp_path: Path)
     assert updated.last_enqueued_at is None
     assert len(manager.list(tenant_id=owner.tenant_id)) == 1
     manager.executor.shutdown(wait=True)
+
+def test_executor_fails_closed_when_project_operator_is_revoked(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    reports = tmp_path / "reports"
+    auth = AuthStore(database)
+    owner = auth.register("owner@example.com", "correct-horse-battery-staple")
+    operator = _member_in_tenant(auth, owner, "operator@example.com")
+    project = ProjectStore(database).create(owner, "Production")
+    access = ProjectAccessStore(database)
+    access.grant(owner, project.id, operator.id, "operator")
+    _save_asset_job(database, job_id="job-1", tenant_id=owner.tenant_id, scanner="image", target="python:3.14")
+    links = ProjectJobStore(database)
+    links.associate(job_id="job-1", tenant_id=owner.tenant_id, project_id=project.id)
+    asset = AssetStore(database).list(tenant_id=owner.tenant_id)[0]
+    schedule = ReassessmentScheduleStore(database).create(
+        tenant_id=owner.tenant_id,
+        asset_id=asset.id,
+        created_by=operator.id,
+        project_id=project.id,
+        cadence="daily",
+        now=NOW,
+    )
+    access.revoke(owner, project.id, operator.id)
+    manager = JobManager(reports, lambda _args: 0, database=database)
+    run_at = NOW + timedelta(days=1)
+
+    assert ReassessmentExecutor(database, manager).run_one(now=run_at) is None
+    updated = ReassessmentScheduleStore(database).get(schedule.id, tenant_id=owner.tenant_id)
+    assert updated.last_attempted_at == run_at.isoformat()
+    assert updated.last_enqueued_at is None
+    assert len(manager.list(tenant_id=owner.tenant_id)) == 1
+    manager.executor.shutdown(wait=True)
