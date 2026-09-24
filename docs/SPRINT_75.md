@@ -90,3 +90,7 @@ Due execution now has a SQLite-backed lease boundary. A scheduler evaluation acq
 ## Increment 5 — claimed execution boundary
 
 A single due schedule can now be claimed and submitted through the existing `JobManager` validation/execution boundary. The executor reuses the fail-closed asset adapter, preserves tenant ownership, carries the exact project association onto the new job, records successful enqueue timestamps, and records adapter/submission failures as non-enqueued attempts while advancing the cadence from the current evaluation time. This is intentionally a one-shot execution primitive; no background scheduler or recurring process is started by this increment.
+
+## Increment 6 — bounded local scheduler loop
+
+The one-shot executor now has a local scheduler primitive with an injected UTC clock, a default one-minute evaluation interval, a hard interval range of ten seconds to one hour, and a bounded per-tick execution limit (default ten, maximum one hundred). The loop is explicitly start/stop controlled and uses the existing atomic claim lease, so restart recovery remains bounded and missed cadences are not replayed in a catch-up burst. This increment does not auto-start the scheduler in the web service; operator-facing opt-in configuration and lifecycle wiring remain separate.
