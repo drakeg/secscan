@@ -90,3 +90,10 @@ Each sprint should report:
 - demonstration result
 - discovered risks or decisions
 - projected infrastructure and service costs, including current and likely future monthly costs when cloud services are introduced
+
+
+## Engineering standards and maintenance
+
+All sprint work must follow [Engineering Standards](ENGINEERING_STANDARDS.md). The sprint document, roadmap, implementation, tests, and operator documentation are maintained together; documentation and regression coverage are acceptance criteria rather than post-sprint cleanup.
+
+When a defect is found after a sprint increment, fix it with regression coverage and update the relevant documentation if the behavior or operational guidance changed. When a sprint is completed, continue directly to the next planned increment only after the current branch is green and the roadmap/backlog accurately describes what remains.
