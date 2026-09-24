@@ -94,3 +94,9 @@ A single due schedule can now be claimed and submitted through the existing `Job
 ## Increment 6 — bounded local scheduler loop
 
 The one-shot executor now has a local scheduler primitive with an injected UTC clock, a default one-minute evaluation interval, a hard interval range of ten seconds to one hour, and a bounded per-tick execution limit (default ten, maximum one hundred). The loop is explicitly start/stop controlled and uses the existing atomic claim lease, so restart recovery remains bounded and missed cadences are not replayed in a catch-up burst. This increment does not auto-start the scheduler in the web service; operator-facing opt-in configuration and lifecycle wiring remain separate.
+
+## Increment 7 — lifecycle API and persistence hardening
+
+Authenticated tenant users now have lifecycle endpoints for reassessment schedules. Creation reuses the owner/project-operator authorization boundary and immediately validates the referenced asset through the fail-closed adapter; listing filters schedules through current authorization; pause, resume, and delete re-evaluate authorization at mutation time. Pausing clears any outstanding execution claim. Persistence now also uses partial unique indexes so tenant-wide schedules with a NULL project cannot be duplicated under SQLite's NULL uniqueness semantics.
+
+The local scheduler still does not auto-start in this increment. Explicit operator configuration for enabling the recurring loop remains the final service-wiring step.
