@@ -334,6 +334,24 @@ class ReassessmentScheduleStore:
                     updated_at TEXT NOT NULL,
                     UNIQUE(tenant_id, asset_id, project_id)
                 );
+                """
+            )
+            columns = {
+                str(row["name"])
+                for row in connection.execute(
+                    "PRAGMA table_info(reassessment_schedules)"
+                ).fetchall()
+            }
+            if "claim_token" not in columns:
+                connection.execute(
+                    "ALTER TABLE reassessment_schedules ADD COLUMN claim_token TEXT"
+                )
+            if "claim_expires_at" not in columns:
+                connection.execute(
+                    "ALTER TABLE reassessment_schedules ADD COLUMN claim_expires_at TEXT"
+                )
+            connection.executescript(
+                """
                 CREATE INDEX IF NOT EXISTS reassessment_schedules_due_idx
                     ON reassessment_schedules(enabled, next_run_at);
                 CREATE INDEX IF NOT EXISTS reassessment_schedules_tenant_idx
@@ -552,7 +570,10 @@ class ReassessmentScheduleStore:
                     claim_token = NULL,
                     claim_expires_at = NULL
                 WHERE id = ? AND tenant_id = ?
-                  AND (? IS NULL OR claim_token = ?)
+                  AND (
+                      (claim_token IS NULL AND ? IS NULL)
+                      OR claim_token = ?
+                  )
                 """,
                 (
                     next_run.isoformat(),
