@@ -11,7 +11,7 @@ from secscan.assets import AssetRecord, AssetStore
 from secscan.auth import AuthStore, User
 from secscan.project_access import ProjectAccessStore
 from secscan.project_jobs import ProjectJobStore
-from secscan.service import JobStore, ScanSubmission
+from secscan.service import JobManager, JobRecord, JobStore, ScanSubmission
 
 
 CADENCE_INTERVALS = {
@@ -100,6 +100,48 @@ class ReassessmentAssetAdapter:
         )
         if schedule.project_id != latest_project:
             raise ValueError("scheduled asset project binding does not match job history")
+
+
+class ReassessmentExecutor:
+    def __init__(self, database: Path, manager: JobManager) -> None:
+        self.schedules = ReassessmentScheduleStore(database)
+        self.assets = ReassessmentAssetAdapter(database)
+        self.project_jobs = ProjectJobStore(database)
+        self.manager = manager
+
+    def run_one(self, *, now: datetime) -> JobRecord | None:
+        schedule = self.schedules.claim_due(now=now)
+        if schedule is None:
+            return None
+        token = schedule.claim_token
+        if token is None:
+            raise RuntimeError("claimed reassessment schedule is missing its claim token")
+        try:
+            submission = self.assets.submission_for(schedule)
+            job = self.manager.submit(submission, tenant_id=schedule.tenant_id)
+            if schedule.project_id is not None:
+                self.project_jobs.associate(
+                    job_id=job.id,
+                    tenant_id=schedule.tenant_id,
+                    project_id=schedule.project_id,
+                )
+        except (OSError, RuntimeError, ValueError):
+            self.schedules.record_attempt(
+                schedule.id,
+                tenant_id=schedule.tenant_id,
+                enqueued=False,
+                now=now,
+                claim_token=token,
+            )
+            return None
+        self.schedules.record_attempt(
+            schedule.id,
+            tenant_id=schedule.tenant_id,
+            enqueued=True,
+            now=now,
+            claim_token=token,
+        )
+        return job
 
 
 class ReassessmentScheduleAuthorizer:
