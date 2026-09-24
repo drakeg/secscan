@@ -31,6 +31,8 @@ class ReassessmentSchedule:
     next_run_at: str
     last_attempted_at: str | None
     last_enqueued_at: str | None
+    claim_token: str | None
+    claim_expires_at: str | None
     created_by: str
     created_at: str
     updated_at: str
@@ -154,6 +156,8 @@ class ReassessmentScheduleStore:
                     next_run_at TEXT NOT NULL,
                     last_attempted_at TEXT,
                     last_enqueued_at TEXT,
+                    claim_token TEXT,
+                    claim_expires_at TEXT,
                     created_by TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
@@ -295,6 +299,10 @@ def _schedule(row: sqlite3.Row) -> ReassessmentSchedule:
         ),
         last_enqueued_at=(
             str(row["last_enqueued_at"]) if row["last_enqueued_at"] is not None else None
+        ),
+        claim_token=str(row["claim_token"]) if row["claim_token"] is not None else None,
+        claim_expires_at=(
+            str(row["claim_expires_at"]) if row["claim_expires_at"] is not None else None
         ),
         created_by=str(row["created_by"]),
         created_at=str(row["created_at"]),
