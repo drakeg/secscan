@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel
 import sqlite3
 from threading import Event, Thread
 from collections.abc import Callable
@@ -191,6 +194,85 @@ class ReassessmentScheduler:
             self._stop.wait(self.interval.total_seconds())
 
 
+class ReassessmentScheduleCreate(BaseModel):
+    asset_id: str
+    project_id: str | None = None
+    cadence: Literal["daily", "weekly"]
+
+
+def mount_reassessment_schedules(app: FastAPI, *, database: Path) -> FastAPI:
+    store = ReassessmentScheduleStore(database)
+    authorizer = ReassessmentScheduleAuthorizer(database)
+
+    def actor(request: Request) -> User:
+        user = getattr(request.state, "secscan_user", None)
+        if not isinstance(user, User):
+            raise HTTPException(status_code=401, detail="authenticated tenant user is required")
+        return user
+
+    @app.get("/api/v1/reassessment-schedules")
+    def list_schedules(request: Request) -> list[dict[str, object]]:
+        user = actor(request)
+        visible: list[dict[str, object]] = []
+        for schedule in store.list(tenant_id=user.tenant_id):
+            try:
+                authorizer.require_schedule_access(user, schedule)
+            except PermissionError:
+                continue
+            visible.append(schedule.public())
+        return visible
+
+    @app.post("/api/v1/reassessment-schedules", status_code=201)
+    def create_schedule(
+        request: Request,
+        submission: ReassessmentScheduleCreate,
+    ) -> dict[str, object]:
+        user = actor(request)
+        try:
+            authorizer.require_manage(user, project_id=submission.project_id)
+            schedule = store.create(
+                tenant_id=user.tenant_id,
+                asset_id=submission.asset_id,
+                project_id=submission.project_id,
+                cadence=submission.cadence,
+                created_by=user.id,
+            )
+            ReassessmentAssetAdapter(database).submission_for(schedule)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return schedule.public()
+
+    def mutable_schedule(request: Request, schedule_id: str) -> tuple[User, ReassessmentSchedule]:
+        user = actor(request)
+        try:
+            schedule = store.get(schedule_id, tenant_id=user.tenant_id)
+            authorizer.require_schedule_access(user, schedule)
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return user, schedule
+
+    @app.post("/api/v1/reassessment-schedules/{schedule_id}/pause")
+    def pause_schedule(schedule_id: str, request: Request) -> dict[str, object]:
+        user, _schedule = mutable_schedule(request, schedule_id)
+        return store.set_enabled(schedule_id, tenant_id=user.tenant_id, enabled=False).public()
+
+    @app.post("/api/v1/reassessment-schedules/{schedule_id}/resume")
+    def resume_schedule(schedule_id: str, request: Request) -> dict[str, object]:
+        user, _schedule = mutable_schedule(request, schedule_id)
+        return store.set_enabled(schedule_id, tenant_id=user.tenant_id, enabled=True).public()
+
+    @app.delete("/api/v1/reassessment-schedules/{schedule_id}", status_code=204)
+    def delete_schedule(schedule_id: str, request: Request) -> None:
+        user, _schedule = mutable_schedule(request, schedule_id)
+        store.delete(schedule_id, tenant_id=user.tenant_id)
+
+    return app
+
+
 class ReassessmentScheduleAuthorizer:
     def __init__(self, database: Path) -> None:
         self.auth = AuthStore(database)
@@ -256,6 +338,12 @@ class ReassessmentScheduleStore:
                     ON reassessment_schedules(enabled, next_run_at);
                 CREATE INDEX IF NOT EXISTS reassessment_schedules_tenant_idx
                     ON reassessment_schedules(tenant_id, created_at, id);
+                CREATE UNIQUE INDEX IF NOT EXISTS reassessment_schedules_tenant_asset_unique_idx
+                    ON reassessment_schedules(tenant_id, asset_id)
+                    WHERE project_id IS NULL;
+                CREATE UNIQUE INDEX IF NOT EXISTS reassessment_schedules_project_asset_unique_idx
+                    ON reassessment_schedules(tenant_id, asset_id, project_id)
+                    WHERE project_id IS NOT NULL;
                 """
             )
 
@@ -321,6 +409,46 @@ class ReassessmentScheduleStore:
                 (tenant_id,),
             ).fetchall()
         return [_schedule(row) for row in rows]
+
+    def set_enabled(
+        self,
+        schedule_id: str,
+        *,
+        tenant_id: str,
+        enabled: bool,
+        now: datetime | None = None,
+    ) -> ReassessmentSchedule:
+        current = _utc(now or datetime.now(UTC))
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE reassessment_schedules
+                SET enabled = ?, updated_at = ?,
+                    claim_token = CASE WHEN ? THEN claim_token ELSE NULL END,
+                    claim_expires_at = CASE WHEN ? THEN claim_expires_at ELSE NULL END
+                WHERE id = ? AND tenant_id = ?
+                """,
+                (
+                    int(enabled),
+                    current.isoformat(),
+                    int(enabled),
+                    int(enabled),
+                    schedule_id,
+                    tenant_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("reassessment schedule was not found")
+        return self.get(schedule_id, tenant_id=tenant_id)
+
+    def delete(self, schedule_id: str, *, tenant_id: str) -> None:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM reassessment_schedules WHERE id = ? AND tenant_id = ?",
+                (schedule_id, tenant_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("reassessment schedule was not found")
 
     def due(self, *, now: datetime, limit: int = 100) -> List[ReassessmentSchedule]:
         if limit < 1 or limit > 100:

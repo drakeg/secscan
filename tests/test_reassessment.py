@@ -642,3 +642,61 @@ def test_scheduler_tick_limit_is_bounded(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="between 1 and 100"):
         scheduler.tick(limit=101)
     manager.executor.shutdown(wait=True)
+
+
+def test_tenant_level_schedule_scope_is_unique_with_null_project(tmp_path: Path) -> None:
+    store = ReassessmentScheduleStore(tmp_path / "jobs.db")
+    store.create(
+        tenant_id="tenant-a",
+        asset_id="asset-1",
+        created_by="user-a",
+        cadence="daily",
+        now=NOW,
+    )
+    with pytest.raises(ValueError, match="already exists"):
+        store.create(
+            tenant_id="tenant-a",
+            asset_id="asset-1",
+            created_by="user-a",
+            cadence="weekly",
+            now=NOW,
+        )
+
+
+def test_pause_clears_claim_and_prevents_due_execution(tmp_path: Path) -> None:
+    store = ReassessmentScheduleStore(tmp_path / "jobs.db")
+    schedule = store.create(
+        tenant_id="tenant-a",
+        asset_id="asset-1",
+        created_by="user-a",
+        cadence="daily",
+        now=NOW,
+    )
+    due_time = NOW + timedelta(days=1)
+    claimed = store.claim_due(now=due_time)
+    assert claimed is not None
+    paused = store.set_enabled(
+        schedule.id,
+        tenant_id="tenant-a",
+        enabled=False,
+        now=due_time,
+    )
+    assert paused.enabled is False
+    assert paused.claim_token is None
+    assert store.claim_due(now=due_time) is None
+
+
+def test_schedule_delete_is_tenant_scoped(tmp_path: Path) -> None:
+    store = ReassessmentScheduleStore(tmp_path / "jobs.db")
+    schedule = store.create(
+        tenant_id="tenant-a",
+        asset_id="asset-1",
+        created_by="user-a",
+        cadence="daily",
+        now=NOW,
+    )
+    with pytest.raises(ValueError, match="not found"):
+        store.delete(schedule.id, tenant_id="tenant-b")
+    store.delete(schedule.id, tenant_id="tenant-a")
+    with pytest.raises(ValueError, match="not found"):
+        store.get(schedule.id, tenant_id="tenant-a")
