@@ -14,6 +14,7 @@ from secscan.reassessment import (
     ReassessmentAssetAdapter,
     ReassessmentExecutor,
     ReassessmentScheduleAuthorizer,
+    ReassessmentScheduler,
     ReassessmentScheduleStore,
     next_run_for,
 )
@@ -586,4 +587,58 @@ def test_executor_preserves_project_association_for_scheduled_job(tmp_path: Path
 
     assert job is not None
     assert links.project_id(job.id, tenant_id=owner.tenant_id) == project.id
+    manager.executor.shutdown(wait=True)
+
+
+def test_scheduler_tick_is_bounded_and_uses_injected_clock(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    reports = tmp_path / "reports"
+    for index in range(3):
+        _save_asset_job(
+            database,
+            job_id=f"job-{index}",
+            tenant_id="tenant-a",
+            scanner="image",
+            target=f"python:3.{index + 10}",
+        )
+    assets = AssetStore(database).list(tenant_id="tenant-a")
+    schedules = ReassessmentScheduleStore(database)
+    for asset in assets:
+        schedules.create(
+            tenant_id="tenant-a",
+            asset_id=asset.id,
+            created_by="user-a",
+            cadence="daily",
+            now=NOW,
+        )
+    manager = JobManager(reports, lambda _args: 0, database=database)
+    scheduler = ReassessmentScheduler(
+        ReassessmentExecutor(database, manager),
+        clock=lambda: NOW + timedelta(days=1),
+    )
+
+    assert scheduler.tick(limit=2) == 2
+    assert scheduler.tick(limit=2) == 1
+    assert scheduler.tick(limit=2) == 0
+    manager.executor.shutdown(wait=True)
+
+
+@pytest.mark.parametrize(
+    "interval",
+    [timedelta(seconds=9), timedelta(hours=1, seconds=1)],
+)
+def test_scheduler_interval_is_bounded(tmp_path: Path, interval: timedelta) -> None:
+    database = tmp_path / "jobs.db"
+    manager = JobManager(tmp_path / "reports", lambda _args: 0, database=database)
+    with pytest.raises(ValueError, match="between 10 seconds and 1 hour"):
+        ReassessmentScheduler(ReassessmentExecutor(database, manager), interval=interval)
+    manager.executor.shutdown(wait=True)
+
+
+def test_scheduler_tick_limit_is_bounded(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    manager = JobManager(tmp_path / "reports", lambda _args: 0, database=database)
+    scheduler = ReassessmentScheduler(ReassessmentExecutor(database, manager))
+    with pytest.raises(ValueError, match="between 1 and 100"):
+        scheduler.tick(limit=101)
     manager.executor.shutdown(wait=True)

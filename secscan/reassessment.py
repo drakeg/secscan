@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sqlite3
+from threading import Event, Thread
+from collections.abc import Callable
 from typing import List, Literal, cast
 from uuid import uuid4
 
@@ -142,6 +144,51 @@ class ReassessmentExecutor:
             claim_token=token,
         )
         return job
+
+
+class ReassessmentScheduler:
+    def __init__(
+        self,
+        executor: ReassessmentExecutor,
+        *,
+        interval: timedelta = timedelta(minutes=1),
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
+        if interval < timedelta(seconds=10) or interval > timedelta(hours=1):
+            raise ValueError("scheduler interval must be between 10 seconds and 1 hour")
+        self.executor = executor
+        self.interval = interval
+        self.clock = clock
+        self._stop = Event()
+        self._thread: Thread | None = None
+
+    def tick(self, *, limit: int = 10) -> int:
+        if limit < 1 or limit > 100:
+            raise ValueError("scheduler tick limit must be between 1 and 100")
+        processed = 0
+        for _ in range(limit):
+            if self.executor.run_one(now=_utc(self.clock())) is None:
+                break
+            processed += 1
+        return processed
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = Thread(target=self._run, name="secscan-reassessment", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=min(self.interval.total_seconds() + 1, 5))
+            self._thread = None
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            self.tick()
+            self._stop.wait(self.interval.total_seconds())
 
 
 class ReassessmentScheduleAuthorizer:
