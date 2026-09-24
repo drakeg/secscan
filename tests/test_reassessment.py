@@ -387,3 +387,99 @@ def test_asset_adapter_rejects_cross_tenant_asset_reference(tmp_path: Path) -> N
 
     with pytest.raises(ValueError, match="asset is unavailable"):
         ReassessmentAssetAdapter(database).submission_for(schedule)
+
+
+def test_due_claim_is_exclusive_until_released_or_expired(tmp_path: Path) -> None:
+    store = ReassessmentScheduleStore(tmp_path / "jobs.db")
+    schedule = store.create(
+        tenant_id="tenant-a",
+        asset_id="asset-1",
+        created_by="user-a",
+        cadence="daily",
+        now=NOW,
+    )
+    due_time = NOW + timedelta(days=1)
+
+    claimed = store.claim_due(now=due_time)
+    assert claimed is not None
+    assert claimed.id == schedule.id
+    assert claimed.claim_token is not None
+    assert store.claim_due(now=due_time) is None
+
+    store.release_claim(
+        claimed.id,
+        tenant_id=claimed.tenant_id,
+        claim_token=claimed.claim_token,
+        now=due_time,
+    )
+    reclaimed = store.claim_due(now=due_time)
+    assert reclaimed is not None
+    assert reclaimed.id == schedule.id
+    assert reclaimed.claim_token != claimed.claim_token
+
+
+def test_expired_due_claim_can_be_recovered_after_restart(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    store = ReassessmentScheduleStore(database)
+    store.create(
+        tenant_id="tenant-a",
+        asset_id="asset-1",
+        created_by="user-a",
+        cadence="daily",
+        now=NOW,
+    )
+    due_time = NOW + timedelta(days=1)
+    claimed = store.claim_due(now=due_time, lease=timedelta(minutes=5))
+    assert claimed is not None
+
+    reopened = ReassessmentScheduleStore(database)
+    assert reopened.claim_due(now=due_time + timedelta(minutes=4)) is None
+    recovered = reopened.claim_due(now=due_time + timedelta(minutes=5))
+    assert recovered is not None
+    assert recovered.id == claimed.id
+    assert recovered.claim_token != claimed.claim_token
+
+
+def test_claimed_attempt_requires_matching_token_and_clears_lease(tmp_path: Path) -> None:
+    store = ReassessmentScheduleStore(tmp_path / "jobs.db")
+    store.create(
+        tenant_id="tenant-a",
+        asset_id="asset-1",
+        created_by="user-a",
+        cadence="daily",
+        now=NOW,
+    )
+    due_time = NOW + timedelta(days=1)
+    claimed = store.claim_due(now=due_time)
+    assert claimed is not None
+    assert claimed.claim_token is not None
+
+    with pytest.raises(ValueError, match="not found"):
+        store.record_attempt(
+            claimed.id,
+            tenant_id=claimed.tenant_id,
+            enqueued=True,
+            now=due_time,
+            claim_token="wrong-token",
+        )
+
+    updated = store.record_attempt(
+        claimed.id,
+        tenant_id=claimed.tenant_id,
+        enqueued=True,
+        now=due_time,
+        claim_token=claimed.claim_token,
+    )
+    assert updated.claim_token is None
+    assert updated.claim_expires_at is None
+    assert updated.next_run_at == (due_time + timedelta(days=1)).isoformat()
+
+
+@pytest.mark.parametrize(
+    "lease",
+    [timedelta(0), timedelta(minutes=-1), timedelta(minutes=31)],
+)
+def test_claim_lease_is_bounded(tmp_path: Path, lease: timedelta) -> None:
+    store = ReassessmentScheduleStore(tmp_path / "jobs.db")
+    with pytest.raises(ValueError, match="at most 30 minutes"):
+        store.claim_due(now=NOW, lease=lease)
