@@ -337,6 +337,53 @@ def test_asset_adapter_rejects_scanners_without_persisted_safe_profile(
         ReassessmentAssetAdapter(database).submission_for(schedule)
 
 
+def test_asset_adapter_rejects_local_repository_target(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    _save_asset_job(
+        database,
+        job_id="job-1",
+        tenant_id="tenant-a",
+        scanner="repository",
+        target="/workspace/repository",
+    )
+    asset = AssetStore(database).list(tenant_id="tenant-a")[0]
+    schedule = ReassessmentScheduleStore(database).create(
+        tenant_id="tenant-a",
+        asset_id=asset.id,
+        created_by="user-a",
+        cadence="daily",
+        now=NOW,
+    )
+
+    with pytest.raises(ValueError, match="remote repository URL"):
+        ReassessmentAssetAdapter(database).submission_for(schedule)
+
+
+def test_asset_adapter_preserves_valid_remote_repository_target(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    target = "https://github.com/example/project.git"
+    _save_asset_job(
+        database,
+        job_id="job-1",
+        tenant_id="tenant-a",
+        scanner="repository",
+        target=target,
+    )
+    asset = AssetStore(database).list(tenant_id="tenant-a")[0]
+    schedule = ReassessmentScheduleStore(database).create(
+        tenant_id="tenant-a",
+        asset_id=asset.id,
+        created_by="user-a",
+        cadence="daily",
+        now=NOW,
+    )
+
+    submission = ReassessmentAssetAdapter(database).submission_for(schedule)
+
+    assert submission.scanner == "repository"
+    assert submission.target == target
+
+
 def test_asset_adapter_requires_exact_project_binding(tmp_path: Path) -> None:
     database = tmp_path / "jobs.db"
     auth = AuthStore(database)
