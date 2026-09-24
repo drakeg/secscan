@@ -41,6 +41,7 @@ def main() -> None:
     from secscan.projects import mount_projects
     from secscan.public_navigation import PublicSessionNavigationMiddleware
     from secscan.public_site import mount_public_site
+    from secscan.reassessment import mount_reassessment_schedules
     from secscan.service import create_app
     from secscan.ssh_host_trust_web import mount_ssh_host_trust
     from secscan.tenant_api_keys import mount_tenant_api_keys
@@ -70,6 +71,7 @@ def main() -> None:
         mount_project_job_association(app, database=database)
         mount_ssh_host_trust(app, database=database)
         mount_assets(app, database=database)
+        mount_reassessment_schedules(app, database=database)
         mount_network_range_submission(app)
         mount_windows_host_submission(
             app,
