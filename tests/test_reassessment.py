@@ -630,6 +630,10 @@ def test_scheduler_tick_is_bounded_and_uses_injected_clock(tmp_path: Path) -> No
     assert scheduler.tick(limit=2) == 0
     manager.executor.shutdown(wait=True)
 
+@pytest.mark.parametrize(
+    "interval",
+    [timedelta(seconds=9), timedelta(hours=1, seconds=1)],
+)
 def test_scheduler_interval_is_bounded(tmp_path: Path, interval: timedelta) -> None:
     database = tmp_path / "jobs.db"
     manager = JobManager(tmp_path / "reports", lambda _args: 0, database=database)
