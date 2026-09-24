@@ -249,6 +249,69 @@ class ReassessmentScheduleStore:
             ).fetchall()
         return [_schedule(row) for row in rows]
 
+    def claim_due(
+        self,
+        *,
+        now: datetime,
+        lease: timedelta = timedelta(minutes=5),
+    ) -> ReassessmentSchedule | None:
+        current = _utc(now)
+        if lease <= timedelta(0) or lease > timedelta(minutes=30):
+            raise ValueError("claim lease must be positive and at most 30 minutes")
+        token = str(uuid4())
+        expires = current + lease
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT id, tenant_id FROM reassessment_schedules
+                WHERE enabled = 1
+                  AND next_run_at <= ?
+                  AND (claim_expires_at IS NULL OR claim_expires_at <= ?)
+                ORDER BY next_run_at, id
+                LIMIT 1
+                """,
+                (current.isoformat(), current.isoformat()),
+            ).fetchone()
+            if row is None:
+                return None
+            connection.execute(
+                """
+                UPDATE reassessment_schedules
+                SET claim_token = ?, claim_expires_at = ?, updated_at = ?
+                WHERE id = ? AND tenant_id = ?
+                """,
+                (
+                    token,
+                    expires.isoformat(),
+                    current.isoformat(),
+                    row["id"],
+                    row["tenant_id"],
+                ),
+            )
+        return self.get(str(row["id"]), tenant_id=str(row["tenant_id"]))
+
+    def release_claim(
+        self,
+        schedule_id: str,
+        *,
+        tenant_id: str,
+        claim_token: str,
+        now: datetime,
+    ) -> None:
+        current = _utc(now)
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE reassessment_schedules
+                SET claim_token = NULL, claim_expires_at = NULL, updated_at = ?
+                WHERE id = ? AND tenant_id = ? AND claim_token = ?
+                """,
+                (current.isoformat(), schedule_id, tenant_id, claim_token),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("reassessment schedule claim was not found")
+
     def record_attempt(
         self,
         schedule_id: str,
