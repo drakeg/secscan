@@ -82,3 +82,7 @@ Schedule mutation now has an explicit authorization layer before API or schedule
 ## Increment 3 — supported asset-to-job adapter
 
 Scheduled execution can now reconstruct a fresh validated `ScanSubmission` only for persistent image and remote-repository assets whose latest job remains in the same tenant and whose project association exactly matches the schedule. The current asset inventory does not persist policy, baseline, explicit network/web authorization acknowledgements, or a durable safe local-path profile, so filesystem, SBOM, network, network-range, and web-DAST assets deliberately remain unschedulable instead of guessing or weakening their original validation. Broader scanner support requires a future durable scan-profile model.
+
+## Increment 4 — atomic due claims
+
+Due execution now has a SQLite-backed lease boundary. A scheduler evaluation acquires one due schedule inside `BEGIN IMMEDIATE`, assigns an opaque claim token and a bounded lease (default five minutes, maximum thirty), and excludes that schedule from competing claims until release or expiry. Completion with a claimed schedule requires the matching token and clears the lease while advancing the next run. Expired claims are recoverable after process restart, while stale or incorrect claim tokens fail closed. This establishes duplicate-evaluation protection before the scheduler is allowed to enqueue jobs.
