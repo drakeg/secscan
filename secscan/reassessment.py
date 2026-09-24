@@ -319,6 +319,7 @@ class ReassessmentScheduleStore:
         tenant_id: str,
         enqueued: bool,
         now: datetime,
+        claim_token: str | None = None,
     ) -> ReassessmentSchedule:
         current = _utc(now)
         schedule = self.get(schedule_id, tenant_id=tenant_id)
@@ -330,8 +331,11 @@ class ReassessmentScheduleStore:
                 SET next_run_at = ?,
                     last_attempted_at = ?,
                     last_enqueued_at = CASE WHEN ? THEN ? ELSE last_enqueued_at END,
-                    updated_at = ?
+                    updated_at = ?,
+                    claim_token = NULL,
+                    claim_expires_at = NULL
                 WHERE id = ? AND tenant_id = ?
+                  AND (? IS NULL OR claim_token = ?)
                 """,
                 (
                     next_run.isoformat(),
@@ -341,6 +345,8 @@ class ReassessmentScheduleStore:
                     current.isoformat(),
                     schedule_id,
                     tenant_id,
+                    claim_token,
+                    claim_token,
                 ),
             )
             if cursor.rowcount != 1:
