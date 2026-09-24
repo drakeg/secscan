@@ -5,14 +5,18 @@ from pathlib import Path
 
 import pytest
 
+from secscan.assets import AssetStore
 from secscan.auth import AuthStore, User
 from secscan.project_access import ProjectAccessStore
 from secscan.projects import ProjectStore
+from secscan.project_jobs import ProjectJobStore
 from secscan.reassessment import (
+    ReassessmentAssetAdapter,
     ReassessmentScheduleAuthorizer,
     ReassessmentScheduleStore,
     next_run_for,
 )
+from secscan.service import JobRecord, JobStore
 
 
 NOW = datetime(2026, 9, 23, 18, 0, tzinfo=UTC)
@@ -251,3 +255,135 @@ def test_schedule_access_fails_closed_across_tenants(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="not found"):
         authorizer.require_schedule_access(outsider, schedule)
+
+
+def _save_asset_job(
+    database: Path,
+    *,
+    job_id: str,
+    tenant_id: str,
+    scanner: str,
+    target: str,
+) -> None:
+    JobStore(database).save(
+        JobRecord(
+            id=job_id,
+            status="completed",
+            scanner=scanner,
+            target=target,
+            output_dir=f"/reports/{job_id}",
+            created_at=NOW.isoformat(),
+            completed_at=NOW.isoformat(),
+            exit_code=0,
+            tenant_id=tenant_id,
+        )
+    )
+
+
+def test_asset_adapter_reconstructs_safe_image_submission(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    _save_asset_job(
+        database,
+        job_id="job-1",
+        tenant_id="tenant-a",
+        scanner="image",
+        target="python:3.14",
+    )
+    assets = AssetStore(database)
+    asset = assets.list(tenant_id="tenant-a")[0]
+    schedule = ReassessmentScheduleStore(database).create(
+        tenant_id="tenant-a",
+        asset_id=asset.id,
+        created_by="user-a",
+        cadence="daily",
+        now=NOW,
+    )
+
+    submission = ReassessmentAssetAdapter(database).submission_for(schedule)
+
+    assert submission.scanner == "image"
+    assert submission.target == "python:3.14"
+    assert submission.policy is None
+    assert submission.baseline is None
+
+
+@pytest.mark.parametrize("scanner", ["filesystem", "sbom", "network", "network-range", "web-dast"])
+def test_asset_adapter_rejects_scanners_without_persisted_safe_profile(
+    tmp_path: Path,
+    scanner: str,
+) -> None:
+    database = tmp_path / f"{scanner}.db"
+    _save_asset_job(
+        database,
+        job_id="job-1",
+        tenant_id="tenant-a",
+        scanner=scanner,
+        target="example",
+    )
+    assets = AssetStore(database)
+    asset = assets.list(tenant_id="tenant-a")[0]
+    schedule = ReassessmentScheduleStore(database).create(
+        tenant_id="tenant-a",
+        asset_id=asset.id,
+        created_by="user-a",
+        cadence="daily",
+        now=NOW,
+    )
+
+    with pytest.raises(ValueError, match="not supported"):
+        ReassessmentAssetAdapter(database).submission_for(schedule)
+
+
+def test_asset_adapter_requires_exact_project_binding(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    auth = AuthStore(database)
+    projects = ProjectStore(database)
+    owner = auth.register("owner@example.com", "correct-horse-battery-staple")
+    project = projects.create(owner, "Production")
+    _save_asset_job(
+        database,
+        job_id="job-1",
+        tenant_id=owner.tenant_id,
+        scanner="image",
+        target="python:3.14",
+    )
+    ProjectJobStore(database).associate(
+        job_id="job-1",
+        tenant_id=owner.tenant_id,
+        project_id=project.id,
+    )
+    assets = AssetStore(database)
+    asset = assets.list(tenant_id=owner.tenant_id)[0]
+    schedule = ReassessmentScheduleStore(database).create(
+        tenant_id=owner.tenant_id,
+        asset_id=asset.id,
+        created_by=owner.id,
+        cadence="daily",
+        now=NOW,
+    )
+
+    with pytest.raises(ValueError, match="project binding"):
+        ReassessmentAssetAdapter(database).submission_for(schedule)
+
+
+def test_asset_adapter_rejects_cross_tenant_asset_reference(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    _save_asset_job(
+        database,
+        job_id="job-1",
+        tenant_id="tenant-a",
+        scanner="image",
+        target="python:3.14",
+    )
+    assets = AssetStore(database)
+    asset = assets.list(tenant_id="tenant-a")[0]
+    schedule = ReassessmentScheduleStore(database).create(
+        tenant_id="tenant-b",
+        asset_id=asset.id,
+        created_by="user-b",
+        cadence="daily",
+        now=NOW,
+    )
+
+    with pytest.raises(ValueError, match="asset is unavailable"):
+        ReassessmentAssetAdapter(database).submission_for(schedule)

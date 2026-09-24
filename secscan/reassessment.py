@@ -4,11 +4,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sqlite3
-from typing import List
+from typing import List, Literal, cast
 from uuid import uuid4
 
+from secscan.assets import AssetRecord, AssetStore
 from secscan.auth import AuthStore, User
 from secscan.project_access import ProjectAccessStore
+from secscan.project_jobs import ProjectJobStore
+from secscan.service import JobStore, ScanSubmission
 
 
 CADENCE_INTERVALS = {
@@ -59,6 +62,42 @@ def next_run_for(cadence: str, *, now: datetime) -> datetime:
     except KeyError as exc:
         raise ValueError("cadence must be daily or weekly") from exc
     return _utc(now) + interval
+
+
+type ReassessmentScanner = Literal["image", "repository"]
+SAFE_REASSESSMENT_SCANNERS = {"image", "repository"}
+
+
+class ReassessmentAssetAdapter:
+    def __init__(self, database: Path) -> None:
+        self.assets = AssetStore(database)
+        self.jobs = JobStore(database)
+        self.project_jobs = ProjectJobStore(database)
+
+    def submission_for(self, schedule: ReassessmentSchedule) -> ScanSubmission:
+        asset = self.assets.get(schedule.asset_id, tenant_id=schedule.tenant_id)
+        if asset is None:
+            raise ValueError("scheduled asset is unavailable")
+        self._validate_project_binding(schedule, asset)
+        if asset.scanner not in SAFE_REASSESSMENT_SCANNERS:
+            raise ValueError("asset scanner is not supported for reassessment")
+        latest = self.jobs.get(asset.latest_job_id, tenant_id=schedule.tenant_id)
+        if latest is None or latest.scanner != asset.scanner or latest.target != asset.target:
+            raise ValueError("scheduled asset job history is unavailable")
+        scanner = cast(ReassessmentScanner, asset.scanner)
+        return ScanSubmission(scanner=scanner, target=asset.target)
+
+    def _validate_project_binding(
+        self,
+        schedule: ReassessmentSchedule,
+        asset: AssetRecord,
+    ) -> None:
+        latest_project = self.project_jobs.project_id(
+            asset.latest_job_id,
+            tenant_id=schedule.tenant_id,
+        )
+        if schedule.project_id != latest_project:
+            raise ValueError("scheduled asset project binding does not match job history")
 
 
 class ReassessmentScheduleAuthorizer:
