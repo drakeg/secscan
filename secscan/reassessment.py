@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sqlite3
-from typing import List
+from typing import List, Literal, cast
 from uuid import uuid4
 
 from secscan.assets import AssetRecord, AssetStore
@@ -64,6 +64,7 @@ def next_run_for(cadence: str, *, now: datetime) -> datetime:
     return _utc(now) + interval
 
 
+type ReassessmentScanner = Literal["image", "repository"]
 SAFE_REASSESSMENT_SCANNERS = {"image", "repository"}
 
 
@@ -83,7 +84,8 @@ class ReassessmentAssetAdapter:
         latest = self.jobs.get(asset.latest_job_id, tenant_id=schedule.tenant_id)
         if latest is None or latest.scanner != asset.scanner or latest.target != asset.target:
             raise ValueError("scheduled asset job history is unavailable")
-        return ScanSubmission(scanner=asset.scanner, target=asset.target)
+        scanner = cast(ReassessmentScanner, asset.scanner)
+        return ScanSubmission(scanner=scanner, target=asset.target)
 
     def _validate_project_binding(
         self,
