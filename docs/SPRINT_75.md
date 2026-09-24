@@ -86,3 +86,7 @@ Scheduled execution can now reconstruct a fresh validated `ScanSubmission` only 
 ## Increment 4 — atomic due claims
 
 Due execution now has a SQLite-backed lease boundary. A scheduler evaluation acquires one due schedule inside `BEGIN IMMEDIATE`, assigns an opaque claim token and a bounded lease (default five minutes, maximum thirty), and excludes that schedule from competing claims until release or expiry. Completion with a claimed schedule requires the matching token and clears the lease while advancing the next run. Expired claims are recoverable after process restart, while stale or incorrect claim tokens fail closed. This establishes duplicate-evaluation protection before the scheduler is allowed to enqueue jobs.
+
+## Increment 5 — claimed execution boundary
+
+A single due schedule can now be claimed and submitted through the existing `JobManager` validation/execution boundary. The executor reuses the fail-closed asset adapter, preserves tenant ownership, carries the exact project association onto the new job, records successful enqueue timestamps, and records adapter/submission failures as non-enqueued attempts while advancing the cadence from the current evaluation time. This is intentionally a one-shot execution primitive; no background scheduler or recurring process is started by this increment.
