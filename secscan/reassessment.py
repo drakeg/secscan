@@ -256,6 +256,12 @@ class ReassessmentScheduleStore:
                     ON reassessment_schedules(enabled, next_run_at);
                 CREATE INDEX IF NOT EXISTS reassessment_schedules_tenant_idx
                     ON reassessment_schedules(tenant_id, created_at, id);
+                CREATE UNIQUE INDEX IF NOT EXISTS reassessment_schedules_tenant_asset_unique_idx
+                    ON reassessment_schedules(tenant_id, asset_id)
+                    WHERE project_id IS NULL;
+                CREATE UNIQUE INDEX IF NOT EXISTS reassessment_schedules_project_asset_unique_idx
+                    ON reassessment_schedules(tenant_id, asset_id, project_id)
+                    WHERE project_id IS NOT NULL;
                 """
             )
 
@@ -321,6 +327,46 @@ class ReassessmentScheduleStore:
                 (tenant_id,),
             ).fetchall()
         return [_schedule(row) for row in rows]
+
+    def set_enabled(
+        self,
+        schedule_id: str,
+        *,
+        tenant_id: str,
+        enabled: bool,
+        now: datetime | None = None,
+    ) -> ReassessmentSchedule:
+        current = _utc(now or datetime.now(UTC))
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE reassessment_schedules
+                SET enabled = ?, updated_at = ?,
+                    claim_token = CASE WHEN ? THEN claim_token ELSE NULL END,
+                    claim_expires_at = CASE WHEN ? THEN claim_expires_at ELSE NULL END
+                WHERE id = ? AND tenant_id = ?
+                """,
+                (
+                    int(enabled),
+                    current.isoformat(),
+                    int(enabled),
+                    int(enabled),
+                    schedule_id,
+                    tenant_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("reassessment schedule was not found")
+        return self.get(schedule_id, tenant_id=tenant_id)
+
+    def delete(self, schedule_id: str, *, tenant_id: str) -> None:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM reassessment_schedules WHERE id = ? AND tenant_id = ?",
+                (schedule_id, tenant_id),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("reassessment schedule was not found")
 
     def due(self, *, now: datetime, limit: int = 100) -> List[ReassessmentSchedule]:
         if limit < 1 or limit > 100:
