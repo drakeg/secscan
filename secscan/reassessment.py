@@ -17,6 +17,7 @@ from secscan.auth import AuthStore, User
 from secscan.project_access import ProjectAccessStore
 from secscan.project_jobs import ProjectJobStore
 from secscan.service import JobManager, JobRecord, JobStore, ScanSubmission
+from secscan.scanners.repository import is_remote_repository_url, validate_remote_repository_url
 
 
 CADENCE_INTERVALS = {
@@ -88,6 +89,12 @@ class ReassessmentAssetAdapter:
         self._validate_project_binding(schedule, asset)
         if asset.scanner not in SAFE_REASSESSMENT_SCANNERS:
             raise ValueError("asset scanner is not supported for reassessment")
+        if asset.scanner == "repository":
+            if not is_remote_repository_url(asset.target):
+                raise ValueError(
+                    "repository reassessment requires a remote repository URL"
+                )
+            validate_remote_repository_url(asset.target)
         latest = self.jobs.get(asset.latest_job_id, tenant_id=schedule.tenant_id)
         if latest is None or latest.scanner != asset.scanner or latest.target != asset.target:
             raise ValueError("scheduled asset job history is unavailable")
