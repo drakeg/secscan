@@ -12,11 +12,12 @@ from secscan.projects import ProjectStore
 from secscan.project_jobs import ProjectJobStore
 from secscan.reassessment import (
     ReassessmentAssetAdapter,
+    ReassessmentExecutor,
     ReassessmentScheduleAuthorizer,
     ReassessmentScheduleStore,
     next_run_for,
 )
-from secscan.service import JobRecord, JobStore
+from secscan.service import JobManager, JobRecord, JobStore
 
 
 NOW = datetime(2026, 9, 23, 18, 0, tzinfo=UTC)
@@ -483,3 +484,106 @@ def test_claim_lease_is_bounded(tmp_path: Path, lease: timedelta) -> None:
     store = ReassessmentScheduleStore(tmp_path / "jobs.db")
     with pytest.raises(ValueError, match="at most 30 minutes"):
         store.claim_due(now=NOW, lease=lease)
+
+
+def test_executor_enqueues_one_due_safe_asset_and_advances_schedule(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    reports = tmp_path / "reports"
+    _save_asset_job(
+        database,
+        job_id="job-1",
+        tenant_id="tenant-a",
+        scanner="image",
+        target="python:3.14",
+    )
+    asset = AssetStore(database).list(tenant_id="tenant-a")[0]
+    schedules = ReassessmentScheduleStore(database)
+    schedule = schedules.create(
+        tenant_id="tenant-a",
+        asset_id=asset.id,
+        created_by="user-a",
+        cadence="daily",
+        now=NOW,
+    )
+    manager = JobManager(reports, lambda _args: 0, database=database)
+
+    job = ReassessmentExecutor(database, manager).run_one(now=NOW + timedelta(days=1))
+
+    assert job is not None
+    assert job.tenant_id == "tenant-a"
+    assert job.scanner == "image"
+    assert job.target == "python:3.14"
+    updated = schedules.get(schedule.id, tenant_id="tenant-a")
+    assert updated.last_enqueued_at == (NOW + timedelta(days=1)).isoformat()
+    assert updated.next_run_at == (NOW + timedelta(days=2)).isoformat()
+    assert updated.claim_token is None
+    manager.executor.shutdown(wait=True)
+
+
+def test_executor_records_failed_adapter_attempt_without_enqueue(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    reports = tmp_path / "reports"
+    _save_asset_job(
+        database,
+        job_id="job-1",
+        tenant_id="tenant-a",
+        scanner="network",
+        target="127.0.0.1",
+    )
+    asset = AssetStore(database).list(tenant_id="tenant-a")[0]
+    schedules = ReassessmentScheduleStore(database)
+    schedule = schedules.create(
+        tenant_id="tenant-a",
+        asset_id=asset.id,
+        created_by="user-a",
+        cadence="daily",
+        now=NOW,
+    )
+    manager = JobManager(reports, lambda _args: 0, database=database)
+    run_at = NOW + timedelta(days=1)
+
+    assert ReassessmentExecutor(database, manager).run_one(now=run_at) is None
+
+    updated = schedules.get(schedule.id, tenant_id="tenant-a")
+    assert updated.last_attempted_at == run_at.isoformat()
+    assert updated.last_enqueued_at is None
+    assert updated.next_run_at == (run_at + timedelta(days=1)).isoformat()
+    assert updated.claim_token is None
+    assert manager.list(tenant_id="tenant-a") == [
+        manager.store.get("job-1", tenant_id="tenant-a")
+    ]
+    manager.executor.shutdown(wait=True)
+
+
+def test_executor_preserves_project_association_for_scheduled_job(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    reports = tmp_path / "reports"
+    auth = AuthStore(database)
+    projects = ProjectStore(database)
+    owner = auth.register("owner@example.com", "correct-horse-battery-staple")
+    project = projects.create(owner, "Production")
+    _save_asset_job(
+        database,
+        job_id="job-1",
+        tenant_id=owner.tenant_id,
+        scanner="image",
+        target="python:3.14",
+    )
+    links = ProjectJobStore(database)
+    links.associate(job_id="job-1", tenant_id=owner.tenant_id, project_id=project.id)
+    asset = AssetStore(database).list(tenant_id=owner.tenant_id)[0]
+    ReassessmentScheduleStore(database).create(
+        tenant_id=owner.tenant_id,
+        asset_id=asset.id,
+        created_by=owner.id,
+        cadence="daily",
+        project_id=project.id,
+        now=NOW,
+    )
+    manager = JobManager(reports, lambda _args: 0, database=database)
+
+    job = ReassessmentExecutor(database, manager).run_one(now=NOW + timedelta(days=1))
+
+    assert job is not None
+    assert links.project_id(job.id, tenant_id=owner.tenant_id) == project.id
+    manager.executor.shutdown(wait=True)
