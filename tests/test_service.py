@@ -485,3 +485,23 @@ def test_job_list_and_cancel_endpoints(tmp_path: Path) -> None:
     assert client.delete(f"/api/v1/jobs/{first['id']}").status_code == 409
     assert client.delete("/api/v1/jobs/missing").status_code == 404
     release.set()
+
+
+def test_before_enqueue_runs_before_worker_and_failure_rolls_back(tmp_path: Path) -> None:
+    worker_started = Event()
+    manager = JobManager(tmp_path, lambda _args: worker_started.set() or 0, max_workers=1)
+
+    def reject(_record: JobRecord) -> None:
+        assert not worker_started.is_set()
+        raise ValueError("association failed")
+
+    with pytest.raises(ValueError, match="association failed"):
+        manager.submit(
+            ScanSubmission(scanner="image", target="alpine:3.20"),
+            tenant_id="tenant-a",
+            before_enqueue=reject,
+        )
+
+    assert not worker_started.is_set()
+    assert manager.list(tenant_id="tenant-a") == []
+    manager.executor.shutdown(wait=True)
