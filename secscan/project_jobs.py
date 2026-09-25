@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 import sqlite3
-from typing import cast
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.routing import APIRoute
