@@ -138,13 +138,18 @@ class ReassessmentExecutor:
                 raise PermissionError("schedule creator is no longer an enabled tenant member")
             self.authorizer.require_manage(actor, project_id=schedule.project_id)
             submission = self.assets.submission_for(schedule)
-            job = self.manager.submit(submission, tenant_id=schedule.tenant_id)
+            associate = None
             if schedule.project_id is not None:
-                self.project_jobs.associate(
-                    job_id=job.id,
+                associate = lambda record: self.project_jobs.associate(
+                    job_id=record.id,
                     tenant_id=schedule.tenant_id,
                     project_id=schedule.project_id,
                 )
+            job = self.manager.submit(
+                submission,
+                tenant_id=schedule.tenant_id,
+                before_enqueue=associate,
+            )
         except (OSError, PermissionError, RuntimeError, ValueError):
             self.schedules.record_attempt(
                 schedule.id,
