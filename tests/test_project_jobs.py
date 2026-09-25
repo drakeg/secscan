@@ -8,7 +8,7 @@ from fastapi.routing import APIRoute
 import pytest
 
 from secscan.auth import AuthStore, User
-from secscan.project_jobs import ProjectScanSubmission, mount_project_job_association
+from secscan.project_jobs import ProjectJobStore, ProjectScanSubmission, mount_project_job_association
 from secscan.projects import ProjectStore
 from secscan.service import create_app
 
@@ -119,3 +119,35 @@ def test_cross_tenant_project_id_fails_closed(tmp_path: Path) -> None:
         )
     assert exc_info.value.status_code == 422
     assert exc_info.value.detail == "project was not found"
+
+
+def test_project_association_exists_before_worker_starts(tmp_path: Path) -> None:
+    from threading import Event
+
+    root = tmp_path / "jobs"
+    database = root / "jobs.db"
+    worker_started = Event()
+    association_seen = Event()
+
+    def runner(_args: list[str]) -> int:
+        worker_started.set()
+        return 0
+
+    app = create_app(job_root=root, job_database=database, runner=runner)
+    auth = AuthStore(database)
+    projects = ProjectStore(database)
+    mount_project_job_association(app, database=database)
+    owner = auth.register("owner@example.com", "correct-horse-battery-staple")
+    project = projects.create(owner, "Production")
+    submit = _route(app, "/api/v1/jobs", "POST")
+
+    submitted = submit(
+        _request(owner),
+        ProjectScanSubmission(scanner="image", target="alpine:3.20", project_id=project.id),
+    )
+    job_id = str(submitted["id"])
+    if ProjectJobStore(database).project_id(job_id, tenant_id=owner.tenant_id) == project.id:
+        association_seen.set()
+
+    assert association_seen.is_set()
+    assert submitted["project_id"] == project.id

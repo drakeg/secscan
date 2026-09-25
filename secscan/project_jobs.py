@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 import sqlite3
-from typing import cast
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.routing import APIRoute
@@ -106,6 +106,7 @@ def mount_project_job_association(app: FastAPI, *, database: Path) -> FastAPI:
     get_route = _route(app, path="/api/v1/jobs/{job_id}", method="GET")
 
     submit_original = cast(Callable[[Request, ScanSubmission], dict[str, object]], submit_route.endpoint)
+    get_manager = cast(Callable[[], object], app.state.secscan_get_manager)
     list_original = cast(Callable[..., list[dict[str, object]]], list_route.endpoint)
     get_original = cast(Callable[[str, Request], dict[str, object]], get_route.endpoint)
 
@@ -128,11 +129,24 @@ def mount_project_job_association(app: FastAPI, *, database: Path) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-        document = submit_original(request, base_submission)
-        job_id = document.get("id")
-        if not isinstance(job_id, str) or not job_id:
-            raise HTTPException(status_code=500, detail="job submission returned an invalid identifier")
-        link_store.associate(job_id=job_id, tenant_id=user.tenant_id, project_id=project_id)
+        manager = cast(Any, get_manager())
+        try:
+            record = manager.submit(
+                base_submission,
+                tenant_id=user.tenant_id,
+                before_enqueue=lambda queued: link_store.associate(
+                    job_id=queued.id,
+                    tenant_id=user.tenant_id,
+                    project_id=project_id,
+                ),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        document = {
+            key: value
+            for key, value in record.__dict__.items()
+            if key != "tenant_id"
+        }
         document["project_id"] = project_id
         return document
 
