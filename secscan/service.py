@@ -244,7 +244,13 @@ class JobManager:
         self.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="secscan")
         self._lock = Lock()
 
-    def submit(self, request: ScanSubmission, *, tenant_id: str = SYSTEM_TENANT_ID) -> JobRecord:
+    def submit(
+        self,
+        request: ScanSubmission,
+        *,
+        tenant_id: str = SYSTEM_TENANT_ID,
+        before_enqueue: Callable[[JobRecord], None] | None = None,
+    ) -> JobRecord:
         self._validate_submission(request)
         self._validate_input_paths(request)
         job_id = str(uuid4())
@@ -262,6 +268,12 @@ class JobManager:
         )
         with self._lock:
             self.store.save(record)
+            try:
+                if before_enqueue is not None:
+                    before_enqueue(record)
+            except Exception:
+                self.store.delete(record.id, tenant_id=tenant_id)
+                raise
         self.executor.submit(self._run, job_id, request)
         return record
 
