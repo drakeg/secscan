@@ -210,6 +210,14 @@ class JobStore:
             ).fetchall()
         return [JobRecord(**dict(row)) for row in rows]
 
+    def delete(self, job_id: str, *, tenant_id: str) -> bool:
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "DELETE FROM service_jobs WHERE id = ? AND tenant_id = ?",
+                (job_id, tenant_id),
+            )
+        return cursor.rowcount == 1
+
     def fail_interrupted(self) -> None:
         completed_at = _timestamp()
         with self._connect() as connection:
