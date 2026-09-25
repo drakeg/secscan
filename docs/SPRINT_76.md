@@ -64,3 +64,8 @@ Repository reassessment now requires the persisted target to be a remote reposit
 ## Increment 3 — execution-time authorization
 
 Scheduled execution now resolves the schedule creator from current persisted auth state immediately after claiming a due schedule. The creator must still be an enabled member of the schedule tenant, and the existing reassessment authorizer rechecks current tenant-owner or project-operator authority before any submission reaches the JobManager. Revoked or disabled authority records a failed bounded attempt and advances the schedule without enqueueing a job. This prevents historical schedule creation authority from becoming permanent execution authority.
+
+
+## Increment 4 — project-aware enqueue ordering
+
+Project-scoped jobs now establish their project/job association through a shared JobManager pre-enqueue hook after the queued record is persisted but before worker submission. If association fails, the tenant-scoped queued record is rolled back and no worker is started. Both the standard project-aware jobs API and scheduled reassessment use this boundary, removing the race where a fast scan could run before its project ACL association existed. Credential-backed Linux host submission already used the safe persist-associate-enqueue order and remains unchanged.
