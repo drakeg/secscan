@@ -83,10 +83,27 @@ class ReassessmentAssetAdapter:
         self.project_jobs = ProjectJobStore(database)
 
     def submission_for(self, schedule: ReassessmentSchedule) -> ScanSubmission:
-        asset = self.assets.get(schedule.asset_id, tenant_id=schedule.tenant_id)
+        return self.submission_for_asset(
+            tenant_id=schedule.tenant_id,
+            asset_id=schedule.asset_id,
+            project_id=schedule.project_id,
+        )
+
+    def submission_for_asset(
+        self,
+        *,
+        tenant_id: str,
+        asset_id: str,
+        project_id: str | None,
+    ) -> ScanSubmission:
+        asset = self.assets.get(asset_id, tenant_id=tenant_id)
         if asset is None:
             raise ValueError("scheduled asset is unavailable")
-        self._validate_project_binding(schedule, asset)
+        self._validate_project_binding(
+            tenant_id=tenant_id,
+            project_id=project_id,
+            asset=asset,
+        )
         if asset.scanner not in SAFE_REASSESSMENT_SCANNERS:
             raise ValueError("asset scanner is not supported for reassessment")
         if asset.scanner == "repository":
@@ -95,7 +112,7 @@ class ReassessmentAssetAdapter:
                     "repository reassessment requires a remote repository URL"
                 )
             validate_remote_repository_url(asset.target)
-        latest = self.jobs.get(asset.latest_job_id, tenant_id=schedule.tenant_id)
+        latest = self.jobs.get(asset.latest_job_id, tenant_id=tenant_id)
         if latest is None or latest.scanner != asset.scanner or latest.target != asset.target:
             raise ValueError("scheduled asset job history is unavailable")
         scanner = cast(ReassessmentScanner, asset.scanner)
@@ -103,14 +120,16 @@ class ReassessmentAssetAdapter:
 
     def _validate_project_binding(
         self,
-        schedule: ReassessmentSchedule,
+        *,
+        tenant_id: str,
+        project_id: str | None,
         asset: AssetRecord,
     ) -> None:
         latest_project = self.project_jobs.project_id(
             asset.latest_job_id,
-            tenant_id=schedule.tenant_id,
+            tenant_id=tenant_id,
         )
-        if schedule.project_id != latest_project:
+        if project_id != latest_project:
             raise ValueError("scheduled asset project binding does not match job history")
 
 
@@ -223,6 +242,7 @@ class ReassessmentScheduleCreate(BaseModel):
 def mount_reassessment_schedules(app: FastAPI, *, database: Path) -> FastAPI:
     store = ReassessmentScheduleStore(database)
     authorizer = ReassessmentScheduleAuthorizer(database)
+    asset_adapter = ReassessmentAssetAdapter(database)
 
     def actor(request: Request) -> User:
         user = getattr(request.state, "secscan_user", None)
@@ -250,6 +270,11 @@ def mount_reassessment_schedules(app: FastAPI, *, database: Path) -> FastAPI:
         user = actor(request)
         try:
             authorizer.require_manage(user, project_id=submission.project_id)
+            asset_adapter.submission_for_asset(
+                tenant_id=user.tenant_id,
+                asset_id=submission.asset_id,
+                project_id=submission.project_id,
+            )
             schedule = store.create(
                 tenant_id=user.tenant_id,
                 asset_id=submission.asset_id,
@@ -257,7 +282,6 @@ def mount_reassessment_schedules(app: FastAPI, *, database: Path) -> FastAPI:
                 cadence=submission.cadence,
                 created_by=user.id,
             )
-            ReassessmentAssetAdapter(database).submission_for(schedule)
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
         except ValueError as exc:
