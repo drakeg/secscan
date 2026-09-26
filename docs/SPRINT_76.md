@@ -69,3 +69,8 @@ Scheduled execution now resolves the schedule creator from current persisted aut
 ## Increment 4 — project-aware enqueue ordering
 
 Project-scoped jobs now establish their project/job association through a shared JobManager pre-enqueue hook after the queued record is persisted but before worker submission. If association fails, the tenant-scoped queued record is rolled back and no worker is started. Both the standard project-aware jobs API and scheduled reassessment use this boundary, removing the race where a fast scan could run before its project ACL association existed. Credential-backed Linux host submission already used the safe persist-associate-enqueue order and remains unchanged.
+
+
+## Increment 5 — validate before schedule persistence
+
+Reassessment schedule creation now validates the referenced asset and its current project binding before writing the schedule row. Invalid, unsupported, unavailable, or unsafe local-repository assets return the existing validation error without leaving a persisted schedule behind. The adapter exposes a schedule-independent validation/reconstruction path so creation and execution share the same security rules. API regression coverage verifies that an invalid local repository target returns 422 with an empty schedule store and that a valid remote repository target persists normally.
