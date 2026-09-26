@@ -5,6 +5,9 @@ from pathlib import Path
 import sqlite3
 
 import pytest
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.routing import APIRoute
+from typing import Any, Callable, cast
 
 from secscan.assets import AssetStore
 from secscan.auth import AuthStore, User
@@ -17,6 +20,8 @@ from secscan.reassessment import (
     ReassessmentScheduleAuthorizer,
     ReassessmentScheduler,
     ReassessmentScheduleStore,
+    ReassessmentScheduleCreate,
+    mount_reassessment_schedules,
     next_run_for,
 )
 from secscan.service import JobManager, JobRecord, JobStore
@@ -824,3 +829,73 @@ def test_executor_fails_closed_when_project_operator_is_revoked(tmp_path: Path) 
     assert updated.last_enqueued_at is None
     assert len(manager.list(tenant_id=owner.tenant_id)) == 1
     manager.executor.shutdown(wait=True)
+
+
+def _reassessment_route(app: FastAPI, path: str, method: str) -> Callable[..., Any]:
+    for route in app.routes:
+        if (
+            isinstance(route, APIRoute)
+            and route.path == path
+            and route.methods is not None
+            and method in route.methods
+        ):
+            return cast(Callable[..., Any], route.endpoint)
+    raise AssertionError(f"missing {method} {path}")
+
+
+def _reassessment_request(user: User) -> Request:
+    return Request({"type": "http", "state": {"secscan_user": user}})
+
+
+def test_schedule_api_invalid_asset_does_not_persist(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    auth = AuthStore(database)
+    owner = auth.register("owner@example.com", "correct-horse-battery-staple")
+    _save_asset_job(
+        database,
+        job_id="job-local",
+        tenant_id=owner.tenant_id,
+        scanner="repository",
+        target="/workspace/repository",
+    )
+    asset = AssetStore(database).list(tenant_id=owner.tenant_id)[0]
+    app = FastAPI()
+    mount_reassessment_schedules(app, database=database)
+    create = _reassessment_route(app, "/api/v1/reassessment-schedules", "POST")
+
+    with pytest.raises(HTTPException) as exc_info:
+        create(
+            _reassessment_request(owner),
+            ReassessmentScheduleCreate(asset_id=asset.id, cadence="daily"),
+        )
+
+    assert exc_info.value.status_code == 422
+    assert "remote repository URL" in str(exc_info.value.detail)
+    assert ReassessmentScheduleStore(database).list(tenant_id=owner.tenant_id) == []
+
+
+def test_schedule_api_valid_remote_repository_persists(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    auth = AuthStore(database)
+    owner = auth.register("owner@example.com", "correct-horse-battery-staple")
+    _save_asset_job(
+        database,
+        job_id="job-remote",
+        tenant_id=owner.tenant_id,
+        scanner="repository",
+        target="https://github.com/example/project.git",
+    )
+    asset = AssetStore(database).list(tenant_id=owner.tenant_id)[0]
+    app = FastAPI()
+    mount_reassessment_schedules(app, database=database)
+    create = _reassessment_route(app, "/api/v1/reassessment-schedules", "POST")
+
+    document = create(
+        _reassessment_request(owner),
+        ReassessmentScheduleCreate(asset_id=asset.id, cadence="daily"),
+    )
+
+    schedules = ReassessmentScheduleStore(database).list(tenant_id=owner.tenant_id)
+    assert len(schedules) == 1
+    assert document["id"] == schedules[0].id
+    assert schedules[0].asset_id == asset.id
