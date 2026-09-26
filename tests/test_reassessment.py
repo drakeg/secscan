@@ -647,6 +647,32 @@ def test_scheduler_interval_is_bounded(tmp_path: Path, interval: timedelta) -> N
     manager.executor.shutdown(wait=True)
 
 
+def test_scheduler_recovers_after_unexpected_tick_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    database = tmp_path / "jobs.db"
+    manager = JobManager(tmp_path / "reports", lambda _args: 0, database=database)
+    scheduler = ReassessmentScheduler(ReassessmentExecutor(database, manager))
+    attempts = 0
+
+    def tick() -> int:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("transient database error")
+        scheduler._stop.set()
+        return 0
+
+    monkeypatch.setattr(scheduler, "tick", tick)
+    monkeypatch.setattr(scheduler._stop, "wait", lambda _seconds: False)
+    scheduler._run()
+
+    assert attempts == 2
+    assert "reassessment scheduler tick failed" in caplog.text
+    assert "transient database error" in caplog.text
+    manager.executor.shutdown(wait=True)
+
+
 def test_scheduler_tick_limit_is_bounded(tmp_path: Path) -> None:
     database = tmp_path / "jobs.db"
     manager = JobManager(tmp_path / "reports", lambda _args: 0, database=database)

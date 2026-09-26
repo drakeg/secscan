@@ -74,3 +74,7 @@ Project-scoped jobs now establish their project/job association through a shared
 ## Increment 5 — validate before schedule persistence
 
 Reassessment schedule creation now validates the referenced asset and its current project binding before writing the schedule row. Invalid, unsupported, unavailable, or unsafe local-repository assets return the existing validation error without leaving a persisted schedule behind. The adapter exposes a schedule-independent validation/reconstruction path so creation and execution share the same security rules. API regression coverage verifies that an invalid local repository target returns 422 with an empty schedule store and that a valid remote repository target persists normally.
+
+## Scheduler exception resilience
+
+An unexpected scheduler tick exception is logged with its traceback and does not terminate the background loop. The loop waits for the configured interval before retrying, avoiding an unbounded error spin. A deterministic regression test checks that a failing tick is followed by a successful tick without a real-time sleep. This does not bypass claim-token or authorization checks.
