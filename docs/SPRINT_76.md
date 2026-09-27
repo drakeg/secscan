@@ -78,3 +78,8 @@ Reassessment schedule creation now validates the referenced asset and its curren
 ## Scheduler exception resilience
 
 An unexpected scheduler tick exception is logged with its traceback and does not terminate the background loop. The loop waits for the configured interval before retrying, avoiding an unbounded error spin. A deterministic regression test checks that a failing tick is followed by a successful tick without a real-time sleep. This does not bypass claim-token or authorization checks.
+
+
+## Increment 6 — legacy migration ambiguity guard
+
+Legacy databases are checked for duplicate tenant/asset schedules with a NULL project before the newer partial unique index is created. When such historical ambiguity exists, startup fails with an explicit remediation message while preserving every existing row rather than silently choosing or deleting a schedule. Normal legacy databases continue through the claim-column and index migration automatically.
