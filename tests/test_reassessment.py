@@ -647,6 +647,32 @@ def test_scheduler_interval_is_bounded(tmp_path: Path, interval: timedelta) -> N
     manager.executor.shutdown(wait=True)
 
 
+def test_scheduler_recovers_after_unexpected_tick_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    database = tmp_path / "jobs.db"
+    manager = JobManager(tmp_path / "reports", lambda _args: 0, database=database)
+    scheduler = ReassessmentScheduler(ReassessmentExecutor(database, manager))
+    attempts = 0
+
+    def tick() -> int:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("transient database error")
+        scheduler._stop.set()
+        return 0
+
+    monkeypatch.setattr(scheduler, "tick", tick)
+    monkeypatch.setattr(scheduler._stop, "wait", lambda _seconds: False)
+    scheduler._run()
+
+    assert attempts == 2
+    assert "reassessment scheduler tick failed" in caplog.text
+    assert "transient database error" in caplog.text
+    manager.executor.shutdown(wait=True)
+
+
 def test_scheduler_tick_limit_is_bounded(tmp_path: Path) -> None:
     database = tmp_path / "jobs.db"
     manager = JobManager(tmp_path / "reports", lambda _args: 0, database=database)
@@ -941,28 +967,3 @@ def test_legacy_duplicate_unscoped_schedules_fail_upgrade_without_data_loss(
             "SELECT id, cadence FROM reassessment_schedules ORDER BY id"
         ).fetchall()
     assert rows == [("schedule-a", "daily"), ("schedule-b", "weekly")]
-
-
-def test_scheduler_loop_survives_unexpected_tick_error(tmp_path: Path) -> None:
-    database = tmp_path / "jobs.db"
-    manager = JobManager(tmp_path / "reports", lambda _args: 0, database=database)
-    scheduler = ReassessmentScheduler(
-        ReassessmentExecutor(database, manager),
-        interval=timedelta(seconds=10),
-    )
-    calls = 0
-
-    def flaky_tick(*, limit: int = 10) -> int:
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            raise RuntimeError("transient scheduler failure")
-        scheduler._stop.set()
-        return 0
-
-    scheduler.tick = flaky_tick  # type: ignore[method-assign]
-    scheduler._stop.clear()
-    scheduler._run()
-
-    assert calls == 2
-    manager.executor.shutdown(wait=True)
