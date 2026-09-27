@@ -394,6 +394,21 @@ class ReassessmentScheduleStore:
                 connection.execute(
                     "ALTER TABLE reassessment_schedules ADD COLUMN claim_expires_at TEXT"
                 )
+            duplicate = connection.execute(
+                """
+                SELECT tenant_id, asset_id, COUNT(*) AS duplicate_count
+                FROM reassessment_schedules
+                WHERE project_id IS NULL
+                GROUP BY tenant_id, asset_id
+                HAVING COUNT(*) > 1
+                LIMIT 1
+                """
+            ).fetchone()
+            if duplicate is not None:
+                raise RuntimeError(
+                    "legacy reassessment schedules contain duplicate unscoped asset rows; "
+                    "resolve the duplicate schedules before upgrading"
+                )
             connection.executescript(
                 """
                 CREATE INDEX IF NOT EXISTS reassessment_schedules_due_idx
