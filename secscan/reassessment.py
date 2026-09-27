@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+import logging
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
@@ -18,6 +19,9 @@ from secscan.project_access import ProjectAccessStore
 from secscan.project_jobs import ProjectJobStore
 from secscan.service import JobManager, JobRecord, JobStore, ScanSubmission
 from secscan.scanners.repository import is_remote_repository_url, validate_remote_repository_url
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 CADENCE_INTERVALS = {
@@ -229,7 +233,10 @@ class ReassessmentScheduler:
 
     def _run(self) -> None:
         while not self._stop.is_set():
-            self.tick()
+            try:
+                self.tick()
+            except Exception:
+                LOGGER.exception("reassessment scheduler tick failed; retrying after interval")
             self._stop.wait(self.interval.total_seconds())
 
 
