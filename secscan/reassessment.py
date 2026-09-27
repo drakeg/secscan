@@ -229,7 +229,10 @@ class ReassessmentScheduler:
 
     def _run(self) -> None:
         while not self._stop.is_set():
-            self.tick()
+            try:
+                self.tick()
+            except Exception:  # defensive scheduler boundary
+                pass
             self._stop.wait(self.interval.total_seconds())
 
 
