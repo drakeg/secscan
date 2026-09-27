@@ -899,3 +899,45 @@ def test_schedule_api_valid_remote_repository_persists(tmp_path: Path) -> None:
     assert len(schedules) == 1
     assert document["id"] == schedules[0].id
     assert schedules[0].asset_id == asset.id
+
+
+def test_legacy_duplicate_unscoped_schedules_fail_upgrade_without_data_loss(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "jobs.db"
+    with sqlite3.connect(database) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE reassessment_schedules (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL,
+                asset_id TEXT NOT NULL,
+                project_id TEXT,
+                cadence TEXT NOT NULL,
+                enabled INTEGER NOT NULL,
+                next_run_at TEXT NOT NULL,
+                last_attempted_at TEXT,
+                last_enqueued_at TEXT,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                UNIQUE(tenant_id, asset_id, project_id)
+            );
+            INSERT INTO reassessment_schedules VALUES
+                ('schedule-a', 'tenant-a', 'asset-a', NULL, 'daily', 1,
+                 '2026-09-24T18:00:00+00:00', NULL, NULL, 'user-a',
+                 '2026-09-23T18:00:00+00:00', '2026-09-23T18:00:00+00:00'),
+                ('schedule-b', 'tenant-a', 'asset-a', NULL, 'weekly', 1,
+                 '2026-09-30T18:00:00+00:00', NULL, NULL, 'user-a',
+                 '2026-09-23T19:00:00+00:00', '2026-09-23T19:00:00+00:00');
+            """
+        )
+
+    with pytest.raises(RuntimeError, match="duplicate unscoped asset rows"):
+        ReassessmentScheduleStore(database)
+
+    with sqlite3.connect(database) as connection:
+        rows = connection.execute(
+            "SELECT id, cadence FROM reassessment_schedules ORDER BY id"
+        ).fetchall()
+    assert rows == [("schedule-a", "daily"), ("schedule-b", "weekly")]
