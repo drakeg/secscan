@@ -967,3 +967,74 @@ def test_legacy_duplicate_unscoped_schedules_fail_upgrade_without_data_loss(
             "SELECT id, cadence FROM reassessment_schedules ORDER BY id"
         ).fetchall()
     assert rows == [("schedule-a", "daily"), ("schedule-b", "weekly")]
+
+
+def test_schedule_api_rechecks_disabled_actor_for_lifecycle(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    auth = AuthStore(database)
+    owner = auth.register("owner@example.com", "correct-horse-battery-staple")
+    _save_asset_job(
+        database, job_id="job-image", tenant_id=owner.tenant_id,
+        scanner="image", target="python:3.14",
+    )
+    asset = AssetStore(database).list(tenant_id=owner.tenant_id)[0]
+    app = FastAPI()
+    mount_reassessment_schedules(app, database=database)
+    request = _reassessment_request(owner)
+    create = _reassessment_route(app, "/api/v1/reassessment-schedules", "POST")
+    listing = _reassessment_route(app, "/api/v1/reassessment-schedules", "GET")
+    pause = _reassessment_route(app, "/api/v1/reassessment-schedules/{schedule_id}/pause", "POST")
+    resume = _reassessment_route(app, "/api/v1/reassessment-schedules/{schedule_id}/resume", "POST")
+    delete = _reassessment_route(app, "/api/v1/reassessment-schedules/{schedule_id}", "DELETE")
+
+    document = create(
+        request, ReassessmentScheduleCreate(asset_id=asset.id, cadence="daily"),
+    )
+    schedule_id = str(document["id"])
+    assert [row["id"] for row in listing(request)] == [schedule_id]
+    assert pause(schedule_id, request)["enabled"] is False
+    assert resume(schedule_id, request)["enabled"] is True
+
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE auth_users SET enabled = 0 WHERE id = ?", (owner.id,),
+        )
+
+    assert listing(request) == []
+    with pytest.raises(HTTPException) as create_error:
+        create(request, ReassessmentScheduleCreate(asset_id=asset.id, cadence="weekly"))
+    assert create_error.value.status_code == 403
+    for action in (pause, resume, delete):
+        with pytest.raises(HTTPException) as exc_info:
+            action(schedule_id, request)
+        assert exc_info.value.status_code == 403
+
+    persisted = ReassessmentScheduleStore(database).get(
+        schedule_id, tenant_id=owner.tenant_id,
+    )
+    assert persisted.enabled is True
+
+
+def test_schedule_api_rejects_cross_tenant_lifecycle(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    auth = AuthStore(database)
+    owner = auth.register("owner@example.com", "correct-horse-battery-staple")
+    outsider = auth.register("outsider@example.com", "correct-horse-battery-staple")
+    schedule = ReassessmentScheduleStore(database).create(
+        tenant_id=owner.tenant_id, asset_id="asset-a",
+        created_by=owner.id, cadence="daily", now=NOW,
+    )
+    app = FastAPI()
+    mount_reassessment_schedules(app, database=database)
+    request = _reassessment_request(outsider)
+    listing = _reassessment_route(app, "/api/v1/reassessment-schedules", "GET")
+    assert listing(request) == []
+    for path, method in (
+        ("/api/v1/reassessment-schedules/{schedule_id}/pause", "POST"),
+        ("/api/v1/reassessment-schedules/{schedule_id}/resume", "POST"),
+        ("/api/v1/reassessment-schedules/{schedule_id}", "DELETE"),
+    ):
+        action = _reassessment_route(app, path, method)
+        with pytest.raises(HTTPException) as exc_info:
+            action(schedule.id, request)
+        assert exc_info.value.status_code == 404

@@ -83,3 +83,8 @@ An unexpected scheduler tick exception is logged with its traceback and does not
 ## Increment 6 — legacy migration ambiguity guard
 
 Legacy databases are checked for duplicate tenant/asset schedules with a NULL project before the newer partial unique index is created. When such historical ambiguity exists, startup fails with an explicit remediation message while preserving every existing row rather than silently choosing or deleting a schedule. Normal legacy databases continue through the claim-column and index migration automatically.
+
+
+## Increment 7 — reassessment API lifecycle authorization
+
+Schedule management now rechecks current enabled tenant membership, rather than trusting an earlier request-state user object after an account is disabled or removed. The same check covers list visibility, creation, pause, resume, and deletion. API regression tests exercise a full valid lifecycle, subsequent disabled-user denial without schedule mutation, and cross-tenant list/mutation isolation.

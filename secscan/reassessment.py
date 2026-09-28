@@ -330,6 +330,8 @@ class ReassessmentScheduleAuthorizer:
         self.projects = ProjectAccessStore(database)
 
     def require_manage(self, actor: User, *, project_id: str | None) -> None:
+        if self.auth.enabled_user_in_tenant(actor.id, actor.tenant_id) is None:
+            raise PermissionError("enabled tenant membership required")
         tenant_role = self.auth.membership_role(actor.id, actor.tenant_id)
         if tenant_role == "owner":
             if project_id is not None:
