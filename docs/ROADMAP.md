@@ -1,5 +1,8 @@
 # Product Roadmap and Sprint Plans
 
+> **Planning status:** This is the historical capability roadmap. For the authoritative current sprint sequence and next-sprint planning status, use [`REMAINING_SPRINTS.md`](REMAINING_SPRINTS.md). The legacy "Current sprint" heading below is historical and does not identify the active sprint.
+
+
 ## Product goal
 
 Deliver a portable, open-source vulnerability-management platform that begins as a reliable Dockerized scanner and grows toward multi-target scanning, history, automation, and AWS-aware prioritization.

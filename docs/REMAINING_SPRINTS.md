@@ -2,30 +2,19 @@
 
 This document turns the directional backlog into an ordered candidate sprint sequence. Only the current sprint is committed. Later sprint numbers remain candidates until sprint planning confirms exact stories, acceptance criteria, dependencies, security boundaries, and cost.
 
-## Completed through Sprint 75
+## Completed through Sprint 76
 
 Sprints 0–75 are complete, including the capabilities previously summarized here plus tenant-isolated SSH credentials and SSH host-key trust, bounded ECS/EKS workload association, an opt-in tenant-bound Stripe subscription lifecycle, bounded GitHub Issues export, offline Ed25519-signed policy/governance bundles, authenticated network-range and Windows host workflows, multi-user tenant membership with session-scoped tenant switching, owner-controlled expiring tenant invitations with authenticated single-use acceptance, tenant-owned projects with validated optional scan-job association and project-specific viewer/operator access control, tenant-scoped API keys, tenant-owned reusable SSH credentials with owner administration, safe legacy migration, disabled-state enforcement, API-key use, and project ACL enforcement, and an optional provider-neutral OIDC login flow with bounded discovery/JWKS/token exchange, replay-safe state/nonce validation, cryptographic ID-token verification, explicit issuer/subject linking, and reuse of the existing local session and tenant model.
 
-## Current sprint
+## Sprint 76 closeout
 
-### Sprint 76 — Security Boundary Hardening
+Sprint 76 — Security Boundary Hardening is complete. It delivered upgrade-safe reassessment persistence, strict claim-token completion, remote-only scheduled repository targets, execution-time authorization re-evaluation, safe project association before enqueue, validation-before-persistence, scheduler exception resilience, explicit legacy duplicate migration handling without silent data loss, and lifecycle API authorization regression coverage.
 
-Close security/correctness gaps discovered during the Sprint 75 review before expanding feature scope. This sprint prioritizes upgrade-safe persistence, strict reassessment target validation, execution-time authorization, and claim integrity.
-
-Initial planning priorities:
-- migrate existing reassessment databases safely when newer claim columns/indexes are absent
-- require scheduled repository reassessments to use validated remote repository URLs rather than local repository paths
-- require matching claim tokens when completing an actively claimed schedule
-- re-evaluate the schedule creator/current operator authorization at execution time so revoked or disabled access fails closed
-- review project-job association ordering so scheduled jobs cannot begin before required project association is safely established
-- add restart, migration, revocation, and concurrency regression coverage
-- keep all behavior local/container-first with no new paid service or recurring cost
-
-Before implementation, define compatibility behavior for existing databases and the exact execution-time authorization semantics.
+See `docs/SPRINT_76.md` for the completed acceptance record.
 
 ## Candidate remaining sprints
 
-No later sprint number is committed yet. After Sprint 76 is accepted, reprioritize the remaining backlog before assigning Sprint 77.
+No later sprint number is committed yet. Sprint 77 will be assigned only after the remaining backlog is reprioritized against current security, correctness, user value, dependency, and $0 recurring-cost constraints.
 
 ## Backlog after the numbered candidate sequence
 
