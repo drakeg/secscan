@@ -88,3 +88,10 @@ Legacy databases are checked for duplicate tenant/asset schedules with a NULL pr
 ## Increment 7 — reassessment API lifecycle authorization
 
 Schedule management now rechecks current enabled tenant membership, rather than trusting an earlier request-state user object after an account is disabled or removed. The same check covers list visibility, creation, pause, resume, and deletion. API regression tests exercise a full valid lifecycle, subsequent disabled-user denial without schedule mutation, and cross-tenant list/mutation isolation.
+
+
+## Acceptance and closeout
+
+Sprint 76 is complete. The delivered increments cover upgrade-safe claim migration, strict claim completion, remote-only scheduled repository targets, execution-time authorization re-evaluation, project association before worker enqueue, validation before schedule persistence, scheduler exception resilience, explicit no-data-loss handling for ambiguous legacy NULL-project duplicates, and current-membership checks across the schedule-management API.
+
+The final acceptance gate passed the repository CI and CodeQL workflows after the lifecycle-authorization increment. Manual local repository scanning remains supported; only unattended scheduled repository reassessment requires a validated remote URL. The implementation adds no hosted service, paid dependency, or recurring infrastructure cost.
