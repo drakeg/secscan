@@ -19,6 +19,8 @@ def test_oidc_login_transaction_is_single_use_and_nonce_bound(tmp_path: Path) ->
     assert issued.state
     assert issued.nonce
     assert issued.state != issued.nonce
+    assert len(issued.code_verifier) >= 43
+    assert issued.code_challenge
 
     consumed = store.consume(issued.state, now=now + timedelta(minutes=1))
     assert consumed.matches_nonce(issued.nonce) is True
@@ -47,12 +49,13 @@ def test_oidc_login_transaction_persists_only_state_and_nonce_digests(tmp_path: 
 
     with sqlite3.connect(database) as connection:
         row = connection.execute(
-            "SELECT state_digest, nonce_digest FROM auth_oidc_login_transactions"
+            "SELECT state_digest, nonce_digest, code_verifier FROM auth_oidc_login_transactions"
         ).fetchone()
     assert row is not None
-    state_digest, nonce_digest = str(row[0]), str(row[1])
+    state_digest, nonce_digest, persisted_verifier = str(row[0]), str(row[1]), str(row[2])
     assert issued.state not in {state_digest, nonce_digest}
     assert issued.nonce not in {state_digest, nonce_digest}
+    assert persisted_verifier == issued.code_verifier
     assert len(state_digest) == 64
     assert len(nonce_digest) == 64
 
