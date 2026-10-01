@@ -147,3 +147,48 @@ def test_exchange_oidc_code_rejects_insecure_redirect_uri() -> None:
             redirect_uri="http://secscan.example.com/callback",
             exchanger=lambda *_args: ("application/json", b'{"id_token":"token"}'),
         )
+
+
+def test_exchange_oidc_code_form_encodes_basic_client_credentials() -> None:
+    config = OidcProviderConfig(
+        issuer="https://login.example.com/tenant",
+        client_id="client:id + percent%",
+        client_secret="secret:with + percent% and ünicode",
+    )
+    discovery = OidcDiscoveryDocument.from_mapping(
+        config,
+        {
+            "issuer": config.issuer,
+            "authorization_endpoint": "https://login.example.com/oauth2/authorize",
+            "token_endpoint": "https://login.example.com/oauth2/token",
+            "jwks_uri": "https://login.example.com/oauth2/jwks",
+            "response_types_supported": ["code"],
+            "id_token_signing_alg_values_supported": ["RS256"],
+        },
+    )
+    observed: dict[str, str] = {}
+
+    def exchanger(
+        _url: str,
+        _body: bytes,
+        authorization: str,
+        _max_bytes: int,
+        _timeout: float,
+    ) -> tuple[str, bytes]:
+        observed["authorization"] = authorization
+        return "application/json", b'{"id_token":"header.payload.signature"}'
+
+    exchange_oidc_code(
+        config,
+        discovery,
+        code="authorization-code-123",
+        redirect_uri="https://secscan.example.com/api/v1/auth/oidc/callback",
+        exchanger=exchanger,
+    )
+
+    encoded_id = "client%3Aid+%2B+percent%25"
+    encoded_secret = "secret%3Awith+%2B+percent%25+and+%C3%BCnicode"
+    expected = base64.b64encode(
+        f"{encoded_id}:{encoded_secret}".encode("ascii")
+    ).decode("ascii")
+    assert observed["authorization"] == f"Basic {expected}"
