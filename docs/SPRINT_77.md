@@ -37,3 +37,8 @@ Harden the existing provider-neutral OIDC authorization-code flow against protoc
 ## Increment 2 — PKCE S256
 
 OIDC authorization-code logins now bind each transaction to a high-entropy PKCE verifier. Authorization requests send only the derived S256 challenge; the server-side transaction store retains the verifier until the single-use state is consumed, and token exchange sends it only to the validated provider token endpoint. Existing transaction databases migrate in place; pre-PKCE outstanding transactions fail closed and require a fresh login.
+
+
+## Increment 3 — Provider error state consumption
+
+OIDC callback errors now require a matching state when one was issued and consume that transaction before returning the provider failure. This preserves the same single-use CSRF/replay boundary for denied or failed provider callbacks as for successful authorization-code callbacks. Unknown/replayed state fails closed and no provider error text is reflected to the client.
