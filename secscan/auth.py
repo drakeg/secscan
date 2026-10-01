@@ -720,12 +720,19 @@ def mount_auth(app: FastAPI, *, database: Path, api_token: str | None = None) ->
     ) -> Response:
         if oidc_config is None:
             raise HTTPException(status_code=404, detail="OIDC login is not configured")
-        if error:
-            raise HTTPException(status_code=401, detail="OIDC authentication was not completed")
-        if not state or not code:
+        if not state:
+            if error:
+                raise HTTPException(status_code=401, detail="OIDC authentication was not completed")
             raise HTTPException(status_code=400, detail="OIDC callback is invalid")
         try:
             transaction = oidc_transactions.consume(state)
+        except ValueError as exc:
+            raise HTTPException(status_code=401, detail="OIDC authentication failed") from exc
+        if error:
+            raise HTTPException(status_code=401, detail="OIDC authentication was not completed")
+        if not code:
+            raise HTTPException(status_code=400, detail="OIDC callback is invalid")
+        try:
             discovery = fetch_oidc_discovery(oidc_config)
             token_response = exchange_oidc_code(
                 oidc_config,
