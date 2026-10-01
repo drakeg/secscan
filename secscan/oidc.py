@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from collections.abc import Callable, Mapping, Sequence
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlsplit, urlunsplit
+from urllib.parse import quote_plus, urlencode, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
@@ -450,8 +450,10 @@ def exchange_oidc_code(
             "redirect_uri": validated_redirect,
         }
     ).encode("ascii")
+    encoded_client_id = quote_plus(config.client_id, safe="~")
+    encoded_client_secret = quote_plus(config.client_secret, safe="~")
     credentials = base64.b64encode(
-        f"{config.client_id}:{config.client_secret}".encode("utf-8")
+        f"{encoded_client_id}:{encoded_client_secret}".encode("ascii")
     ).decode("ascii")
     authorization = f"Basic {credentials}"
     exchange = _exchange_oidc_form if exchanger is None else exchanger
