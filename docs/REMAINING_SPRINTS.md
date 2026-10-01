@@ -12,9 +12,27 @@ Sprint 76 — Security Boundary Hardening is complete. It delivered upgrade-safe
 
 See `docs/SPRINT_76.md` for the completed acceptance record.
 
+## Current sprint
+
+### Sprint 77 — OIDC Protocol Hardening
+
+Harden the existing provider-neutral OIDC browser flow against protocol edge cases before expanding identity or SaaS features.
+
+Acceptance priorities:
+- encode `client_secret_basic` credentials according to the OAuth form-encoding contract before constructing HTTP Basic authentication
+- add PKCE S256 to authorization-code transactions and token exchange without exposing the verifier
+- consume and validate callback state even when the provider returns an OAuth/OIDC error
+- tighten compact JWT base64url, temporal-claim, protected-header, and JWK signing-key validation
+- preserve the existing explicit identity-linking and local-session model
+- keep localhost/insecure behavior test-only and explicitly opted in
+- add focused regression tests for each boundary
+- add no hosted service, paid dependency, or recurring infrastructure cost
+
+Out of scope: OIDC auto-provisioning, group synchronization, multiple providers, SAML, SCIM, MFA, hosted identity services, and broad authentication UI redesign.
+
 ## Candidate remaining sprints
 
-No later sprint number is committed yet. Sprint 77 will be assigned only after the remaining backlog is reprioritized against current security, correctness, user value, dependency, and $0 recurring-cost constraints.
+Sprint 77 is committed above. Later sprint numbers remain unassigned until its acceptance review.
 
 ## Backlog after the numbered candidate sequence
 

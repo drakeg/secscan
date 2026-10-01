@@ -33,8 +33,10 @@ FROM ghcr.io/anchore/grype:v0.119.0 AS grype
 FROM python:3.14.7-slim-bookworm AS python-scanner-tools
 RUN python -m venv /opt/semgrep \
     && /opt/semgrep/bin/pip install --no-cache-dir semgrep==1.172.0 \
+    && /opt/semgrep/bin/pip install --no-cache-dir --upgrade "PyJWT>=2.14.0,<3" \
     && python -m venv /opt/checkov \
-    && /opt/checkov/bin/pip install --no-cache-dir checkov==3.3.8
+    && /opt/checkov/bin/pip install --no-cache-dir checkov==3.3.8 \
+    && /opt/checkov/bin/pip install --no-cache-dir --upgrade "PyJWT>=2.14.0,<3"
 
 FROM python:3.14.7-slim-bookworm AS builder
 WORKDIR /build
