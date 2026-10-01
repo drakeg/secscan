@@ -194,3 +194,53 @@ def test_oidc_routes_are_not_available_when_unconfigured(tmp_path: Path) -> None
 
     assert client.get("/api/v1/auth/oidc/login").status_code == 404
     assert client.get("/api/v1/auth/oidc/callback").status_code == 404
+
+
+def test_oidc_provider_error_consumes_matching_state_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure(monkeypatch)
+    monkeypatch.setattr(
+        auth,
+        "fetch_oidc_discovery",
+        lambda config: _discovery(config),
+        raising=False,
+    )
+    app = FastAPI()
+    mount_auth(app, database=tmp_path / "jobs.db")
+    client = TestClient(app)
+
+    login = client.get("/api/v1/auth/oidc/login", follow_redirects=False)
+    state = parse_qs(urlsplit(login.headers["location"]).query)["state"][0]
+
+    denied = client.get(
+        "/api/v1/auth/oidc/callback",
+        params={"state": state, "error": "access_denied"},
+    )
+    assert denied.status_code == 401
+    assert denied.json()["detail"] == "OIDC authentication was not completed"
+
+    replay = client.get(
+        "/api/v1/auth/oidc/callback",
+        params={"state": state, "error": "access_denied"},
+    )
+    assert replay.status_code == 401
+    assert replay.json()["detail"] == "OIDC authentication failed"
+
+
+def test_oidc_provider_error_with_unknown_state_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _configure(monkeypatch)
+    app = FastAPI()
+    mount_auth(app, database=tmp_path / "jobs.db")
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/v1/auth/oidc/callback",
+        params={"state": "unknown-state", "error": "access_denied"},
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "OIDC authentication failed"
