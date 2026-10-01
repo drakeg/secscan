@@ -166,6 +166,8 @@ class OidcDiscoveryDocument:
                 "scope": "openid",
                 "state": transaction.state,
                 "nonce": transaction.nonce,
+                "code_challenge": transaction.code_challenge,
+                "code_challenge_method": "S256",
             }
         )
         separator = "&" if urlsplit(self.authorization_endpoint).query else "?"
@@ -437,17 +439,20 @@ def exchange_oidc_code(
     *,
     code: str,
     redirect_uri: str,
+    code_verifier: str,
     exchanger: Callable[[str, bytes, str, int, float], tuple[str, bytes]] | None = None,
 ) -> OidcTokenResponse:
     if discovery.issuer != config.issuer:
         raise ValueError("OIDC discovery issuer does not match configured issuer")
     validated_code = _validate_opaque_value(code, "authorization code")
     validated_redirect = _validate_redirect_uri(redirect_uri)
+    validated_verifier = _validate_pkce_verifier(code_verifier)
     form_body = urlencode(
         {
             "grant_type": "authorization_code",
             "code": validated_code,
             "redirect_uri": validated_redirect,
+            "code_verifier": validated_verifier,
         }
     ).encode("ascii")
     encoded_client_id = quote_plus(config.client_id, safe="~")
@@ -828,12 +833,19 @@ OIDC_LOGIN_TRANSACTION_MINUTES = 10
 class OidcLoginTransaction:
     state: str
     nonce: str
+    code_verifier: str
     expires_at: str
+
+    @property
+    def code_challenge(self) -> str:
+        digest = hashlib.sha256(self.code_verifier.encode("ascii")).digest()
+        return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
 @dataclass(frozen=True)
 class ConsumedOidcLoginTransaction:
     nonce_digest: str
+    code_verifier: str
     created_at: str
     expires_at: str
 
@@ -844,6 +856,15 @@ class ConsumedOidcLoginTransaction:
 
 def _opaque_digest(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _validate_pkce_verifier(value: str) -> str:
+    if not 43 <= len(value) <= 128:
+        raise ValueError("OIDC PKCE code verifier is invalid")
+    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+    if any(character not in allowed for character in value):
+        raise ValueError("OIDC PKCE code verifier is invalid")
+    return value
 
 
 def _validate_opaque_value(value: str, label: str) -> str:
@@ -872,6 +893,7 @@ class OidcLoginTransactionStore:
                 CREATE TABLE IF NOT EXISTS auth_oidc_login_transactions (
                     state_digest TEXT PRIMARY KEY,
                     nonce_digest TEXT NOT NULL,
+                    code_verifier TEXT,
                     created_at TEXT NOT NULL,
                     expires_at TEXT NOT NULL
                 );
@@ -879,12 +901,23 @@ class OidcLoginTransactionStore:
                     ON auth_oidc_login_transactions(expires_at);
                 """
             )
+            columns = {
+                str(row[1])
+                for row in connection.execute(
+                    "PRAGMA table_info(auth_oidc_login_transactions)"
+                ).fetchall()
+            }
+            if "code_verifier" not in columns:
+                connection.execute(
+                    "ALTER TABLE auth_oidc_login_transactions ADD COLUMN code_verifier TEXT"
+                )
 
     def create(self, *, now: datetime | None = None) -> OidcLoginTransaction:
         created = _utc(now)
         expires = created + timedelta(minutes=OIDC_LOGIN_TRANSACTION_MINUTES)
         state = secrets.token_urlsafe(32)
         nonce = secrets.token_urlsafe(32)
+        code_verifier = _validate_pkce_verifier(secrets.token_urlsafe(64))
         state_digest = _opaque_digest(state)
         nonce_digest = _opaque_digest(nonce)
 
@@ -896,12 +929,13 @@ class OidcLoginTransactionStore:
             connection.execute(
                 """
                 INSERT INTO auth_oidc_login_transactions
-                    (state_digest, nonce_digest, created_at, expires_at)
-                VALUES (?, ?, ?, ?)
+                    (state_digest, nonce_digest, code_verifier, created_at, expires_at)
+                VALUES (?, ?, ?, ?, ?)
                 """,
                 (
                     state_digest,
                     nonce_digest,
+                    code_verifier,
                     created.isoformat(),
                     expires.isoformat(),
                 ),
@@ -909,6 +943,7 @@ class OidcLoginTransactionStore:
         return OidcLoginTransaction(
             state=state,
             nonce=nonce,
+            code_verifier=code_verifier,
             expires_at=expires.isoformat(),
         )
 
@@ -927,7 +962,7 @@ class OidcLoginTransactionStore:
                 """
                 DELETE FROM auth_oidc_login_transactions
                 WHERE state_digest = ?
-                RETURNING nonce_digest, created_at, expires_at
+                RETURNING nonce_digest, code_verifier, created_at, expires_at
                 """,
                 (state_digest,),
             ).fetchone()
@@ -935,11 +970,16 @@ class OidcLoginTransactionStore:
             raise ValueError("OIDC login transaction is invalid or expired")
 
         expires_at = datetime.fromisoformat(str(row["expires_at"]))
+        code_verifier = row["code_verifier"]
+        if not isinstance(code_verifier, str):
+            raise ValueError("OIDC login transaction predates PKCE support; start a new login")
+        code_verifier = _validate_pkce_verifier(code_verifier)
         if expires_at <= current:
             raise ValueError("OIDC login transaction is invalid or expired")
 
         return ConsumedOidcLoginTransaction(
             nonce_digest=str(row["nonce_digest"]),
+            code_verifier=code_verifier,
             created_at=str(row["created_at"]),
             expires_at=str(row["expires_at"]),
         )
