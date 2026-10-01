@@ -5,6 +5,8 @@ from urllib.parse import parse_qs
 
 import pytest
 
+PKCE_VERIFIER = "A" * 64
+
 from secscan.oidc import (
     OIDC_TOKEN_MAX_BYTES,
     OIDC_TOKEN_TIMEOUT_SECONDS,
@@ -64,6 +66,7 @@ def test_exchange_oidc_code_uses_post_form_and_basic_client_auth() -> None:
         _discovery(),
         code="authorization-code-123",
         redirect_uri="https://secscan.example.com/api/v1/auth/oidc/callback",
+        code_verifier=PKCE_VERIFIER,
         exchanger=exchanger,
     )
     assert response.id_token == "header.payload.signature"
@@ -74,6 +77,7 @@ def test_exchange_oidc_code_uses_post_form_and_basic_client_auth() -> None:
         "grant_type": ["authorization_code"],
         "code": ["authorization-code-123"],
         "redirect_uri": ["https://secscan.example.com/api/v1/auth/oidc/callback"],
+        "code_verifier": [PKCE_VERIFIER],
     }
     expected = base64.b64encode(b"secscan-web:super-secret").decode("ascii")
     assert observed["authorization"] == f"Basic {expected}"
@@ -88,6 +92,7 @@ def test_exchange_oidc_code_rejects_non_json_response(content_type: str) -> None
             _discovery(),
             code="authorization-code-123",
             redirect_uri="https://secscan.example.com/callback",
+        code_verifier=PKCE_VERIFIER,
             exchanger=lambda *_args: (content_type, b'{"id_token":"token"}'),
         )
 
@@ -108,6 +113,7 @@ def test_exchange_oidc_code_rejects_invalid_token_response(body: bytes, message:
             _discovery(),
             code="authorization-code-123",
             redirect_uri="https://secscan.example.com/callback",
+        code_verifier=PKCE_VERIFIER,
             exchanger=lambda *_args: ("application/json", body),
         )
 
@@ -119,6 +125,7 @@ def test_exchange_oidc_code_rejects_oversized_response() -> None:
             _discovery(),
             code="authorization-code-123",
             redirect_uri="https://secscan.example.com/callback",
+        code_verifier=PKCE_VERIFIER,
             exchanger=lambda *_args: (
                 "application/json",
                 b"x" * (OIDC_TOKEN_MAX_BYTES + 1),
@@ -134,6 +141,7 @@ def test_exchange_oidc_code_rejects_malformed_authorization_code(code: str) -> N
             _discovery(),
             code=code,
             redirect_uri="https://secscan.example.com/callback",
+        code_verifier=PKCE_VERIFIER,
             exchanger=lambda *_args: ("application/json", b'{"id_token":"token"}'),
         )
 
@@ -145,6 +153,7 @@ def test_exchange_oidc_code_rejects_insecure_redirect_uri() -> None:
             _discovery(),
             code="authorization-code-123",
             redirect_uri="http://secscan.example.com/callback",
+        code_verifier=PKCE_VERIFIER,
             exchanger=lambda *_args: ("application/json", b'{"id_token":"token"}'),
         )
 
@@ -183,6 +192,7 @@ def test_exchange_oidc_code_form_encodes_basic_client_credentials() -> None:
         discovery,
         code="authorization-code-123",
         redirect_uri="https://secscan.example.com/api/v1/auth/oidc/callback",
+        code_verifier=PKCE_VERIFIER,
         exchanger=exchanger,
     )
 
@@ -192,3 +202,15 @@ def test_exchange_oidc_code_form_encodes_basic_client_credentials() -> None:
         f"{encoded_id}:{encoded_secret}".encode("ascii")
     ).decode("ascii")
     assert observed["authorization"] == f"Basic {expected}"
+
+
+def test_exchange_oidc_code_rejects_invalid_pkce_verifier() -> None:
+    with pytest.raises(ValueError, match="PKCE code verifier is invalid"):
+        exchange_oidc_code(
+            _config(),
+            _discovery(),
+            code="authorization-code-123",
+            redirect_uri="https://secscan.example.com/callback",
+            code_verifier="too-short",
+            exchanger=lambda *_args: ("application/json", b'{"id_token":"token"}'),
+        )
