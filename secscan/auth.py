@@ -732,6 +732,7 @@ def mount_auth(app: FastAPI, *, database: Path, api_token: str | None = None) ->
                 discovery,
                 code=code,
                 redirect_uri=oidc_redirect_uri,
+                code_verifier=transaction.code_verifier,
             )
             jwks = fetch_oidc_jwks(discovery)
             identity = verify_oidc_id_token(

@@ -115,6 +115,8 @@ def test_authorization_url_is_built_only_from_validated_metadata(tmp_path: Path)
         "scope": ["openid"],
         "state": [transaction.state],
         "nonce": [transaction.nonce],
+        "code_challenge": [transaction.code_challenge],
+        "code_challenge_method": ["S256"],
     }
     assert config.client_secret not in url
 

@@ -32,3 +32,8 @@ Harden the existing provider-neutral OIDC authorization-code flow against protoc
 - existing OIDC browser flow, explicit linking, manual login, API keys, and tenant sessions remain compatible
 - Python/package/container/Compose/CI/CodeQL gates remain green
 - recurring infrastructure cost remains $0
+
+
+## Increment 2 — PKCE S256
+
+OIDC authorization-code logins now bind each transaction to a high-entropy PKCE verifier. Authorization requests send only the derived S256 challenge; the server-side transaction store retains the verifier until the single-use state is consumed, and token exchange sends it only to the validated provider token endpoint. Existing transaction databases migrate in place; pre-PKCE outstanding transactions fail closed and require a fresh login.
