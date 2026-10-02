@@ -320,3 +320,84 @@ def test_verify_oidc_id_token_rejects_small_rsa_key(tmp_path: Path) -> None:
             transaction=transaction,
             now=now,
         )
+
+
+def test_verify_oidc_id_token_rejects_noncanonical_base64url(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 9, 22, 22, 0, tzinfo=UTC)
+    nonce, transaction = _transaction(tmp_path, now)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _token(key, now=now, nonce=nonce)
+    header, payload, signature = token.split(".")
+
+    with pytest.raises(ValueError, match="ID-token header is invalid"):
+        verify_oidc_id_token(
+            f"{header}=.{payload}.{signature}",
+            config=_config(),
+            discovery=_discovery(),
+            jwks={"keys": [_jwk(key)]},
+            transaction=transaction,
+            now=now,
+        )
+
+    with pytest.raises(ValueError, match="ID-token signature is invalid"):
+        verify_oidc_id_token(
+            f"{header}.{payload}.{signature}+",
+            config=_config(),
+            discovery=_discovery(),
+            jwks={"keys": [_jwk(key)]},
+            transaction=transaction,
+            now=now,
+        )
+
+
+def test_verify_oidc_id_token_rejects_unsupported_critical_header(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 9, 22, 22, 0, tzinfo=UTC)
+    nonce, transaction = _transaction(tmp_path, now)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _token(key, now=now, nonce=nonce)
+    _, payload, _ = token.split(".")
+    header = _b64url(
+        json.dumps(
+            {"alg": "RS256", "kid": "key-1", "crit": ["custom"], "custom": True},
+            separators=(",", ":"),
+        ).encode("utf-8")
+    )
+    signing_input = f"{header}.{payload}".encode("ascii")
+    signature = key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
+
+    with pytest.raises(ValueError, match="critical headers are unsupported"):
+        verify_oidc_id_token(
+            f"{header}.{payload}.{_b64url(signature)}",
+            config=_config(),
+            discovery=_discovery(),
+            jwks={"keys": [_jwk(key)]},
+            transaction=transaction,
+            now=now,
+        )
+
+
+@pytest.mark.parametrize("key_ops", [["sign"], [], "verify"])
+def test_verify_oidc_id_token_rejects_incompatible_jwk_key_ops(
+    tmp_path: Path,
+    key_ops: object,
+) -> None:
+    now = datetime(2026, 9, 22, 22, 0, tzinfo=UTC)
+    nonce, transaction = _transaction(tmp_path, now)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _token(key, now=now, nonce=nonce)
+    jwk: dict[str, object] = _jwk(key)
+    jwk["key_ops"] = key_ops
+
+    with pytest.raises(ValueError, match="signing key was not found"):
+        verify_oidc_id_token(
+            token,
+            config=_config(),
+            discovery=_discovery(),
+            jwks={"keys": [jwk]},
+            transaction=transaction,
+            now=now,
+        )
