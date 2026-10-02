@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 import base64
+import binascii
 import hashlib
 import json
 import hmac
@@ -504,13 +505,23 @@ class VerifiedOidcIdentity:
 
 
 def _decode_base64url(value: str, label: str) -> bytes:
-    if not value:
+    if not value or "=" in value or any(
+        character not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+        for character in value
+    ):
         raise ValueError(f"OIDC {label} is invalid")
     padding_length = (-len(value)) % 4
     try:
-        return base64.urlsafe_b64decode(value + ("=" * padding_length))
-    except (ValueError, TypeError) as exc:
+        decoded = base64.b64decode(
+            value + ("=" * padding_length),
+            altchars=b"-_",
+            validate=True,
+        )
+    except (ValueError, TypeError, binascii.Error) as exc:
         raise ValueError(f"OIDC {label} is invalid") from exc
+    if base64.urlsafe_b64encode(decoded).rstrip(b"=").decode("ascii") != value:
+        raise ValueError(f"OIDC {label} is invalid")
+    return decoded
 
 
 def _decode_json_segment(value: str, label: str) -> dict[str, object]:
@@ -586,6 +597,10 @@ def verify_oidc_id_token(
     header = _decode_json_segment(encoded_header, "ID-token header")
     payload = _decode_json_segment(encoded_payload, "ID-token payload")
 
+    critical = header.get("crit")
+    if critical is not None:
+        if not isinstance(critical, list) or critical:
+            raise ValueError("OIDC ID-token critical headers are unsupported")
     algorithm = header.get("alg")
     key_id = header.get("kid")
     if not isinstance(algorithm, str) or algorithm not in _SUPPORTED_RSA_ALGORITHMS:
@@ -605,6 +620,13 @@ def verify_oidc_id_token(
         and key.get("kid") == key_id
         and (key.get("use") in {None, "sig"})
         and (key.get("alg") in {None, algorithm})
+        and (
+            key.get("key_ops") is None
+            or (
+                isinstance(key.get("key_ops"), list)
+                and "verify" in key.get("key_ops", [])
+            )
+        )
     ]
     if len(matches) != 1:
         raise ValueError("OIDC ID-token signing key was not found")

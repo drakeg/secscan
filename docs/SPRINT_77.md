@@ -42,3 +42,8 @@ OIDC authorization-code logins now bind each transaction to a high-entropy PKCE 
 ## Increment 3 — Provider error state consumption
 
 OIDC callback errors now require a matching state when one was issued and consume that transaction before returning the provider failure. This preserves the same single-use CSRF/replay boundary for denied or failed provider callbacks as for successful authorization-code callbacks. Unknown/replayed state fails closed and no provider error text is reflected to the client.
+
+
+## Increment 4 — Strict JWT structure and signing keys
+
+ID-token parsing now accepts only canonical unpadded base64url segments, rejects unsupported critical JOSE headers, and refuses JWKs whose declared key operations do not permit signature verification. These checks happen before trusting token claims and preserve the existing RSA-only provider contract.
