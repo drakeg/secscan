@@ -18,6 +18,10 @@ Ensure one safely failed scheduled reassessment cannot delay other due schedules
 
 Separate “no schedule was due” from “a schedule was claimed but failed closed.” The scheduler counts bounded claimed attempts and continues after safe failures, while still stopping when the store reports no due work.
 
+## Increment 2 — Atomic project association
+
+Manual project scans and scheduled project reassessments now insert the queued job and its project association within one SQLite transaction. Failed association rolls back both records before any worker is submitted, eliminating the committed-but-unassociated visibility window.
+
 ## Acceptance
 
 - successful scheduled submissions continue to enqueue and advance cadence
@@ -27,3 +31,13 @@ Separate “no schedule was due” from “a schedule was claimed but failed clo
 - tick limits remain bounded from 1 through 100
 - Python/package/container/Compose/CI/CodeQL gates remain green
 - recurring infrastructure cost remains $0
+
+## Acceptance record
+
+- Increment 1: PR #173 merged; CI #726 and CodeQL #485 successful.
+- Increment 2: PR #174 merged; CI #728 and CodeQL #487 successful.
+- Final heads passed Python 3.12 and 3.14 quality/package checks plus container build, smoke, and security scanning.
+- Regression coverage verifies failed-first scheduler progress and transactional project-association rollback.
+- No new dependency, hosted service, or recurring infrastructure cost was introduced.
+
+Sprint 78 is accepted subject to this documentation-only closeout.
