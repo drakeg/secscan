@@ -18,9 +18,17 @@ Sprint 77 — OIDC Protocol Hardening is complete. It delivered standards-compli
 
 See `docs/SPRINT_77.md` for the completed acceptance record.
 
+## Current sprint
+
+### Sprint 78 — Reassessment Scheduler Correctness
+
+Prevent a safely failed claimed reassessment from delaying other due schedules by making executor outcomes explicit while preserving bounded tick behavior and authorization re-evaluation.
+
+See `docs/SPRINT_78.md` for scope and acceptance criteria.
+
 ## Candidate remaining sprints
 
-Sprint 77 is accepted. The next sprint number remains unassigned until planning selects the highest-priority bounded increment.
+Sprint 78 is committed above. Later sprint numbers remain unassigned until its acceptance review.
 
 ## Backlog after the numbered candidate sequence
 
