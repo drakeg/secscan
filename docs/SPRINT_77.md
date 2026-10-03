@@ -47,3 +47,8 @@ OIDC callback errors now require a matching state when one was issued and consum
 ## Increment 4 — Strict JWT structure and signing keys
 
 ID-token parsing now accepts only canonical unpadded base64url segments, rejects unsupported critical JOSE headers, and refuses JWKs whose declared key operations do not permit signature verification. These checks happen before trusting token claims and preserve the existing RSA-only provider contract.
+
+
+## Increment 5 — Temporal claim boundaries
+
+ID-token validation now applies a documented 60-second clock-skew allowance to expiry, issued-at, and not-before checks. Optional `iat` and `nbf` claims are validated when present, unrepresentable NumericDate values fail closed, and tokens that declare `iat` cannot advertise a lifetime longer than one hour.

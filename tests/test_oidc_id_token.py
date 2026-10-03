@@ -74,6 +74,8 @@ def _token(
     subject: str = "subject-123",
     nonce: str,
     expires_delta: timedelta = timedelta(minutes=5),
+    issued_at: datetime | None = None,
+    not_before: datetime | None = None,
     azp: str | None = None,
 ) -> str:
     header = {"alg": alg, "kid": kid, "typ": "JWT"}
@@ -84,6 +86,10 @@ def _token(
         "exp": int((now + expires_delta).timestamp()),
         "nonce": nonce,
     }
+    if issued_at is not None:
+        payload["iat"] = int(issued_at.timestamp())
+    if not_before is not None:
+        payload["nbf"] = int(not_before.timestamp())
     if azp is not None:
         payload["azp"] = azp
     encoded_header = _b64url(json.dumps(header, separators=(",", ":")).encode("utf-8"))
@@ -240,7 +246,7 @@ def test_verify_oidc_id_token_rejects_tampering_wrong_key_and_unadvertised_algor
     [
         ({"issuer": "https://login.example.com/other"}, "issuer is invalid"),
         ({"audience": "other-client"}, "audience is invalid"),
-        ({"expires_delta": timedelta(seconds=-1)}, "expired"),
+        ({"expires_delta": timedelta(seconds=-61)}, "expired"),
         ({"nonce": "wrong-nonce"}, "nonce is invalid"),
     ],
 )
@@ -398,6 +404,135 @@ def test_verify_oidc_id_token_rejects_incompatible_jwk_key_ops(
             config=_config(),
             discovery=_discovery(),
             jwks={"keys": [jwk]},
+            transaction=transaction,
+            now=now,
+        )
+
+
+@pytest.mark.parametrize(
+    ("token_kwargs", "message"),
+    [
+        ({"issued_at": datetime(2026, 9, 22, 22, 1, 1, tzinfo=UTC)}, "issued-at time is in the future"),
+        ({"not_before": datetime(2026, 9, 22, 22, 1, 1, tzinfo=UTC)}, "not yet valid"),
+        (
+            {
+                "issued_at": datetime(2026, 9, 22, 20, 0, tzinfo=UTC),
+                "expires_delta": timedelta(hours=2),
+            },
+            "lifetime is too long",
+        ),
+    ],
+)
+def test_verify_oidc_id_token_rejects_invalid_temporal_boundaries(
+    tmp_path: Path,
+    token_kwargs: dict[str, object],
+    message: str,
+) -> None:
+    now = datetime(2026, 9, 22, 22, 0, tzinfo=UTC)
+    nonce, transaction = _transaction(tmp_path, now)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _token(key, now=now, nonce=nonce, **token_kwargs)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match=message):
+        verify_oidc_id_token(
+            token,
+            config=_config(),
+            discovery=_discovery(),
+            jwks={"keys": [_jwk(key)]},
+            transaction=transaction,
+            now=now,
+        )
+
+
+def test_verify_oidc_id_token_allows_expiry_within_documented_clock_skew(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 9, 22, 22, 0, tzinfo=UTC)
+    nonce, transaction = _transaction(tmp_path, now)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _token(
+        key,
+        now=now,
+        nonce=nonce,
+        expires_delta=timedelta(seconds=-59),
+    )
+
+    identity = verify_oidc_id_token(
+        token,
+        config=_config(),
+        discovery=_discovery(),
+        jwks={"keys": [_jwk(key)]},
+        transaction=transaction,
+        now=now,
+    )
+    assert identity.subject == "subject-123"
+
+
+def test_verify_oidc_id_token_rejects_expiry_at_clock_skew_boundary(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 9, 22, 22, 0, tzinfo=UTC)
+    nonce, transaction = _transaction(tmp_path, now)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _token(
+        key,
+        now=now,
+        nonce=nonce,
+        expires_delta=timedelta(seconds=-60),
+    )
+
+    with pytest.raises(ValueError, match="expired"):
+        verify_oidc_id_token(
+            token,
+            config=_config(),
+            discovery=_discovery(),
+            jwks={"keys": [_jwk(key)]},
+            transaction=transaction,
+            now=now,
+        )
+
+
+def test_verify_oidc_id_token_allows_documented_clock_skew(tmp_path: Path) -> None:
+    now = datetime(2026, 9, 22, 22, 0, tzinfo=UTC)
+    nonce, transaction = _transaction(tmp_path, now)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _token(
+        key,
+        now=now,
+        nonce=nonce,
+        issued_at=now + timedelta(seconds=60),
+        not_before=now + timedelta(seconds=60),
+    )
+
+    identity = verify_oidc_id_token(
+        token,
+        config=_config(),
+        discovery=_discovery(),
+        jwks={"keys": [_jwk(key)]},
+        transaction=transaction,
+        now=now,
+    )
+    assert identity.subject == "subject-123"
+
+
+def test_verify_oidc_id_token_rejects_unrepresentable_numeric_date(tmp_path: Path) -> None:
+    now = datetime(2026, 9, 22, 22, 0, tzinfo=UTC)
+    nonce, transaction = _transaction(tmp_path, now)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _token(key, now=now, nonce=nonce)
+    header, payload_segment, _ = token.split(".")
+    payload = json.loads(base64.urlsafe_b64decode(payload_segment + "==").decode("utf-8"))
+    payload["exp"] = 1e300
+    encoded_payload = _b64url(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    signing_input = f"{header}.{encoded_payload}".encode("ascii")
+    signature = key.sign(signing_input, padding.PKCS1v15(), hashes.SHA256())
+
+    with pytest.raises(ValueError, match="expiry is invalid"):
+        verify_oidc_id_token(
+            f"{header}.{encoded_payload}.{_b64url(signature)}",
+            config=_config(),
+            discovery=_discovery(),
+            jwks={"keys": [_jwk(key)]},
             transaction=transaction,
             now=now,
         )

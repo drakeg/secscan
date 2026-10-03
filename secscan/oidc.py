@@ -491,6 +491,8 @@ def exchange_oidc_code(
 
 OIDC_JWKS_MAX_BYTES = 256 * 1024
 OIDC_JWKS_TIMEOUT_SECONDS = 5.0
+OIDC_CLOCK_SKEW_SECONDS = 60
+OIDC_MAX_ID_TOKEN_LIFETIME_SECONDS = 3600
 _SUPPORTED_RSA_ALGORITHMS: dict[str, hashes.HashAlgorithm] = {
     "RS256": hashes.SHA256(),
     "RS384": hashes.SHA384(),
@@ -648,6 +650,8 @@ def verify_oidc_id_token(
     subject = payload.get("sub")
     audience = payload.get("aud")
     expires_at = payload.get("exp")
+    issued_at = payload.get("iat")
+    not_before = payload.get("nbf")
     nonce = payload.get("nonce")
 
     if issuer != config.issuer or issuer != discovery.issuer:
@@ -669,10 +673,31 @@ def verify_oidc_id_token(
             raise ValueError("OIDC ID-token authorized party is invalid")
 
     current = _utc(now)
-    if isinstance(expires_at, bool) or not isinstance(expires_at, (int, float)):
-        raise ValueError("OIDC ID-token expiry is invalid")
-    if datetime.fromtimestamp(float(expires_at), tz=UTC) <= current:
+    skew = timedelta(seconds=OIDC_CLOCK_SKEW_SECONDS)
+
+    def numeric_date(value: object, label: str) -> datetime:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"OIDC ID-token {label} is invalid")
+        try:
+            return datetime.fromtimestamp(float(value), tz=UTC)
+        except (OverflowError, OSError, ValueError) as exc:
+            raise ValueError(f"OIDC ID-token {label} is invalid") from exc
+
+    expiry = numeric_date(expires_at, "expiry")
+    if expiry <= current - skew:
         raise ValueError("OIDC ID token is expired")
+
+    if issued_at is not None:
+        issued = numeric_date(issued_at, "issued-at time")
+        if issued > current + skew:
+            raise ValueError("OIDC ID-token issued-at time is in the future")
+        if expiry - issued > timedelta(seconds=OIDC_MAX_ID_TOKEN_LIFETIME_SECONDS):
+            raise ValueError("OIDC ID-token lifetime is too long")
+
+    if not_before is not None:
+        valid_from = numeric_date(not_before, "not-before time")
+        if valid_from > current + skew:
+            raise ValueError("OIDC ID token is not yet valid")
     if not isinstance(nonce, str) or not transaction.matches_nonce(nonce):
         raise ValueError("OIDC ID-token nonce is invalid")
 
