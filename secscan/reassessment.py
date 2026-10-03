@@ -137,6 +137,12 @@ class ReassessmentAssetAdapter:
             raise ValueError("scheduled asset project binding does not match job history")
 
 
+@dataclass(frozen=True)
+class ReassessmentRunResult:
+    claimed: bool
+    job: JobRecord | None = None
+
+
 class ReassessmentExecutor:
     def __init__(self, database: Path, manager: JobManager) -> None:
         self.schedules = ReassessmentScheduleStore(database)
@@ -145,10 +151,10 @@ class ReassessmentExecutor:
         self.authorizer = ReassessmentScheduleAuthorizer(database)
         self.manager = manager
 
-    def run_one(self, *, now: datetime) -> JobRecord | None:
+    def run_one(self, *, now: datetime) -> ReassessmentRunResult:
         schedule = self.schedules.claim_due(now=now)
         if schedule is None:
-            return None
+            return ReassessmentRunResult(claimed=False)
         token = schedule.claim_token
         if token is None:
             raise RuntimeError("claimed reassessment schedule is missing its claim token")
@@ -181,7 +187,7 @@ class ReassessmentExecutor:
                 now=now,
                 claim_token=token,
             )
-            return None
+            return ReassessmentRunResult(claimed=True)
         self.schedules.record_attempt(
             schedule.id,
             tenant_id=schedule.tenant_id,
@@ -189,7 +195,7 @@ class ReassessmentExecutor:
             now=now,
             claim_token=token,
         )
-        return job
+        return ReassessmentRunResult(claimed=True, job=job)
 
 
 class ReassessmentScheduler:
@@ -213,7 +219,8 @@ class ReassessmentScheduler:
             raise ValueError("scheduler tick limit must be between 1 and 100")
         processed = 0
         for _ in range(limit):
-            if self.executor.run_one(now=_utc(self.clock())) is None:
+            result = self.executor.run_one(now=_utc(self.clock()))
+            if not result.claimed:
                 break
             processed += 1
         return processed
