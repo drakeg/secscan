@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 from pathlib import Path
 from threading import Event
 from time import sleep, time
@@ -487,19 +488,24 @@ def test_job_list_and_cancel_endpoints(tmp_path: Path) -> None:
     release.set()
 
 
-def test_before_enqueue_runs_before_worker_and_failure_rolls_back(tmp_path: Path) -> None:
+def test_before_commit_runs_before_worker_and_failure_rolls_back(tmp_path: Path) -> None:
     worker_started = Event()
     manager = JobManager(tmp_path, lambda _args: worker_started.set() or 0, max_workers=1)
 
-    def reject(_record: JobRecord) -> None:
+    def reject(connection: sqlite3.Connection, _record: JobRecord) -> None:
         assert not worker_started.is_set()
+        visible_in_transaction = connection.execute(
+            "SELECT 1 FROM service_jobs WHERE tenant_id = ?",
+            ("tenant-a",),
+        ).fetchone()
+        assert visible_in_transaction is not None
         raise ValueError("association failed")
 
     with pytest.raises(ValueError, match="association failed"):
         manager.submit(
             ScanSubmission(scanner="image", target="alpine:3.20"),
             tenant_id="tenant-a",
-            before_enqueue=reject,
+            before_commit=reject,
         )
 
     assert not worker_started.is_set()

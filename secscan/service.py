@@ -141,7 +141,12 @@ class JobStore:
                 "CREATE INDEX IF NOT EXISTS service_jobs_tenant_status_created_at_idx ON service_jobs(tenant_id, status, created_at DESC)"
             )
 
-    def save(self, record: JobRecord) -> None:
+    def save(
+        self,
+        record: JobRecord,
+        *,
+        before_commit: Callable[[sqlite3.Connection], None] | None = None,
+    ) -> None:
         with self._connect() as connection:
             connection.execute(
                 """
@@ -170,6 +175,8 @@ class JobStore:
                     record.tenant_id,
                 ),
             )
+            if before_commit is not None:
+                before_commit(connection)
 
     def get(self, job_id: str, *, tenant_id: str | None = None) -> JobRecord | None:
         with self._connect() as connection:
@@ -257,7 +264,7 @@ class JobManager:
         request: ScanSubmission,
         *,
         tenant_id: str = SYSTEM_TENANT_ID,
-        before_enqueue: Callable[[JobRecord], None] | None = None,
+        before_commit: Callable[[sqlite3.Connection, JobRecord], None] | None = None,
     ) -> JobRecord:
         self._validate_submission(request)
         self._validate_input_paths(request)
@@ -275,13 +282,10 @@ class JobManager:
             tenant_id=tenant_id,
         )
         with self._lock:
-            self.store.save(record)
-            try:
-                if before_enqueue is not None:
-                    before_enqueue(record)
-            except Exception:
-                self.store.delete(record.id, tenant_id=tenant_id)
-                raise
+            commit_hook = None
+            if before_commit is not None:
+                commit_hook = lambda connection: before_commit(connection, record)
+            self.store.save(record, before_commit=commit_hook)
         self.executor.submit(self._run, job_id, request)
         return record
 

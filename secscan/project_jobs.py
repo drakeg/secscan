@@ -46,12 +46,27 @@ class ProjectJobStore:
                 """
             )
 
+    @staticmethod
+    def associate_in_transaction(
+        connection: sqlite3.Connection,
+        *,
+        job_id: str,
+        tenant_id: str,
+        project_id: str,
+    ) -> None:
+        connection.execute(
+            """INSERT INTO service_job_projects (job_id, tenant_id, project_id)
+               VALUES (?, ?, ?)""",
+            (job_id, tenant_id, project_id),
+        )
+
     def associate(self, *, job_id: str, tenant_id: str, project_id: str) -> None:
         with self._connect() as connection:
-            connection.execute(
-                """INSERT INTO service_job_projects (job_id, tenant_id, project_id)
-                   VALUES (?, ?, ?)""",
-                (job_id, tenant_id, project_id),
+            self.associate_in_transaction(
+                connection,
+                job_id=job_id,
+                tenant_id=tenant_id,
+                project_id=project_id,
             )
 
     def project_id(self, job_id: str, *, tenant_id: str | None) -> str | None:
@@ -134,7 +149,8 @@ def mount_project_job_association(app: FastAPI, *, database: Path) -> FastAPI:
             record = manager.submit(
                 base_submission,
                 tenant_id=user.tenant_id,
-                before_enqueue=lambda queued: link_store.associate(
+                before_commit=lambda connection, queued: link_store.associate_in_transaction(
+                    connection,
                     job_id=queued.id,
                     tenant_id=user.tenant_id,
                     project_id=project_id,
