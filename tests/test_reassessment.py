@@ -550,12 +550,13 @@ def test_executor_enqueues_one_due_safe_asset_and_advances_schedule(tmp_path: Pa
     schedule = schedules.create(tenant_id=owner.tenant_id, asset_id=asset.id, created_by=owner.id, cadence="daily", now=NOW)
     manager = JobManager(reports, lambda _args: 0, database=database)
 
-    job = ReassessmentExecutor(database, manager).run_one(now=NOW + timedelta(days=1))
+    result = ReassessmentExecutor(database, manager).run_one(now=NOW + timedelta(days=1))
 
-    assert job is not None
-    assert job.tenant_id == owner.tenant_id
-    assert job.scanner == "image"
-    assert job.target == "python:3.14"
+    assert result.claimed is True
+    assert result.job is not None
+    assert result.job.tenant_id == owner.tenant_id
+    assert result.job.scanner == "image"
+    assert result.job.target == "python:3.14"
     updated = schedules.get(schedule.id, tenant_id=owner.tenant_id)
     assert updated.last_enqueued_at == (NOW + timedelta(days=1)).isoformat()
     assert updated.next_run_at == (NOW + timedelta(days=2)).isoformat()
@@ -573,7 +574,7 @@ def test_executor_records_failed_adapter_attempt_without_enqueue(tmp_path: Path)
     manager = JobManager(reports, lambda _args: 0, database=database)
     run_at = NOW + timedelta(days=1)
 
-    assert ReassessmentExecutor(database, manager).run_one(now=run_at) is None
+    assert ReassessmentExecutor(database, manager).run_one(now=run_at).claimed is True
 
     updated = schedules.get(schedule.id, tenant_id=owner.tenant_id)
     assert updated.last_attempted_at == run_at.isoformat()
@@ -610,10 +611,11 @@ def test_executor_preserves_project_association_for_scheduled_job(tmp_path: Path
     )
     manager = JobManager(reports, lambda _args: 0, database=database)
 
-    job = ReassessmentExecutor(database, manager).run_one(now=NOW + timedelta(days=1))
+    result = ReassessmentExecutor(database, manager).run_one(now=NOW + timedelta(days=1))
 
-    assert job is not None
-    assert links.project_id(job.id, tenant_id=owner.tenant_id) == project.id
+    assert result.claimed is True
+    assert result.job is not None
+    assert links.project_id(result.job.id, tenant_id=owner.tenant_id) == project.id
     manager.executor.shutdown(wait=True)
 
 
@@ -639,6 +641,46 @@ def test_scheduler_tick_is_bounded_and_uses_injected_clock(tmp_path: Path) -> No
     "interval",
     [timedelta(seconds=9), timedelta(hours=1, seconds=1)],
 )
+def test_scheduler_continues_after_claimed_schedule_fails_closed(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    reports = tmp_path / "reports"
+    auth = AuthStore(database)
+    disabled = auth.register("disabled@example.com", "correct-horse-battery-staple")
+    owner = auth.register("owner@example.com", "correct-horse-battery-staple")
+    _seed_asset(database, reports, disabled, target="python:3.14")
+    _seed_asset(database, reports, owner, target="python:3.13")
+    assets = AssetStore(database).list(tenant_id=disabled.tenant_id)
+    disabled_asset = next(asset for asset in assets if asset.target == "python:3.14")
+    owner_asset = next(asset for asset in assets if asset.target == "python:3.13")
+    schedules = ReassessmentScheduleStore(database)
+    schedules.create(
+        tenant_id=disabled.tenant_id,
+        asset_id=disabled_asset.id,
+        created_by=disabled.id,
+        cadence="daily",
+        now=NOW,
+    )
+    schedules.create(
+        tenant_id=owner.tenant_id,
+        asset_id=owner_asset.id,
+        created_by=owner.id,
+        cadence="daily",
+        now=NOW,
+    )
+    with sqlite3.connect(database) as connection:
+        connection.execute("UPDATE auth_users SET enabled = 0 WHERE id = ?", (disabled.id,))
+    manager = JobManager(reports, lambda _args: 0, database=database)
+    scheduler = ReassessmentScheduler(
+        ReassessmentExecutor(database, manager),
+        clock=lambda: NOW + timedelta(days=1),
+    )
+
+    assert scheduler.tick(limit=2) == 2
+    healthy_jobs = manager.list(tenant_id=owner.tenant_id)
+    assert any(job.target == "python:3.13" for job in healthy_jobs)
+    manager.executor.shutdown(wait=True)
+
+
 def test_scheduler_interval_is_bounded(tmp_path: Path, interval: timedelta) -> None:
     database = tmp_path / "jobs.db"
     manager = JobManager(tmp_path / "reports", lambda _args: 0, database=database)
@@ -817,7 +859,7 @@ def test_executor_fails_closed_when_schedule_creator_is_disabled(tmp_path: Path)
     manager = JobManager(reports, lambda _args: 0, database=database)
     run_at = NOW + timedelta(days=1)
 
-    assert ReassessmentExecutor(database, manager).run_one(now=run_at) is None
+    assert ReassessmentExecutor(database, manager).run_one(now=run_at).claimed is True
     updated = ReassessmentScheduleStore(database).get(schedule.id, tenant_id=owner.tenant_id)
     assert updated.last_attempted_at == run_at.isoformat()
     assert updated.last_enqueued_at is None
@@ -849,7 +891,7 @@ def test_executor_fails_closed_when_project_operator_is_revoked(tmp_path: Path) 
     manager = JobManager(reports, lambda _args: 0, database=database)
     run_at = NOW + timedelta(days=1)
 
-    assert ReassessmentExecutor(database, manager).run_one(now=run_at) is None
+    assert ReassessmentExecutor(database, manager).run_one(now=run_at).claimed is True
     updated = ReassessmentScheduleStore(database).get(schedule.id, tenant_id=owner.tenant_id)
     assert updated.last_attempted_at == run_at.isoformat()
     assert updated.last_enqueued_at is None
