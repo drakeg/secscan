@@ -454,7 +454,7 @@ def test_verify_oidc_id_token_allows_expiry_within_documented_clock_skew(
         key,
         now=now,
         nonce=nonce,
-        expires_delta=timedelta(seconds=-60),
+        expires_delta=timedelta(seconds=-59),
     )
 
     identity = verify_oidc_id_token(
@@ -466,6 +466,30 @@ def test_verify_oidc_id_token_allows_expiry_within_documented_clock_skew(
         now=now,
     )
     assert identity.subject == "subject-123"
+
+
+def test_verify_oidc_id_token_rejects_expiry_at_clock_skew_boundary(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 9, 22, 22, 0, tzinfo=UTC)
+    nonce, transaction = _transaction(tmp_path, now)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _token(
+        key,
+        now=now,
+        nonce=nonce,
+        expires_delta=timedelta(seconds=-60),
+    )
+
+    with pytest.raises(ValueError, match="expired"):
+        verify_oidc_id_token(
+            token,
+            config=_config(),
+            discovery=_discovery(),
+            jwks={"keys": [_jwk(key)]},
+            transaction=transaction,
+            now=now,
+        )
 
 
 def test_verify_oidc_id_token_allows_documented_clock_skew(tmp_path: Path) -> None:
