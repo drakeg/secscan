@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
 from typing import Any, Callable, cast
 
 from fastapi import FastAPI, HTTPException, Request
@@ -151,3 +152,37 @@ def test_project_association_exists_before_worker_starts(tmp_path: Path) -> None
 
     assert association_seen.is_set()
     assert submitted["project_id"] == project.id
+
+
+def test_project_association_failure_rolls_back_job_atomically(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app, database, auth, projects = _app(tmp_path)
+    owner = auth.register("owner@example.com", "correct-horse-battery-staple")
+    project = projects.create(owner, "Production")
+    submit = _route(app, "/api/v1/jobs", "POST")
+
+    def reject(
+        connection: sqlite3.Connection,
+        *,
+        job_id: str,
+        tenant_id: str,
+        project_id: str,
+    ) -> None:
+        assert connection.execute(
+            "SELECT 1 FROM service_jobs WHERE id = ? AND tenant_id = ?",
+            (job_id, tenant_id),
+        ).fetchone() is not None
+        raise ValueError("association failed")
+
+    monkeypatch.setattr(ProjectJobStore, "associate_in_transaction", staticmethod(reject))
+
+    with pytest.raises(HTTPException) as exc_info:
+        submit(
+            _request(owner),
+            ProjectScanSubmission(scanner="image", target="alpine:3.20", project_id=project.id),
+        )
+
+    assert exc_info.value.status_code == 422
+    assert exc_info.value.detail == "association failed"
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM service_jobs").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM service_job_projects").fetchone()[0] == 0
