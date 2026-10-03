@@ -647,8 +647,20 @@ def test_scheduler_continues_after_claimed_schedule_fails_closed(tmp_path: Path)
     auth = AuthStore(database)
     disabled = auth.register("disabled@example.com", "correct-horse-battery-staple")
     owner = auth.register("owner@example.com", "correct-horse-battery-staple")
-    _seed_asset(database, reports, disabled, target="python:3.14")
-    _seed_asset(database, reports, owner, target="python:3.13")
+    _save_asset_job(
+        database,
+        job_id="disabled-job",
+        tenant_id=disabled.tenant_id,
+        scanner="image",
+        target="python:3.14",
+    )
+    _save_asset_job(
+        database,
+        job_id="owner-job",
+        tenant_id=owner.tenant_id,
+        scanner="image",
+        target="python:3.13",
+    )
     assets = AssetStore(database).list(tenant_id=disabled.tenant_id)
     disabled_asset = next(asset for asset in assets if asset.target == "python:3.14")
     owner_asset = next(asset for asset in assets if asset.target == "python:3.13")
