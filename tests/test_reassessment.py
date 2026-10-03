@@ -684,19 +684,21 @@ def test_scheduler_continues_after_claimed_schedule_fails_closed(tmp_path: Path)
     )
     with sqlite3.connect(database) as connection:
         connection.execute("UPDATE auth_users SET enabled = 0 WHERE id = ?", (disabled.id,))
+    run_at = NOW + timedelta(days=1, seconds=2)
     manager = JobManager(reports, lambda _args: 0, database=database)
     scheduler = ReassessmentScheduler(
         ReassessmentExecutor(database, manager),
-        clock=lambda: NOW + timedelta(days=1),
+        clock=lambda: run_at,
     )
 
-    assert failed_schedule.next_run_at < healthy_schedule.next_run_at
+    assert failed_schedule.next_run_at < healthy_schedule.next_run_at < run_at.isoformat()
     assert scheduler.tick(limit=2) == 2
     failed_after = schedules.get(failed_schedule.id, tenant_id=disabled.tenant_id)
     healthy_after = schedules.get(healthy_schedule.id, tenant_id=owner.tenant_id)
-    assert failed_after.last_attempted_at == (NOW + timedelta(days=1)).isoformat()
+    assert failed_after.last_attempted_at == run_at.isoformat()
     assert failed_after.last_enqueued_at is None
-    assert healthy_after.last_enqueued_at == (NOW + timedelta(days=1)).isoformat()
+    assert healthy_after.last_attempted_at == run_at.isoformat()
+    assert healthy_after.last_enqueued_at == run_at.isoformat()
     healthy_jobs = manager.list(tenant_id=owner.tenant_id)
     assert any(job.target == "python:3.13" for job in healthy_jobs)
     manager.executor.shutdown(wait=True)
