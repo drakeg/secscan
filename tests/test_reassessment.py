@@ -657,23 +657,30 @@ def test_scheduler_continues_after_claimed_schedule_fails_closed(tmp_path: Path)
         scanner="image",
         target="python:3.13",
     )
-    assets = AssetStore(database).list(tenant_id=disabled.tenant_id)
-    disabled_asset = next(asset for asset in assets if asset.target == "python:3.14")
-    owner_asset = next(asset for asset in assets if asset.target == "python:3.13")
+    disabled_asset = next(
+        asset
+        for asset in AssetStore(database).list(tenant_id=disabled.tenant_id)
+        if asset.target == "python:3.14"
+    )
+    owner_asset = next(
+        asset
+        for asset in AssetStore(database).list(tenant_id=owner.tenant_id)
+        if asset.target == "python:3.13"
+    )
     schedules = ReassessmentScheduleStore(database)
-    schedules.create(
+    failed_schedule = schedules.create(
         tenant_id=disabled.tenant_id,
         asset_id=disabled_asset.id,
         created_by=disabled.id,
         cadence="daily",
         now=NOW,
     )
-    schedules.create(
+    healthy_schedule = schedules.create(
         tenant_id=owner.tenant_id,
         asset_id=owner_asset.id,
         created_by=owner.id,
         cadence="daily",
-        now=NOW,
+        now=NOW + timedelta(seconds=1),
     )
     with sqlite3.connect(database) as connection:
         connection.execute("UPDATE auth_users SET enabled = 0 WHERE id = ?", (disabled.id,))
@@ -683,7 +690,13 @@ def test_scheduler_continues_after_claimed_schedule_fails_closed(tmp_path: Path)
         clock=lambda: NOW + timedelta(days=1),
     )
 
+    assert failed_schedule.next_run_at < healthy_schedule.next_run_at
     assert scheduler.tick(limit=2) == 2
+    failed_after = schedules.get(failed_schedule.id, tenant_id=disabled.tenant_id)
+    healthy_after = schedules.get(healthy_schedule.id, tenant_id=owner.tenant_id)
+    assert failed_after.last_attempted_at == (NOW + timedelta(days=1)).isoformat()
+    assert failed_after.last_enqueued_at is None
+    assert healthy_after.last_enqueued_at == (NOW + timedelta(days=1)).isoformat()
     healthy_jobs = manager.list(tenant_id=owner.tenant_id)
     assert any(job.target == "python:3.13" for job in healthy_jobs)
     manager.executor.shutdown(wait=True)
