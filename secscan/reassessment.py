@@ -169,7 +169,8 @@ class ReassessmentExecutor:
             submission = self.assets.submission_for(schedule)
             associate = None
             if schedule.project_id is not None:
-                associate = lambda record: self.project_jobs.associate(
+                associate = lambda connection, record: self.project_jobs.associate_in_transaction(
+                    connection,
                     job_id=record.id,
                     tenant_id=schedule.tenant_id,
                     project_id=schedule.project_id,
@@ -177,7 +178,7 @@ class ReassessmentExecutor:
             job = self.manager.submit(
                 submission,
                 tenant_id=schedule.tenant_id,
-                before_enqueue=associate,
+                before_commit=associate,
             )
         except (OSError, PermissionError, RuntimeError, ValueError):
             self.schedules.record_attempt(
