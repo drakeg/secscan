@@ -246,7 +246,7 @@ def test_verify_oidc_id_token_rejects_tampering_wrong_key_and_unadvertised_algor
     [
         ({"issuer": "https://login.example.com/other"}, "issuer is invalid"),
         ({"audience": "other-client"}, "audience is invalid"),
-        ({"expires_delta": timedelta(seconds=-1)}, "expired"),
+        ({"expires_delta": timedelta(seconds=-61)}, "expired"),
         ({"nonce": "wrong-nonce"}, "nonce is invalid"),
     ],
 )
@@ -442,6 +442,30 @@ def test_verify_oidc_id_token_rejects_invalid_temporal_boundaries(
             transaction=transaction,
             now=now,
         )
+
+
+def test_verify_oidc_id_token_allows_expiry_within_documented_clock_skew(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 9, 22, 22, 0, tzinfo=UTC)
+    nonce, transaction = _transaction(tmp_path, now)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    token = _token(
+        key,
+        now=now,
+        nonce=nonce,
+        expires_delta=timedelta(seconds=-60),
+    )
+
+    identity = verify_oidc_id_token(
+        token,
+        config=_config(),
+        discovery=_discovery(),
+        jwks={"keys": [_jwk(key)]},
+        transaction=transaction,
+        now=now,
+    )
+    assert identity.subject == "subject-123"
 
 
 def test_verify_oidc_id_token_allows_documented_clock_skew(tmp_path: Path) -> None:
