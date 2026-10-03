@@ -52,3 +52,21 @@ ID-token parsing now accepts only canonical unpadded base64url segments, rejects
 ## Increment 5 — Temporal claim boundaries
 
 ID-token validation now applies a documented 60-second clock-skew allowance to expiry, issued-at, and not-before checks. Optional `iat` and `nbf` claims are validated when present, unrepresentable NumericDate values fail closed, and tokens that declare `iat` cannot advertise a lifetime longer than one hour.
+
+
+## Acceptance review
+
+Sprint 77 is complete.
+
+Delivered and verified:
+
+- OAuth `client_secret_basic` credentials are form-encoded before Basic authentication, including reserved and Unicode characters.
+- Authorization-code transactions use PKCE S256 with a transaction-bound high-entropy verifier that is consumed with the single-use state.
+- Provider error callbacks consume valid state and reject unknown or replayed state without reflecting provider-supplied error text.
+- Compact JWT segments require canonical unpadded base64url; unsupported critical JOSE headers fail closed.
+- RSA signing keys remain constrained to the advertised algorithm and compatible signing use/key operations.
+- Temporal validation safely handles `exp`, optional `iat`, and optional `nbf`, including unrepresentable NumericDate values, an explicit 60-second skew boundary, and a one-hour maximum declared lifetime when `iat` is present.
+- Explicit issuer/subject identity links, local sessions, API keys, and tenant authorization remain the authority after authentication.
+- No hosted identity service, paid dependency, or recurring infrastructure cost was introduced.
+
+Final protocol-hardening gate: PR #171 head `3f189baba9a62ccf7b4e9040977a5c50b45eef8d` passed CI #718 and CodeQL #477 before merge.
