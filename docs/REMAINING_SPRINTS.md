@@ -18,17 +18,19 @@ Sprint 77 — OIDC Protocol Hardening is complete. It delivered standards-compli
 
 See `docs/SPRINT_77.md` for the completed acceptance record.
 
+## Sprint 78 closeout
+
+Sprint 78 — Reassessment Scheduler Correctness is complete. It made scheduler claim outcomes explicit so failed claimed work cannot postpone later due schedules, and it made project-scoped job creation atomic so a committed job can no longer be observed without its project association.
+
+See `docs/SPRINT_78.md` for the completed acceptance record.
+
 ## Current sprint
 
-### Sprint 78 — Reassessment Scheduler Correctness
-
-Prevent a safely failed claimed reassessment from delaying other due schedules by making executor outcomes explicit while preserving bounded tick behavior and authorization re-evaluation.
-
-See `docs/SPRINT_78.md` for scope and acceptance criteria.
+No sprint is currently committed. Sprint 79 remains unassigned until planning selects the highest-priority small demonstrable increment.
 
 ## Candidate remaining sprints
 
-Sprint 78 is committed above. Later sprint numbers remain unassigned until its acceptance review.
+Later sprint numbers remain unassigned until planning confirms exact scope, acceptance criteria, security boundaries, dependencies, and cost.
 
 ## Backlog after the numbered candidate sequence
 

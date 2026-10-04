@@ -40,4 +40,4 @@ Manual project scans and scheduled project reassessments now insert the queued j
 - Regression coverage verifies failed-first scheduler progress and transactional project-association rollback.
 - No new dependency, hosted service, or recurring infrastructure cost was introduced.
 
-Sprint 78 is accepted subject to this documentation-only closeout.
+Sprint 78 is accepted and complete.
