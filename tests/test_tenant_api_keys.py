@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from secscan.auth import AuthStore, User, mount_auth
+from secscan.service import create_app
 from secscan.tenant_api_keys import TenantApiKeyStore, mount_tenant_api_keys
 
 
@@ -214,3 +215,59 @@ def test_non_owner_cannot_create_tenant_api_key(tmp_path: Path) -> None:
         assert str(exc) == "tenant owner access required"
     else:
         raise AssertionError("non-owner unexpectedly created API key")
+
+
+def test_service_token_and_tenant_key_composition_is_fail_closed(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("SECSCAN_REGISTRATION_ENABLED", "true")
+    database = tmp_path / "jobs.db"
+    service_token = "s" * 32
+    app = create_app(
+        job_root=tmp_path / "jobs",
+        job_database=database,
+        runner=lambda _args: 0,
+        api_token=service_token,
+    )
+    mount_auth(app, database=database, api_token=service_token)
+    mount_tenant_api_keys(app, database=database, api_token=service_token)
+
+    @app.get("/api/v1/probe-auth")
+    def probe(request: Request) -> dict[str, str]:
+        user = request.state.secscan_user
+        return {"user_id": user.id, "tenant_id": user.tenant_id}
+
+    client = TestClient(app)
+    service_headers = {"Authorization": f"Bearer {service_token}"}
+    registered = client.post(
+        "/api/v1/auth/register",
+        headers=service_headers,
+        json={"email": "owner@example.com", "password": "correct horse battery staple"},
+    )
+    assert registered.status_code == 201
+    owner = registered.json()
+    created = client.post(
+        "/api/v1/auth/tenants/current/api-keys",
+        headers=service_headers,
+        json={"name": "automation"},
+    )
+    assert created.status_code == 201
+    tenant_secret = created.json()["secret"]
+
+    # The service-level guard remains authoritative when configured.
+    blocked = client.get(
+        "/api/v1/probe-auth",
+        headers={"Authorization": f"Bearer {tenant_secret}"},
+    )
+    assert blocked.status_code == 401
+
+    # Session middleware may internally supply the configured service token,
+    # but an explicit invalid tenant key must still fail closed before session fallback.
+    invalid = client.get(
+        "/api/v1/probe-auth",
+        headers={"Authorization": "Bearer secscan_invalid"},
+    )
+    assert invalid.status_code == 401
+
+    # A valid session remains usable without an explicit conflicting bearer credential.
+    session = client.get("/api/v1/probe-auth")
+    assert session.status_code == 200
+    assert session.json()["tenant_id"] == owner["tenant_id"]
