@@ -67,6 +67,8 @@ class SshCredentialTenantMiddleware(BaseHTTPMiddleware):
             secret = authorization[7:]
             if secret.startswith("secscan_"):
                 api_key_user = self.api_keys.authenticate(secret)
+                if api_key_user is None:
+                    return JSONResponse(status_code=401, content={"detail": "invalid API key"})
         actor = api_key_user or session_user
         tenant_id = actor.tenant_id if actor is not None else SYSTEM_TENANT_ID
         token = set_credential_tenant(tenant_id)
