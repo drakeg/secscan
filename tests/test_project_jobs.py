@@ -186,3 +186,40 @@ def test_project_association_failure_rolls_back_job_atomically(tmp_path: Path, m
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT COUNT(*) FROM service_jobs").fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM service_job_projects").fetchone()[0] == 0
+
+
+def test_atomic_project_association_enforces_foreign_keys(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    job_store = JobStore(database)
+    ProjectJobStore(database)
+
+    record = JobRecord(
+        id="job-fk-check",
+        status="queued",
+        scanner="trivy-image",
+        target="alpine:3.20",
+        output_dir=str(tmp_path / "jobs" / "job-fk-check"),
+        created_at="2026-10-05T00:00:00+00:00",
+        tenant_id="tenant-fk-check",
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        job_store.save(
+            record,
+            before_commit=lambda connection: ProjectJobStore.associate_in_transaction(
+                connection,
+                job_id=record.id,
+                tenant_id=record.tenant_id,
+                project_id="missing-project",
+            ),
+        )
+
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM service_jobs WHERE id = ?",
+            (record.id,),
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM service_job_projects WHERE job_id = ?",
+            (record.id,),
+        ).fetchone()[0] == 0
