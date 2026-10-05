@@ -11,7 +11,7 @@ import pytest
 from secscan.auth import AuthStore, User
 from secscan.project_jobs import ProjectJobStore, ProjectScanSubmission, mount_project_job_association
 from secscan.projects import ProjectStore
-from secscan.service import create_app
+from secscan.service import JobRecord, JobStore, create_app
 
 
 def _route(app: FastAPI, path: str, method: str) -> Callable[..., Any]:
