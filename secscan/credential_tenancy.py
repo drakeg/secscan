@@ -8,6 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.types import ASGIApp
 
 from secscan.auth import AuthStore, SESSION_COOKIE
+from secscan.ssh_credential_lifecycle import SshCredentialLifecycleStore
 from secscan.tenant_api_keys import TenantApiKeyStore
 from secscan.tenancy import SYSTEM_TENANT_ID
 
