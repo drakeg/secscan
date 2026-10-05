@@ -236,9 +236,17 @@ def test_service_token_and_tenant_key_composition_is_fail_closed(tmp_path: Path,
         return {"user_id": user.id, "tenant_id": user.tenant_id}
 
     client = TestClient(app)
-    owner = _register_owner(client)
+    service_headers = {"Authorization": f"Bearer {service_token}"}
+    registered = client.post(
+        "/api/v1/auth/register",
+        headers=service_headers,
+        json={"email": "owner@example.com", "password": "correct horse battery staple"},
+    )
+    assert registered.status_code == 201
+    owner = registered.json()
     created = client.post(
         "/api/v1/auth/tenants/current/api-keys",
+        headers=service_headers,
         json={"name": "automation"},
     )
     assert created.status_code == 201
