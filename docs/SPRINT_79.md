@@ -26,7 +26,14 @@ Exercise the real service-token, session, and tenant API-key middleware composit
 
 Move the credential enabled/disabled operation out of tenancy middleware and into the FastAPI credential API. Middleware remains responsible for tenant/authentication policy, while the route owns request validation, lifecycle persistence, default/host-binding cleanup, and HTTP response semantics.
 
+## Increment 4 — Enforce foreign keys on atomic job association transactions
+
+Enable SQLite foreign-key enforcement on `JobStore` connections. Sprint 78 intentionally uses the job-store transaction to persist a job and its project association atomically; that shared transaction must enforce the same `service_job_projects` foreign keys as standalone project-association writes.
+
+Regression coverage proves that an association to a nonexistent project raises an integrity error and rolls the job insert back with it.
+
 ## Acceptance
+
 
 
 
