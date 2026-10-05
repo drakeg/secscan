@@ -20,12 +20,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from secscan.auth import User
-from secscan.credential_tenancy import reset_credential_tenant, set_credential_tenant
+from secscan.credential_tenancy import current_credential_tenant, reset_credential_tenant, set_credential_tenant
 from secscan.project_access import ProjectAccessStore
 from secscan.project_jobs import ProjectJobStore
 from secscan.scanners.linux_host import validate_ssh_user
 from secscan.scanners.network import validate_network_target
 from secscan.service import ARTIFACT_MANIFEST_NAME, ARTIFACT_PATHS, JobRecord, JobStore, ScanSubmission, create_app
+from secscan.ssh_credential_lifecycle import SshCredentialLifecycleStore
 from secscan.ssh_credentials import SshCredentialStore
 from secscan.tenancy import SYSTEM_TENANT_ID, request_tenant_id
 
@@ -60,6 +61,10 @@ class SshCredentialUpdate(BaseModel):
     username: str | None = Field(default=None, min_length=1, max_length=32)
     private_key: str | None = Field(default=None, min_length=1, max_length=1024 * 1024)
     known_hosts: str | None = Field(default=None, min_length=1, max_length=1024 * 1024)
+
+
+class SshCredentialEnabledUpdate(BaseModel):
+    enabled: bool
 
 
 def _linux_host_service_ready() -> bool:
@@ -348,6 +353,28 @@ def mount_web_ui(
             status = 404 if detail == "SSH credential profile was not found" else 422
             raise HTTPException(status_code=status, detail=detail) from exc
         return profile.as_public_dict()
+
+    @app.patch("/api/v1/ssh-credentials/{profile_id}/enabled")
+    def set_ssh_credential_enabled(
+        profile_id: str, request: SshCredentialEnabledUpdate
+    ) -> dict[str, object]:
+        tenant_id = current_credential_tenant()
+        lifecycle = SshCredentialLifecycleStore(database)
+        try:
+            lifecycle.set_enabled(tenant_id, profile_id, request.enabled)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if not request.enabled:
+            with sqlite3.connect(database) as connection:
+                connection.execute(
+                    "UPDATE ssh_credential_profiles SET is_default = 0 WHERE tenant_id = ? AND id = ?",
+                    (tenant_id, profile_id),
+                )
+                connection.execute(
+                    "DELETE FROM ssh_host_credentials WHERE tenant_id = ? AND profile_id = ?",
+                    (tenant_id, profile_id),
+                )
+        return {"id": profile_id, "enabled": request.enabled}
 
     @app.put("/api/v1/ssh-credentials/{profile_id}/default")
     def set_default_ssh_credential(profile_id: str) -> dict[str, object]:
