@@ -26,7 +26,11 @@ See `docs/SPRINT_78.md` for the completed acceptance record.
 
 ## Current sprint
 
-No sprint is currently committed. Sprint 79 remains unassigned until planning selects the highest-priority small demonstrable increment.
+### Sprint 79 — Authentication Precedence Hardening
+
+Make explicit tenant API-key authentication fail closed consistently so an invalid bearer credential cannot silently fall back to a valid browser session in tenant-aware middleware.
+
+See `docs/SPRINT_79.md` for scope and acceptance criteria.
 
 ## Candidate remaining sprints
 
