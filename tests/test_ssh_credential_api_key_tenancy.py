@@ -166,3 +166,31 @@ def test_api_key_cannot_cross_tenant_ssh_credential_boundary(monkeypatch, tmp_pa
     )
     assert rejected.status_code == 422
     assert rejected.json()["detail"] == "SSH credential profile was not found"
+
+
+def test_invalid_tenant_api_key_does_not_fall_back_to_session(monkeypatch, tmp_path: Path) -> None:
+    app = _app(monkeypatch, tmp_path)
+    owner = TestClient(app)
+
+    owner.post(
+        "/api/v1/auth/register",
+        json={"email": "owner@example.com", "password": "correct horse battery staple"},
+    )
+    created = owner.post(
+        "/api/v1/ssh-credentials",
+        json={
+            "name": "Owner credential",
+            "username": "audit",
+            "private_key": _private_key(),
+            "known_hosts": _known_hosts(),
+        },
+    )
+    assert created.status_code == 201
+
+    response = owner.get(
+        "/api/v1/ssh-credentials",
+        headers={"Authorization": "Bearer secscan_invalid"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "invalid API key"
