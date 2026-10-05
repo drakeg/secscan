@@ -22,7 +22,12 @@ Align SSH credential tenant resolution with the tenant API-key authentication mi
 
 Exercise the real service-token, session, and tenant API-key middleware composition so precedence remains deterministic when the optional service-level API guard is configured. The service guard stays authoritative, explicit invalid tenant keys fail closed, and session-only requests remain supported.
 
+## Increment 3 — Native SSH credential lifecycle route
+
+Move the credential enabled/disabled operation out of tenancy middleware and into the FastAPI credential API. Middleware remains responsible for tenant/authentication policy, while the route owns request validation, lifecycle persistence, default/host-binding cleanup, and HTTP response semantics.
+
 ## Acceptance
+
 
 
 - invalid explicit tenant API keys return 401 even when a valid session cookie is present
