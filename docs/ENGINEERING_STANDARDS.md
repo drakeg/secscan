@@ -135,4 +135,12 @@ bash scripts/preflight.sh --quick
 
 The quick gate runs Ruff, mypy, and the complete pytest suite—the same first-line Python checks used by CI—without rebuilding/reinstalling the wheel. Before merge/release, `bash scripts/preflight.sh` remains the full package-integrity gate, and `bash scripts/preflight.sh --container` adds the local container security check.
 
-When repository-writing automation cannot execute the checkout locally, it must still inspect changed test structure and the existing preflight/CI contract before opening the PR, and CI failures must be treated as regressions in the development process rather than normal validation.
+When repository-writing automation cannot execute the checkout locally, CI must not be used as the first basic validation pass. Before opening or updating a PR, automation must:
+
+1. Re-read every changed source and test file from the branch after the final edit.
+2. Verify every newly referenced symbol is defined or imported and remove stale imports/references left by refactors.
+3. Inspect the directly affected tests plus adjacent regression tests for the changed boundary.
+4. Compare the change against Ruff, mypy, pytest, package, and container expectations in the repository preflight/CI contract.
+5. Keep the PR draft until the complete required CI matrix is green.
+
+A failure that these checks could have caught locally or by static inspection is a QC regression and must be corrected before further feature work.
