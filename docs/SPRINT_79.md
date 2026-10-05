@@ -18,7 +18,12 @@ Ensure an explicitly supplied secscan tenant API key is authoritative and fails 
 
 Align SSH credential tenant resolution with the tenant API-key authentication middleware by rejecting an invalid explicit `secscan_` bearer credential before session fallback.
 
+## Increment 2 — Composed authentication regression coverage
+
+Exercise the real service-token, session, and tenant API-key middleware composition so precedence remains deterministic when the optional service-level API guard is configured. The service guard stays authoritative, explicit invalid tenant keys fail closed, and session-only requests remain supported.
+
 ## Acceptance
+
 
 - invalid explicit tenant API keys return 401 even when a valid session cookie is present
 - valid tenant API keys continue to select their principal tenant
