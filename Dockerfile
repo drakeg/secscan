@@ -1,4 +1,4 @@
-FROM aquasec/trivy:0.74.0 AS trivy
+FROM aquasec/trivy:0.75.0 AS trivy
 
 FROM golang:1.27-bookworm AS gitleaks-builder
 ARG X_CRYPTO_VERSION=v0.55.0
