@@ -191,7 +191,11 @@ def test_project_association_failure_rolls_back_job_atomically(tmp_path: Path, m
 def test_atomic_project_association_enforces_foreign_keys(tmp_path: Path) -> None:
     database = tmp_path / "jobs.db"
     job_store = JobStore(database)
+    auth = AuthStore(database)
+    projects = ProjectStore(database)
     ProjectJobStore(database)
+    owner = auth.register("fk-owner@example.com", "correct-horse-battery-staple")
+    assert projects.list(owner) == []
 
     record = JobRecord(
         id="job-fk-check",
@@ -200,7 +204,7 @@ def test_atomic_project_association_enforces_foreign_keys(tmp_path: Path) -> Non
         target="alpine:3.20",
         output_dir=str(tmp_path / "jobs" / "job-fk-check"),
         created_at="2026-10-05T00:00:00+00:00",
-        tenant_id="tenant-fk-check",
+        tenant_id=owner.tenant_id,
     )
 
     with pytest.raises(sqlite3.IntegrityError):
