@@ -11,7 +11,7 @@ import pytest
 from secscan.auth import AuthStore, User
 from secscan.project_jobs import ProjectJobStore, ProjectScanSubmission, mount_project_job_association
 from secscan.projects import ProjectStore
-from secscan.service import create_app
+from secscan.service import JobRecord, JobStore, create_app
 
 
 def _route(app: FastAPI, path: str, method: str) -> Callable[..., Any]:
@@ -186,3 +186,44 @@ def test_project_association_failure_rolls_back_job_atomically(tmp_path: Path, m
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT COUNT(*) FROM service_jobs").fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM service_job_projects").fetchone()[0] == 0
+
+
+def test_atomic_project_association_enforces_foreign_keys(tmp_path: Path) -> None:
+    database = tmp_path / "jobs.db"
+    job_store = JobStore(database)
+    auth = AuthStore(database)
+    projects = ProjectStore(database)
+    ProjectJobStore(database)
+    owner = auth.register("fk-owner@example.com", "correct-horse-battery-staple")
+    assert projects.list(owner) == []
+
+    record = JobRecord(
+        id="job-fk-check",
+        status="queued",
+        scanner="trivy-image",
+        target="alpine:3.20",
+        output_dir=str(tmp_path / "jobs" / "job-fk-check"),
+        created_at="2026-10-05T00:00:00+00:00",
+        tenant_id=owner.tenant_id,
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        job_store.save(
+            record,
+            before_commit=lambda connection: ProjectJobStore.associate_in_transaction(
+                connection,
+                job_id=record.id,
+                tenant_id=record.tenant_id,
+                project_id="missing-project",
+            ),
+        )
+
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM service_jobs WHERE id = ?",
+            (record.id,),
+        ).fetchone()[0] == 0
+        assert connection.execute(
+            "SELECT COUNT(*) FROM service_job_projects WHERE job_id = ?",
+            (record.id,),
+        ).fetchone()[0] == 0

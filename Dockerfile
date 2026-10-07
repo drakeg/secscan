@@ -64,6 +64,7 @@ COPY --from=grype /grype /usr/local/bin/grype
 COPY --from=python-scanner-tools /opt/semgrep /opt/semgrep
 COPY --from=python-scanner-tools /opt/checkov /opt/checkov
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install --no-install-recommends -y git ca-certificates nmap openssh-client \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /opt/semgrep/bin/semgrep /usr/local/bin/semgrep \
