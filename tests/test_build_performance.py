@@ -24,7 +24,7 @@ def test_container_security_gate_is_vulnerability_only_and_version_aligned() -> 
 
     import re
 
-    match = re.search(r"^FROM aquasec/trivy:(\\d+\\.\\d+\\.\\d+) AS trivy$", dockerfile, re.MULTILINE)
+    match = re.search(r"^FROM aquasec/trivy:(\d+\.\d+\.\d+) AS trivy$", dockerfile, re.MULTILINE)
     assert match is not None
     assert f"aquasec/trivy:{match.group(1)} image" in workflow
     assert "--scanners vuln" in workflow
