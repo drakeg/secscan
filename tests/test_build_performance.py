@@ -22,8 +22,11 @@ def test_container_security_gate_is_vulnerability_only_and_version_aligned() -> 
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
-    assert "FROM aquasec/trivy:0.74.0 AS trivy" in dockerfile
-    assert "aquasec/trivy:0.74.0 image" in workflow
+    import re
+
+    match = re.search(r"^FROM aquasec/trivy:(\d+\.\d+\.\d+) AS trivy$", dockerfile, re.MULTILINE)
+    assert match is not None
+    assert f"aquasec/trivy:{match.group(1)} image" in workflow
     assert "--scanners vuln" in workflow
     assert "--skip-version-check" in workflow
     assert "--ignore-unfixed" in workflow
