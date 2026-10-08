@@ -34,12 +34,17 @@ Regression coverage proves that an association to a nonexistent project raises a
 
 ## Acceptance
 
-
-
-
 - invalid explicit tenant API keys return 401 even when a valid session cookie is present
 - valid tenant API keys continue to select their principal tenant
 - cross-tenant SSH credential isolation remains enforced
 - session-only SSH credential flows remain unchanged
 - Python/package/container/Compose/CI/CodeQL gates remain green
 - recurring infrastructure cost remains $0
+
+## Closeout — accepted
+
+All four increments are merged into `main` (#177, #178, #179, #180). The final increment's required CI #749 and CodeQL #509 checks passed. Authentication precedence, credential lifecycle routing, and atomic job-association foreign-key enforcement have regression coverage.
+
+The repeated #180 CI failures exposed preventable test-import and fixture-initialization mistakes. The engineering standards now require a changed-file reread, symbol/import checks, adjacent regression review, and draft status until the complete CI matrix passes. Future work must meet this gate before feature development resumes.
+
+No additional hosted service or recurring infrastructure cost was introduced.
