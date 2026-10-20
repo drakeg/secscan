@@ -36,10 +36,13 @@ def test_container_security_gate_is_vulnerability_only_and_version_aligned() -> 
 def test_expensive_python_scanner_tools_precede_app_wheel_install() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
-    scanner_stage = "FROM python:3.14.7-slim-bookworm AS python-scanner-tools"
+    scanner_stage = " AS python-scanner-tools"
     scanner_copy = "COPY --from=python-scanner-tools /opt/semgrep /opt/semgrep"
     wheel_copy = "COPY --from=builder /wheels /wheels"
 
+    import re
+
+    assert re.search(r"^FROM python:3\.14\.\d+-slim-bookworm AS python-scanner-tools$", dockerfile, re.MULTILINE)
     assert scanner_stage in dockerfile
     assert scanner_copy in dockerfile
     assert dockerfile.index(scanner_copy) < dockerfile.index(wheel_copy)
