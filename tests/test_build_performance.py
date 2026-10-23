@@ -42,7 +42,15 @@ def test_expensive_python_scanner_tools_precede_app_wheel_install() -> None:
 
     import re
 
-    assert re.search(r"^FROM python:3\.14\.\d+-slim-bookworm AS python-scanner-tools$", dockerfile, re.MULTILINE)
+    python_stage = re.search(
+        r"^FROM (python:3\\.\\d+\\.\\d+-slim-bookworm) AS python-scanner-tools$",
+        dockerfile,
+        re.MULTILINE,
+    )
+    assert python_stage is not None
+    pinned_image = python_stage.group(1)
+    assert f"FROM {pinned_image} AS builder" in dockerfile
+    assert re.search(rf"^FROM {re.escape(pinned_image)}$", dockerfile, re.MULTILINE)
     assert scanner_stage in dockerfile
     assert scanner_copy in dockerfile
     assert dockerfile.index(scanner_copy) < dockerfile.index(wheel_copy)
