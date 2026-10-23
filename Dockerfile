@@ -31,6 +31,11 @@ RUN git clone --depth 1 --branch v3.11.1 https://github.com/projectdiscovery/nuc
 FROM ghcr.io/anchore/grype:v0.121.0 AS grype
 
 FROM python:3.15.1-slim-bookworm AS python-scanner-tools
+# Python 3.15 needs a source build of ruamel.yaml.clib until wheels are available.
+# This toolchain stays in the scanner-build stage and is not copied to runtime.
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y build-essential \
+    && rm -rf /var/lib/apt/lists/*
 RUN python -m venv /opt/semgrep \
     && /opt/semgrep/bin/pip install --no-cache-dir semgrep==1.172.0 \
     && /opt/semgrep/bin/pip install --no-cache-dir --upgrade "PyJWT>=2.14.0,<3" \
