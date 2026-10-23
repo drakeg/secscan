@@ -43,7 +43,7 @@ def test_expensive_python_scanner_tools_precede_app_wheel_install() -> None:
     import re
 
     python_stage = re.search(
-        r"^FROM (python:3\\.\\d+\\.\\d+-slim-bookworm) AS python-scanner-tools$",
+        r"^FROM (python:3\.\d+\.\d+-slim-bookworm) AS python-scanner-tools$",
         dockerfile,
         re.MULTILINE,
     )
