@@ -31,6 +31,7 @@ def test_container_security_gate_is_vulnerability_only_and_version_aligned() -> 
     assert "--skip-version-check" in workflow
     assert "--ignore-unfixed" in workflow
     assert "--severity CRITICAL" in workflow
+    assert '"certifi>=2026.10.19"' in dockerfile
 
 
 def test_expensive_python_scanner_tools_precede_app_wheel_install() -> None:
