@@ -42,6 +42,8 @@ CI runs for pull requests and pushes to `main`. Feature-branch pushes do not ind
 
 The final image gate uses Trivy vulnerability scanning only because its purpose is specifically to reject fixable CRITICAL vulnerabilities in the built image. Repository secret scanning remains part of the repository scanner; scanning the entire built image for secrets is not part of this container-vulnerability gate.
 
+Semgrep and Checkov each run from a separate virtual environment copied into the final image. Their `certifi` packages must be upgraded to a security-maintained release (`>=2026.10.19`) alongside the application's runtime package; updating only the system Python installation does not remediate the scanner environments. CI's Trivy critical-vulnerability gate verifies the resulting image.
+
 ## What invalidates expensive layers
 
 The Nuclei build/template stage changes when the pinned Nuclei version, template release, or reviewed template commit changes. The Gitleaks stage changes when its pinned version changes. The Semgrep/Checkov stage changes when either pinned Python scanner version or its base Python image changes.

@@ -1,4 +1,4 @@
-FROM aquasec/trivy:0.76.0 AS trivy
+FROM aquasec/trivy:0.76.1 AS trivy
 
 FROM golang:1.27-bookworm AS gitleaks-builder
 ARG X_CRYPTO_VERSION=v0.55.0
@@ -33,10 +33,10 @@ FROM ghcr.io/anchore/grype:v0.121.0 AS grype
 FROM python:3.14.8-slim-bookworm AS python-scanner-tools
 RUN python -m venv /opt/semgrep \
     && /opt/semgrep/bin/pip install --no-cache-dir semgrep==1.172.0 \
-    && /opt/semgrep/bin/pip install --no-cache-dir --upgrade "PyJWT>=2.14.0,<3" \
+    && /opt/semgrep/bin/pip install --no-cache-dir --upgrade "PyJWT>=2.14.0,<3" "certifi>=2026.10.19" \
     && python -m venv /opt/checkov \
     && /opt/checkov/bin/pip install --no-cache-dir checkov==3.3.8 \
-    && /opt/checkov/bin/pip install --no-cache-dir --upgrade "PyJWT>=2.14.0,<3"
+    && /opt/checkov/bin/pip install --no-cache-dir --upgrade "PyJWT>=2.14.0,<3" "certifi>=2026.10.19"
 
 FROM python:3.14.8-slim-bookworm AS builder
 WORKDIR /build
@@ -85,6 +85,7 @@ RUN apt-get update \
 
 COPY --from=builder /wheels /wheels
 RUN pip install --no-cache-dir /wheels/secscan-*.whl \
+    && pip install --no-cache-dir --upgrade "certifi>=2026.10.19" \
     && python -c "import paramiko, secscan, secscan.auth, secscan.aws, secscan.billing, secscan.cli, secscan.compare, secscan.history, secscan.models, secscan.normalize, secscan.policy, secscan.public_site, secscan.report, secscan.signed_policy, secscan.ssh_credentials, secscan.ssh_host_trust, secscan.ssh_host_trust_web, secscan.tenancy, secscan.trivy, secscan.windows_host_web, secscan.scanners, secscan.scanners.base, secscan.scanners.registry, secscan.scanners.grype, secscan.scanners.image, secscan.scanners.filesystem, secscan.scanners.repository, secscan.scanners.full_repository, secscan.scanners.network, secscan.scanners.linux_host, secscan.scanners.sbom" \
     && rm -rf /wheels
 
