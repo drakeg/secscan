@@ -32,7 +32,7 @@ FROM ghcr.io/anchore/grype:v0.121.0 AS grype
 
 FROM python:3.15.1-slim-bookworm AS python-scanner-tools
 # Python 3.15 needs a source build of ruamel.yaml.clib until wheels are available.
-# This toolchain stays in the scanner-build stage and is not copied to runtime.
+# Build tools remain isolated in this stage, not in the final runtime image.
 RUN apt-get update \
     && apt-get install --no-install-recommends -y build-essential \
     && rm -rf /var/lib/apt/lists/*
