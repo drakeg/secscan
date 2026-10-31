@@ -105,3 +105,58 @@ def test_session_tokens_are_stored_only_as_digests(tmp_path: Path) -> None:
         stored = connection.execute("SELECT token_hash FROM auth_sessions").fetchone()[0]
     assert token != stored
     assert len(stored) == 64
+
+
+def test_revoked_and_expired_sessions_fail_closed(tmp_path: Path) -> None:
+    import sqlite3
+
+    store = AuthStore(tmp_path / "jobs.db")
+    user = store.register("session@example.com", "correct horse battery staple")
+    revoked = store.create_session(user.id)
+    assert store.user_for_session(revoked) is not None
+    store.revoke_session(revoked)
+    assert store.user_for_session(revoked) is None
+
+    expired = store.create_session(user.id)
+    with sqlite3.connect(tmp_path / "jobs.db") as connection:
+        connection.execute(
+            "UPDATE auth_sessions SET expires_at = ?",
+            ("2000-01-01T00:00:00+00:00",),
+        )
+    assert store.user_for_session(expired) is None
+
+
+def test_disabled_user_and_removed_membership_invalidate_existing_session(tmp_path: Path) -> None:
+    import sqlite3
+
+    store = AuthStore(tmp_path / "jobs.db")
+    user = store.register("member@example.com", "correct horse battery staple")
+    token = store.create_session(user.id)
+    assert store.user_for_session(token) is not None
+
+    with sqlite3.connect(tmp_path / "jobs.db") as connection:
+        connection.execute("UPDATE auth_users SET enabled = 0 WHERE id = ?", (user.id,))
+    assert store.user_for_session(token) is None
+
+    with sqlite3.connect(tmp_path / "jobs.db") as connection:
+        connection.execute("UPDATE auth_users SET enabled = 1 WHERE id = ?", (user.id,))
+        connection.execute(
+            "DELETE FROM auth_tenant_memberships WHERE tenant_id = ? AND user_id = ?",
+            (user.tenant_id, user.id),
+        )
+    assert store.user_for_session(token) is None
+
+
+def test_failed_tenant_switch_preserves_session_selection(tmp_path: Path) -> None:
+    store = AuthStore(tmp_path / "jobs.db")
+    user = store.register("owner@example.com", "correct horse battery staple")
+    token = store.create_session(user.id)
+
+    import pytest
+
+    with pytest.raises(ValueError, match="tenant membership is required"):
+        store.switch_session_tenant(token, "another-tenant")
+
+    current = store.user_for_session(token)
+    assert current is not None
+    assert current.tenant_id == user.tenant_id
