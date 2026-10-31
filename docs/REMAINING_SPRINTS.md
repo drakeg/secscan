@@ -24,13 +24,19 @@ Sprint 78 — Reassessment Scheduler Correctness is complete. It made scheduler 
 
 See `docs/SPRINT_78.md` for the completed acceptance record.
 
+## Sprint 79 closeout
+
+Sprint 79 — Authentication Precedence Hardening is complete. It delivered explicit tenant API-key fail-closed precedence, composed middleware regression coverage, native SSH credential lifecycle routing, and SQLite foreign-key enforcement on atomic job association transactions.
+
+See `docs/SPRINT_79.md` for its accepted closeout record.
+
 ## Current sprint
 
-### Sprint 79 — Authentication Precedence Hardening
+### Sprint 80 — Session Lifecycle Security Review
 
-Make explicit tenant API-key authentication fail closed consistently so an invalid bearer credential cannot silently fall back to a valid browser session in tenant-aware middleware.
+Verify session invalidation and tenant membership changes remain fail-closed across existing authentication APIs, and add targeted regression coverage for any confirmed gaps before changing runtime behavior.
 
-See `docs/SPRINT_79.md` for scope and acceptance criteria.
+See `docs/SPRINT_80.md` for committed scope, boundaries, and acceptance criteria.
 
 ## Candidate remaining sprints
 
