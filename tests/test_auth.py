@@ -160,3 +160,29 @@ def test_failed_tenant_switch_preserves_session_selection(tmp_path: Path) -> Non
     current = store.user_for_session(token)
     assert current is not None
     assert current.tenant_id == user.tenant_id
+
+
+def test_disabled_account_cannot_switch_tenants_or_modify_session(tmp_path: Path) -> None:
+    import sqlite3
+
+    import pytest
+
+    store = AuthStore(tmp_path / "jobs.db")
+    owner = store.register("tenant-owner@example.com", "correct horse battery staple")
+    member = store.register("disabled-member@example.com", "correct horse battery staple")
+    store.add_tenant_member(owner.id, owner.tenant_id, member.email)
+    token = store.create_session(member.id)
+
+    with sqlite3.connect(tmp_path / "jobs.db") as connection:
+        connection.execute("UPDATE auth_users SET enabled = 0 WHERE id = ?", (member.id,))
+
+    with pytest.raises(ValueError, match="authentication required"):
+        store.switch_session_tenant(token, owner.tenant_id)
+
+    with sqlite3.connect(tmp_path / "jobs.db") as connection:
+        selected = connection.execute(
+            "SELECT active_tenant_id FROM auth_sessions WHERE user_id = ?", (member.id,)
+        ).fetchone()
+    assert selected is not None
+    assert selected[0] == member.tenant_id
+    assert store.user_for_session(token) is None
