@@ -31,6 +31,13 @@ def test_container_security_gate_is_vulnerability_only_and_version_aligned() -> 
     assert "--skip-version-check" in workflow
     assert "--ignore-unfixed" in workflow
     assert "--severity CRITICAL" in workflow
+    assert '"certifi>=2026.10.19"' in dockerfile
+    # Scanner venvs are copied into the runtime image and must be patched too.
+    for scanner in ("semgrep", "checkov"):
+        assert (
+            f'/opt/{scanner}/bin/pip install --no-cache-dir --upgrade '
+            '"PyJWT>=2.14.0,<3" "certifi>=2026.10.19"'
+        ) in dockerfile
 
 
 def test_expensive_python_scanner_tools_precede_app_wheel_install() -> None:

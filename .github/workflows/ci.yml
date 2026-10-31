@@ -92,13 +92,26 @@ jobs:
       - name: Export image for scanning
         run: docker save secscan:ci --output /tmp/secscan-ci.tar
 
+      - name: Inspect certifi package inventory before security scan
+        run: |
+          docker run --rm --entrypoint /bin/sh secscan:ci -c '
+            set -eu
+            echo "certifi metadata locations:"
+            find /opt /usr/local/lib -type d -name "certifi-*.dist-info" -print 2>/dev/null || true
+            for python in /usr/local/bin/python /opt/semgrep/bin/python /opt/checkov/bin/python; do
+              if [ -x "$python" ]; then
+                "$python" -c "import certifi, importlib.metadata as m; print(m.version(\"certifi\"), certifi.__file__)" || true
+              fi
+            done
+          '
+
       - name: Scan secscan image
         run: |
           mkdir -p /tmp/trivy-cache
           docker run --rm \
             -v /tmp/secscan-ci.tar:/scan/secscan-ci.tar:ro \
             -v /tmp/trivy-cache:/root/.cache/ \
-            aquasec/trivy:0.76.0 image \
+            aquasec/trivy:0.76.1 image \
             --input /scan/secscan-ci.tar \
             --scanners vuln \
             --skip-version-check \
