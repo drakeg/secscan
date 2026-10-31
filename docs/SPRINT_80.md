@@ -40,6 +40,10 @@ Verify that session authentication remains fail-closed when an account or tenant
 3. Make the smallest verified fix, if required.
 4. Review full CI and close the sprint only after acceptance.
 
+## Confirmed issue and correction
+
+The tenant-switch storage operation previously updated `active_tenant_id` before checking whether the account was enabled, and that post-update failure could leave the selection changed. Switching now verifies an unexpired session and enabled principal before writing the selected tenant. A SQLite-backed regression covers the disabled-account scenario and confirms the original tenant remains persisted. The API contract and database schema are unchanged.
+
 ## Status
 
-In progress. Initial SQLite-backed regression tests cover revoked and expired tokens, disabled users, revoked active-tenant membership, and failed tenant switches. Full CI acceptance and any additional middleware coverage remain outstanding. The completion of Sprint 79 is recorded in `docs/SPRINT_79.md`.
+In progress. SQLite-backed regression tests cover revoked and expired tokens, disabled users, revoked active-tenant membership, and failed tenant switches. Full CI acceptance and any additional middleware coverage remain outstanding. The completion of Sprint 79 is recorded in `docs/SPRINT_79.md`.
