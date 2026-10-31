@@ -42,4 +42,4 @@ Verify that session authentication remains fail-closed when an account or tenant
 
 ## Status
 
-Planned; implementation and acceptance remain outstanding. The completion of Sprint 79 is recorded in `docs/SPRINT_79.md`.
+In progress. Initial SQLite-backed regression tests cover revoked and expired tokens, disabled users, revoked active-tenant membership, and failed tenant switches. Full CI acceptance and any additional middleware coverage remain outstanding. The completion of Sprint 79 is recorded in `docs/SPRINT_79.md`.
