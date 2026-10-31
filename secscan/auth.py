@@ -306,18 +306,18 @@ class AuthStore:
             raise ValueError("authentication required")
         token_hash = _token_hash(token)
         with self._connect() as connection:
-            session = connection.execute(
-                """SELECT user_id FROM auth_sessions
-                   WHERE token_hash = ? AND expires_at > ?""",
+            row = connection.execute(
+                """SELECT u.* FROM auth_sessions s
+                   JOIN auth_users u ON u.id = s.user_id
+                   WHERE s.token_hash = ? AND s.expires_at > ? AND u.enabled = 1""",
                 (token_hash, _now().isoformat()),
             ).fetchone()
-            if session is None:
+            if row is None:
                 raise ValueError("authentication required")
-            user_id = str(session["user_id"])
             membership = connection.execute(
                 """SELECT 1 FROM auth_tenant_memberships
                    WHERE tenant_id = ? AND user_id = ?""",
-                (tenant_id, user_id),
+                (tenant_id, str(row["id"])),
             ).fetchone()
             if membership is None:
                 raise ValueError("tenant membership is required")
@@ -325,11 +325,6 @@ class AuthStore:
                 "UPDATE auth_sessions SET active_tenant_id = ? WHERE token_hash = ?",
                 (tenant_id, token_hash),
             )
-            row = connection.execute(
-                "SELECT * FROM auth_users WHERE id = ? AND enabled = 1", (user_id,)
-            ).fetchone()
-        if row is None:
-            raise ValueError("account was not found")
         return _user(row, tenant_id=tenant_id)
 
     def revoke_session(self, token: str | None) -> None:
