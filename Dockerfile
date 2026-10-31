@@ -30,7 +30,7 @@ RUN git clone --depth 1 --branch v3.11.1 https://github.com/projectdiscovery/nuc
 
 FROM ghcr.io/anchore/grype:v0.121.0 AS grype
 
-FROM python:3.15.1-slim-bookworm AS python-scanner-tools
+FROM python:3.15.2-slim-bookworm AS python-scanner-tools
 # Python 3.15 needs a source build of ruamel.yaml.clib until wheels are available.
 # Build tools remain isolated in this stage, not in the final runtime image.
 RUN apt-get update \
@@ -43,7 +43,7 @@ RUN python -m venv /opt/semgrep \
     && /opt/checkov/bin/pip install --no-cache-dir checkov==3.3.8 \
     && /opt/checkov/bin/pip install --no-cache-dir --upgrade "PyJWT>=2.14.0,<3" "certifi>=2026.10.19"
 
-FROM python:3.15.1-slim-bookworm AS builder
+FROM python:3.15.2-slim-bookworm AS builder
 WORKDIR /build
 COPY pyproject.toml README.md ./
 COPY secscan ./secscan
@@ -52,7 +52,7 @@ RUN python -c "from pathlib import Path; required={'secscan/__init__.py','secsca
     && pip wheel --no-deps --wheel-dir /wheels . \
     && python scripts/verify_wheel.py /wheels/secscan-*.whl
 
-FROM python:3.15.1-slim-bookworm
+FROM python:3.15.2-slim-bookworm
 
 ARG SECSCAN_VERSION=0.1.0
 ARG NUCLEI_TEMPLATES_VERSION=v10.4.7
