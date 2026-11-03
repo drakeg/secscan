@@ -49,6 +49,8 @@ The tenant-switch storage operation previously updated `active_tenant_id` before
 
 API-level regression tests now exercise the mounted session middleware and authenticated routes after session revocation, expiry, and account disablement. They verify protected API and `/api/v1/auth/me` return 401, and a disabled session cannot call the tenant-switch endpoint. These tests complement the earlier direct SQLite/AuthStore lifecycle coverage without changing authentication behavior or the database schema.
 
-## Status
+## Closeout — accepted
 
-In progress. SQLite-backed regression tests cover revoked and expired tokens, disabled users, revoked active-tenant membership, and failed tenant switches. New HTTP middleware regression checks are pending full CI acceptance; sprint closeout remains outstanding. The completion of Sprint 79 is recorded in `docs/SPRINT_79.md`.
+The SQLite/AuthStore regressions and tenant-switch correction were merged in #205 and #206, and HTTP middleware invalidation regressions were merged in #208. Their PR CI and CodeQL checks passed. Session revocation, expiry, disabled accounts, active tenant membership invalidation, and the non-mutating failure of unauthorized tenant switches are covered. No new migrations, hosted services, or recurring infrastructure costs were introduced.
+
+The subsequent feature roadmap resumes with the separate CSPM contextual-risk proposal in issue #209. This closeout does not claim new cloud security behavior.
