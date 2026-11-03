@@ -186,3 +186,57 @@ def test_disabled_account_cannot_switch_tenants_or_modify_session(tmp_path: Path
     assert selected is not None
     assert selected[0] == member.tenant_id
     assert store.user_for_session(token) is None
+
+
+def test_http_session_revocation_and_expiration_block_protected_api(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import sqlite3
+
+    client = TestClient(_app(tmp_path, monkeypatch))
+    credentials = {"email": "session-http@example.com", "password": "correct horse battery staple"}
+    assert client.post("/api/v1/auth/register", json=credentials).status_code == 201
+    assert client.get("/api/v1/protected").status_code == 200
+
+    token = client.cookies.get("secscan_session")
+    assert token is not None
+    store = AuthStore(tmp_path / "jobs.db")
+    store.revoke_session(token)
+    assert client.get("/api/v1/protected").status_code == 401
+    assert client.get("/api/v1/auth/me").status_code == 401
+
+    assert client.post("/api/v1/auth/login", json=credentials).status_code == 200
+    assert client.get("/api/v1/protected").status_code == 200
+    with sqlite3.connect(tmp_path / "jobs.db") as connection:
+        connection.execute(
+            "UPDATE auth_sessions SET expires_at = ?",
+            ("2000-01-01T00:00:00+00:00",),
+        )
+    assert client.get("/api/v1/protected").status_code == 401
+    assert client.get("/api/v1/auth/me").status_code == 401
+
+
+def test_disabled_account_session_cannot_access_protected_api(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import sqlite3
+
+    client = TestClient(_app(tmp_path, monkeypatch))
+    registered = client.post(
+        "/api/v1/auth/register",
+        json={"email": "disabled-http@example.com", "password": "correct horse battery staple"},
+    )
+    assert registered.status_code == 201
+    assert client.get("/api/v1/protected").status_code == 200
+
+    with sqlite3.connect(tmp_path / "jobs.db") as connection:
+        connection.execute(
+            "UPDATE auth_users SET enabled = 0 WHERE id = ?",
+            (registered.json()["id"],),
+        )
+    assert client.get("/api/v1/protected").status_code == 401
+    assert client.get("/api/v1/auth/me").status_code == 401
+    assert client.post(
+        "/api/v1/auth/tenants/switch",
+        json={"tenant_id": registered.json()["tenant_id"]},
+    ).status_code == 401

@@ -44,6 +44,11 @@ Verify that session authentication remains fail-closed when an account or tenant
 
 The tenant-switch storage operation previously updated `active_tenant_id` before checking whether the account was enabled, and that post-update failure could leave the selection changed. Switching now verifies an unexpired session and enabled principal before writing the selected tenant. A SQLite-backed regression covers the disabled-account scenario and confirms the original tenant remains persisted. The API contract and database schema are unchanged.
 
+
+## HTTP middleware regression increment
+
+API-level regression tests now exercise the mounted session middleware and authenticated routes after session revocation, expiry, and account disablement. They verify protected API and `/api/v1/auth/me` return 401, and a disabled session cannot call the tenant-switch endpoint. These tests complement the earlier direct SQLite/AuthStore lifecycle coverage without changing authentication behavior or the database schema.
+
 ## Status
 
-In progress. SQLite-backed regression tests cover revoked and expired tokens, disabled users, revoked active-tenant membership, and failed tenant switches. Full CI acceptance and any additional middleware coverage remain outstanding. The completion of Sprint 79 is recorded in `docs/SPRINT_79.md`.
+In progress. SQLite-backed regression tests cover revoked and expired tokens, disabled users, revoked active-tenant membership, and failed tenant switches. New HTTP middleware regression checks are pending full CI acceptance; sprint closeout remains outstanding. The completion of Sprint 79 is recorded in `docs/SPRINT_79.md`.
