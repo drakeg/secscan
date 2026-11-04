@@ -30,13 +30,15 @@ Sprint 79 — Authentication Precedence Hardening is complete. It delivered expl
 
 See `docs/SPRINT_79.md` for its accepted closeout record.
 
-## Current sprint
+## Sprint 80 closeout
 
-### Sprint 80 — Session Lifecycle Security Review
+Sprint 80 — Session Lifecycle Security Review is complete. It added SQLite-backed session lifecycle regressions, fixed disabled-account tenant switching, and covered revocation, expiry, and account disablement through the HTTP middleware.
 
-Verify session invalidation and tenant membership changes remain fail-closed across existing authentication APIs, and add targeted regression coverage for any confirmed gaps before changing runtime behavior.
+See `docs/SPRINT_80.md` for accepted scope and validation.
 
-See `docs/SPRINT_80.md` for committed scope, boundaries, and acceptance criteria.
+## Next candidate — Contextual Cloud Risk Prioritization
+
+Issue #209 proposes evidence-backed risk prioritization using current scanner severity and optional KEV/EPSS context first, before verified asset-relationship enrichment. Implementation remains subject to focused sprint planning and green CI.
 
 ## Candidate remaining sprints
 
