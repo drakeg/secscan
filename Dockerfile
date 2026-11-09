@@ -28,7 +28,7 @@ RUN git clone --depth 1 --branch v3.11.1 https://github.com/projectdiscovery/nuc
     && printf '%s\n' "${NUCLEI_TEMPLATES_VERSION}" > /nuclei-templates/.secscan-template-version \
     && printf '%s\n' "${NUCLEI_TEMPLATES_COMMIT}" > /nuclei-templates/.secscan-template-commit
 
-FROM ghcr.io/anchore/grype:v0.121.1 AS grype
+FROM ghcr.io/anchore/grype:v0.121.2 AS grype
 
 FROM python:3.15.2-slim-bookworm AS python-scanner-tools
 # Python 3.15 needs a source build of ruamel.yaml.clib until wheels are available.
