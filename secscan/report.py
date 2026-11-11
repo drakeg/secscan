@@ -13,6 +13,7 @@ from secscan.kev import enrich_finding_documents as enrich_kev_finding_documents
 from secscan.kev import load_kev_catalog
 from secscan.models import Finding
 from secscan.normalize import summarize
+from secscan.risk_priority import assess_finding_priority
 
 
 def build_report(
@@ -20,6 +21,8 @@ def build_report(
     findings: list[Finding],
     scanner: dict[str, Any],
     target_type: str = "container_image",
+    *,
+    include_priority: bool = False,
 ) -> dict[str, Any]:
     finding_documents = [finding.to_dict() for finding in findings]
     summary: dict[str, Any] = summarize(findings)
@@ -52,11 +55,24 @@ def build_report(
             "score_entries": len(scores),
             "max_score": max_score,
         }
+    if include_priority:
+        finding_documents = [
+            {**document, "priority": assess_finding_priority(document)}
+            for document in finding_documents
+        ]
+        summary["priority"] = {
+            tier: sum(
+                1 for document in finding_documents if document["priority"]["tier"] == tier
+            )
+            for tier in ("urgent", "high", "medium", "low", "unassessed")
+        }
     schema_version = "1.0"
     if kev_catalog:
         schema_version = "1.1"
     if epss_csv:
         schema_version = "1.2"
+    if include_priority:
+        schema_version = "1.3"
     return {
         "schema_version": schema_version,
         "generated_at": datetime.now(UTC).isoformat(),

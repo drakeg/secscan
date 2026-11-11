@@ -120,3 +120,25 @@ def test_epss_rejects_invalid_probabilities(tmp_path: Path, field: str, value: s
     )
     with pytest.raises(ValueError, match="between 0 and 1"):
         load_epss_scores(path)
+
+
+def test_opt_in_priority_uses_existing_epss_enrichment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("SECSCAN_KEV_CATALOG", raising=False)
+    monkeypatch.setenv("SECSCAN_EPSS_CSV", str(_scores(tmp_path / "epss.csv")))
+    finding = Finding(
+        vulnerability_id="CVE-2024-1234",
+        package_name="example",
+        installed_version="1.0",
+        fixed_version=None,
+        severity="LOW",
+        title="Example",
+        target="example",
+        package_type="os",
+        primary_url=None,
+    )
+    report = build_report("example", [finding], {"name": "test"}, include_priority=True)
+    assert report["schema_version"] == "1.3"
+    assert report["findings"][0]["priority"]["evidence"]["epss_probability"] == pytest.approx(0.42)
+    assert report["findings"][0]["priority"]["tier"] == "low"

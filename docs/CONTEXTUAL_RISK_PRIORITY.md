@@ -2,9 +2,9 @@
 
 This increment introduces `secscan.risk_priority.assess_finding_priority`, a pure
 function over a normalized finding document. It can consume existing scanner
-severity and optional local CISA KEV and EPSS enrichment fields. It does not
-modify scan reports, the API, persistence, or any tenant-owned resources yet.
-Integration will be a separately reviewed increment.
+severity and optional local CISA KEV and EPSS enrichment fields. Its foundation does not query tenants or assets. An optional report-builder
+integration is now available without changing existing default report output.
+The API, persistence, and tenant-owned resource queries remain unchanged.
 
 ## Advisory priority tiers (v0 proposal)
 
@@ -52,6 +52,27 @@ assert result["evidence"]["internet_exposure"] is None
   from input evidence, allowing threshold changes without migrations.
 - Tests cover missing evidence, malformed scores, escalation precedence,
   and unknown network/identity/criticality context.
+
+## Opt-in report-builder integration
+
+Python callers may pass `include_priority=True` to `build_report(...)` after
+supplying already-authorized scan findings. This adds a `priority` object to
+each normalized finding and a `summary.priority` breakdown of urgent, high,
+medium, low, and unassessed counts. Priority assessment happens **after**
+optional KEV and EPSS enrichment and uses only that existing local evidence.
+The opted-in JSON document uses schema version `1.3`; without the argument,
+the report stays exactly on its existing `1.0`/`1.1`/`1.2` schema behavior.
+
+```python
+from secscan.report import build_report
+
+report = build_report("example", findings, {"name": "Trivy"}, include_priority=True)
+assert report["schema_version"] == "1.3"
+```
+
+The opt-in does not yet alter CLI flags, HTML report layout, public API routes,
+or persisted jobs. Consumers must explicitly opt in, and no prioritization
+reorders existing findings or triggers remediation.
 
 ## Deferred work
 
