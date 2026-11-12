@@ -68,6 +68,7 @@ def correlate_ecr_workloads(
                 continue
             if asset.image_uri not in targets:
                 continue
+            required: tuple[str, ...]
             if source == "ecs":
                 required = ("cluster", "service")
             else:
