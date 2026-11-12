@@ -18,6 +18,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from secscan.asset_context_view import read_report_asset_context
 from secscan.scanners.network import expand_network_range, validate_network_target
 from secscan.scanners.repository import is_remote_repository_url, validate_remote_repository_url
 from secscan.scanners.web_dast import validate_web_target
@@ -655,6 +656,24 @@ def create_app(
         if record is None:
             raise HTTPException(status_code=404, detail="job not found")
         return _job_document(record)
+
+    @app.get("/api/v1/jobs/{job_id}/asset-context")
+    def get_asset_context(job_id: str, request: Request) -> Response:
+        manager = get_manager()
+        record = manager.get(job_id, tenant_id=request_tenant_id(request))
+        if record is None:
+            raise HTTPException(status_code=404, detail="job not found")
+        if record.scanner != "image":
+            raise HTTPException(status_code=404, detail="asset context not found")
+        artifact = manager.artifact_path(record, "secscan.json")
+        if artifact is None or not artifact.is_file() or artifact.stat().st_size > 1_048_576:
+            raise HTTPException(status_code=404, detail="asset context not found")
+        try:
+            report = json.loads(artifact.read_text(encoding="utf-8"))
+            context = read_report_asset_context(report, record.target)
+        except (OSError, UnicodeError, ValueError, TypeError):
+            raise HTTPException(status_code=404, detail="asset context not found") from None
+        return JSONResponse(context, headers={"Cache-Control": "private, no-store"})
 
     def artifact_response(job_id: str, name: str, request: Request) -> Response:
         manager = get_manager()
