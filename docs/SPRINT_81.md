@@ -74,3 +74,33 @@ or exploitability. Timestamps are preserved and must be checked for freshness
 by a future adapter. No persistence, cloud permissions, dependencies, or cost
 changes (additional recurring cost: $0). Regression tests cover exact-target
 binding, mismatches, invalid snapshots, unknown evidence and immutability.
+
+## Increment 3 — Tenant-scoped persisted workload-context read
+
+A read-only `GET /api/v1/jobs/{job_id}/asset-context` endpoint exposes
+already-persisted schema 1.4 ECR workload evidence **only after** resolving
+the job through `JobManager.get(job_id, tenant_id=request_tenant_id(request))`.
+Artifact resolution reuses the service's existing job-root safety controls.
+The route does not accept inventory, create associations, or compute new risk
+claims. Unknown or unauthorized jobs return 404 as existing job routes do.
+
+The response validates the stored report target against the authorized job's
+immutable image target, checks bounded evidence lists, and rejects forged
+exposure/runtime assertions. Only allowlisted workload identity fields are
+returned; individual findings, secret-bearing raw scanner evidence and the
+full report are not included. Responses use `Cache-Control: private, no-store`.
+Legacy reports without persisted context return 404. Malformed, missing, or
+oversized (over 1 MiB) artifacts also return 404 without echoing their content.
+
+This is **read integration, not a write or discovery service**. A separate,
+future tenant-authorized ingestion path must verify the provenance and
+ownership of ECS/EKS snapshots before calling the existing offline report
+binding helper and saving schema 1.4 artifacts. Neither matching image names
+nor image digests alone establish tenant ownership. The route relies on the
+existing service authentication chain, just like the job/artifact endpoints;
+it does not add new login or authorization mechanisms.
+
+Acceptance: tests exercise same-tenant access, foreign-tenant 404 responses,
+legacy report behavior, forged target/exposure rejection, and file-size bounds.
+No migrations, cloud IAM permission increases, additional dependencies, or
+recurring infrastructure costs (additional $0).
