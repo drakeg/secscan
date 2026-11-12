@@ -36,9 +36,9 @@ Sprint 80 — Session Lifecycle Security Review is complete. It added SQLite-bac
 
 See `docs/SPRINT_80.md` for accepted scope and validation.
 
-## Next candidate — Contextual Cloud Risk Prioritization
+## Current sprint — Sprint 81: Verified Asset Context Foundations
 
-Issue #209 proposes evidence-backed risk prioritization using current scanner severity and optional KEV/EPSS context first, before verified asset-relationship enrichment. Implementation remains subject to focused sprint planning and green CI.
+Issue #209 contextual risk prioritization now includes optional report annotation, and Sprint 81 begins with exact, bounded ECR image-to-ECS/EKS workload-reference correlation. This is offline configuration evidence, not proof of exposure or tenant access. See `docs/SPRINT_81.md` for committed scope, explicit exclusions, and security acceptance.
 
 ## Candidate remaining sprints
 
