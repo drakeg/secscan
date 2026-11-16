@@ -104,3 +104,24 @@ Acceptance: tests exercise same-tenant access, foreign-tenant 404 responses,
 legacy report behavior, forged target/exposure rejection, and file-size bounds.
 No migrations, cloud IAM permission increases, additional dependencies, or
 recurring infrastructure costs (additional $0).
+
+## Increment 4 — Persisted evidence integrity hardening
+
+Before accepting tenant-owned snapshot ingestion, harden the existing read
+boundary so a stored schema 1.4 report cannot claim workloads belonging to
+another AWS account/region or attach identities without a source timestamp.
+The reader now verifies the job target is an immutable ECR digest URI, the
+top-level account and region match that URI, and every workload identity
+matches the same AWS scope. It rejects malformed or timezone-naive snapshot
+timestamps, duplicates, overly long identity values, and workloads with no
+corresponding snapshot provenance. These checks happen after tenant-scoped
+job/artifact retrieval as before.
+
+Regression tests cover mismatched AWS scopes, missing timestamps, invalid
+immutable targets, oversized identities, duplicate relationships, and
+unverified exposure. No new public route, runtime discovery, tenant lookup,
+dependency, database migration, or recurring infrastructure cost ($0).
+
+This does **not** establish that snapshots are trustworthy or fresh; a future
+ingestion path still needs explicit same-tenant ownership and provenance
+verification before persisting them.
