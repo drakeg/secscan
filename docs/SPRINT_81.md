@@ -125,3 +125,37 @@ dependency, database migration, or recurring infrastructure cost ($0).
 This does **not** establish that snapshots are trustworthy or fresh; a future
 ingestion path still needs explicit same-tenant ownership and provenance
 verification before persisting them.
+
+## Increment 5 — Tenant-partitioned, operator-provided workload inventory ingestion
+
+Add `PUT /api/v1/workload-inventory/{ecs|eks}` and the corresponding `GET`
+endpoint for a tenant's latest discovery-shaped ECS/EKS inventory snapshot.
+Both require an existing authenticated tenant identity; the legacy/system
+actor without a tenant is denied (403). Storage uses the existing SQLite job
+database with composite key `(tenant_id, source)`. Reads and upserts always
+include the caller's tenant ID, preventing another tenant's inventory from
+being retrieved or overwritten. No new database server is required.
+
+A PUT is bounded to 256 KiB and 500 workloads. Snapshots are checked for
+schema/count/timestamp validity, unique workload identities, immutable ECR
+image references, and matching AWS account/region on each reference. Unknown
+fields are removed, and a rejected PUT does not replace existing state. GET
+returns the normalized snapshot with `provenance:
+operator_provided_unverified`; responses are private/no-store. Upserts
+replace only the corresponding tenant+source snapshot. SQLite initializes the
+new table on first use, and previous service jobs are unchanged.
+
+**Important trust distinction:** these are authenticated **tenant-submitted**
+records, **not independently AWS-verified discovery**. A tenant can submit
+inventory about an AWS account they do not control; account matching inside
+the payload is a structural constraint, not ownership proof. Consequently,
+this increment deliberately does not enrich scan reports, modify priority,
+assert public exposure or running state, or enable automatic cross-resource
+correlation. A later ingestion path must anchor snapshots to verifiable
+approved AWS discovery credentials and tenant ownership before these
+snapshots are trusted for contextual reporting.
+
+Tests cover tenant partitioning, restart persistence, replacement, blocked
+system-actor access, schema validation, malformed payloads, and rejection
+without loss of previously stored data. No new dependencies, cloud API
+permissions, separate services, or recurring infrastructure costs ($0).
