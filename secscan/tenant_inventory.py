@@ -55,12 +55,13 @@ def validate_workload_snapshot(source: str, snapshot: object) -> dict[str, Any]:
         values = tuple(workload.get(field) for field in fields)
         if any(not isinstance(value, str) or not 1 <= len(value) <= 256 for value in values):
             raise ValueError("workload identity is invalid")
-        account, region = values[:2]
+        identity = tuple(str(value) for value in values)
+        account, region = identity[:2]
         if not _ACCOUNT.fullmatch(account) or not _REGION.fullmatch(region):
             raise ValueError("workload AWS scope is invalid")
-        if values in identities:
+        if identity in identities:
             raise ValueError("duplicate workload identity")
-        identities.add(values)
+        identities.add(identity)
         targets = workload.get("immutable_image_targets")
         if not isinstance(targets, list) or len(targets) > 100:
             raise ValueError("workload image targets are invalid")
@@ -75,7 +76,7 @@ def validate_workload_snapshot(source: str, snapshot: object) -> dict[str, Any]:
         if len(valid_targets) != len(set(valid_targets)):
             raise ValueError("duplicate workload image target")
         normalized.append({
-            **dict(zip(fields, values, strict=True)),
+            **dict(zip(fields, identity, strict=True)),
             "immutable_image_targets": valid_targets,
         })
     return {
