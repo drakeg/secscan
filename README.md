@@ -1,6 +1,30 @@
 # secscan
 
+<!-- madmallard-badges:start -->
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://github.com/drakeg/secscan/blob/main/pyproject.toml) [![FastAPI](https://img.shields.io/badge/FastAPI-framework-009688?logo=fastapi&logoColor=white)](https://github.com/drakeg/secscan/blob/main/pyproject.toml) [![SQLite](https://img.shields.io/badge/SQLite-persistence-003B57?logo=sqlite&logoColor=white)](https://github.com/drakeg/secscan/blob/main/secscan/service.py) [![Docker](https://img.shields.io/badge/Docker-container-2496ED?logo=docker&logoColor=white)](https://github.com/drakeg/secscan/blob/main/Dockerfile) [![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://github.com/drakeg/secscan/blob/main/compose.yaml)
+
+[![CI](https://github.com/drakeg/secscan/actions/workflows/ci.yml/badge.svg)](https://github.com/drakeg/secscan/actions/workflows/ci.yml) [![CodeQL](https://github.com/drakeg/secscan/actions/workflows/codeql.yml/badge.svg)](https://github.com/drakeg/secscan/actions/workflows/codeql.yml) [![Release workflow](https://github.com/drakeg/secscan/actions/workflows/release.yml/badge.svg)](https://github.com/drakeg/secscan/actions/workflows/release.yml) [![Tests](https://img.shields.io/badge/Tests-pytest-0A9EDC?logo=pytest&logoColor=white)](https://github.com/drakeg/secscan/blob/main/scripts/preflight.sh)
+
+[![Issues](https://img.shields.io/github/issues/drakeg/secscan)](https://github.com/drakeg/secscan/issues) [![Pull requests](https://img.shields.io/github/issues-pr/drakeg/secscan)](https://github.com/drakeg/secscan/pulls)
+<!-- madmallard-badges:end -->
+
 `secscan` is an open-source, container-first security scanner that uses scanner plugins and a Trivy adapter to normalize vulnerability findings into a stable secscan schema, write machine-readable and HTML reports, retain local scan history, and return CI-friendly policy exit codes.
+
+Development and maintenance follow [Mad Mallard standards](https://github.com/drakeg/madmallard-repository-standards) where compatible with secscan security boundaries. Start with [AGENTS.md](AGENTS.md), [CONTRIBUTING.md](CONTRIBUTING.md), [SPRINTS.md](SPRINTS.md), [BACKLOG.md](BACKLOG.md), [RELEASES.md](RELEASES.md), and [SECURITY.md](SECURITY.md). The repository has not yet established a LICENSE file or published a verified GitHub Release; neither is claimed in the badge block.
+
+### Local testing and trusted-LAN access
+
+```bash
+cp .env.example .env
+docker compose up --build --detach --wait
+curl --fail http://127.0.0.1:8000/healthz
+bash scripts/preflight.sh
+docker compose down
+```
+
+Compose uses persistent named volumes for reports and cache. For access from another device on your trusted LAN, set `SECSCAN_BIND_ADDRESS` in your **uncommitted** `.env` to the Docker host's private LAN IP and select an available `SECSCAN_PORT`; the default deliberately binds only to loopback. Complete admin setup, disable public self-registration, configure authentication, and restrict the port using the host firewall before LAN exposure. Do not expose the HTTP test service to the public internet or treat it as a verified production deployment.
+
+**SMB pilot hypothesis:** A self-hosted scan-to-remediation report can save small MSPs and agencies time preparing client security evidence. Customer demand and pricing are hypotheses, not validated revenue. Track demo and pilot acceptance in [BACKLOG.md](BACKLOG.md).
 
 Development is delivered incrementally using Agile sprints. See [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/AGILE.md`](docs/AGILE.md), and [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md).
 
