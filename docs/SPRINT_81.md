@@ -159,3 +159,10 @@ Tests cover tenant partitioning, restart persistence, replacement, blocked
 system-actor access, schema validation, malformed payloads, and rejection
 without loss of previously stored data. No new dependencies, cloud API
 permissions, separate services, or recurring infrastructure costs ($0).
+
+## CI correctness follow-up — Trivy local/CI parity
+
+The optional `scripts/preflight.sh --container` scan previously used Trivy 0.72.0
+while the Dockerfile and CI scanner used 0.76.2. The local preflight has been
+aligned with the pinned scanner image, with a regression test enforcing parity.
+No application behavior, cloud infrastructure, or recurring costs change.
