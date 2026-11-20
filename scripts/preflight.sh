@@ -49,7 +49,7 @@ if [[ "$run_container" == true ]]; then
   docker run --rm \
     -v /tmp/secscan-preflight.tar:/scan/secscan-preflight.tar:ro \
     -v /tmp/trivy-cache:/root/.cache/ \
-    aquasec/trivy:0.72.0 image \
+    aquasec/trivy:0.76.2 image \
     --input /scan/secscan-preflight.tar \
     --exit-code 1 \
     --ignore-unfixed \
