@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from secscan.asset_context_view import read_report_asset_context
+from secscan.tenant_inventory import MAX_SNAPSHOT_BYTES, TenantWorkloadInventoryStore
 from secscan.scanners.network import expand_network_range, validate_network_target
 from secscan.scanners.repository import is_remote_repository_url, validate_remote_repository_url
 from secscan.scanners.web_dast import validate_web_target
@@ -567,6 +568,17 @@ def create_app(
                 )
             return manager
 
+    inventory_store: TenantWorkloadInventoryStore | None = None
+    inventory_lock = Lock()
+
+    def get_inventory_store() -> TenantWorkloadInventoryStore:
+        nonlocal inventory_store
+        with inventory_lock:
+            if inventory_store is None:
+                database_path = job_database or job_root / "jobs.db"
+                inventory_store = TenantWorkloadInventoryStore(database_path.expanduser().resolve())
+            return inventory_store
+
     app = FastAPI(title="secscan API", version="1.0.0")
     app.state.secscan_get_manager = get_manager
 
@@ -656,6 +668,44 @@ def create_app(
         if record is None:
             raise HTTPException(status_code=404, detail="job not found")
         return _job_document(record)
+
+    @app.put("/api/v1/workload-inventory/{source}", status_code=200)
+    async def put_workload_inventory(source: str, request: Request) -> Response:
+        tenant_id = request_tenant_id(request)
+        if tenant_id is None:
+            raise HTTPException(status_code=403, detail="tenant session required")
+        if source not in {"ecs", "eks"}:
+            raise HTTPException(status_code=404, detail="inventory source not found")
+        body = await request.body()
+        if len(body) > MAX_SNAPSHOT_BYTES:
+            raise HTTPException(status_code=413, detail="inventory snapshot exceeds size limit")
+        try:
+            snapshot = json.loads(body)
+            cleaned = get_inventory_store().put(tenant_id, source, snapshot)
+        except (ValueError, UnicodeError, TypeError):
+            raise HTTPException(status_code=422, detail="invalid workload snapshot") from None
+        return JSONResponse(
+            {
+                "source": source,
+                "workload_count": cleaned["workload_count"],
+                "generated_at": cleaned["generated_at"],
+                "provenance": "operator_provided_unverified",
+            },
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    @app.get("/api/v1/workload-inventory/{source}")
+    def get_workload_inventory(source: str, request: Request) -> Response:
+        tenant_id = request_tenant_id(request)
+        if tenant_id is None:
+            raise HTTPException(status_code=403, detail="tenant session required")
+        snapshot = get_inventory_store().get(tenant_id, source)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="inventory snapshot not found")
+        return JSONResponse(
+            {"source": source, "provenance": "operator_provided_unverified", "snapshot": snapshot},
+            headers={"Cache-Control": "private, no-store"},
+        )
 
     @app.get("/api/v1/jobs/{job_id}/asset-context")
     def get_asset_context(job_id: str, request: Request) -> Response:
