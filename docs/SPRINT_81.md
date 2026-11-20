@@ -125,3 +125,11 @@ dependency, database migration, or recurring infrastructure cost ($0).
 This does **not** establish that snapshots are trustworthy or fresh; a future
 ingestion path still needs explicit same-tenant ownership and provenance
 verification before persisting them.
+
+## CI correctness follow-up — Trivy local/CI parity
+
+A review of the testing pipeline found that `scripts/preflight.sh --container`
+still used Trivy 0.72.0 although the Dockerfile and CI image scan were at
+0.76.2. The local container preflight is brought into parity, with a
+regression test guarding against mismatched scanner image versions. No
+application behavior, cloud infrastructure, or recurring costs change.
