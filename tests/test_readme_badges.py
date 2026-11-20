@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
-
-from scripts.check_readme_badges import END, START, problems
 
 
 ROOT = Path(__file__).resolve().parent.parent
+spec = importlib.util.spec_from_file_location(
+    "secscan_readme_badge_validator", ROOT / "scripts" / "check_readme_badges.py"
+)
+assert spec is not None and spec.loader is not None
+validator = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(validator)
+START = validator.START
+END = validator.END
+problems = validator.problems
 
 
 def test_current_readme_badges_match_verified_repository_configuration() -> None:
