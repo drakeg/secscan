@@ -16,6 +16,7 @@ done
 
 rm -rf dist /tmp/secscan-wheel-test
 
+python scripts/check_readme_badges.py
 ruff check .
 mypy
 pytest
