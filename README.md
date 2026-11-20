@@ -1,5 +1,13 @@
 # secscan
 
+<!-- madmallard-badges:start -->
+[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://github.com/drakeg/secscan/blob/main/pyproject.toml) [![FastAPI](https://img.shields.io/badge/FastAPI-framework-009688?logo=fastapi&logoColor=white)](https://github.com/drakeg/secscan/blob/main/pyproject.toml) [![SQLite](https://img.shields.io/badge/SQLite-persistence-003B57?logo=sqlite&logoColor=white)](https://github.com/drakeg/secscan/blob/main/secscan/service.py) [![Docker](https://img.shields.io/badge/Docker-container-2496ED?logo=docker&logoColor=white)](https://github.com/drakeg/secscan/blob/main/Dockerfile) [![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://github.com/drakeg/secscan/blob/main/compose.yaml)
+
+[![CI](https://github.com/drakeg/secscan/actions/workflows/ci.yml/badge.svg)](https://github.com/drakeg/secscan/actions/workflows/ci.yml) [![CodeQL](https://github.com/drakeg/secscan/actions/workflows/codeql.yml/badge.svg)](https://github.com/drakeg/secscan/actions/workflows/codeql.yml) [![Release workflow](https://github.com/drakeg/secscan/actions/workflows/release.yml/badge.svg)](https://github.com/drakeg/secscan/actions/workflows/release.yml) [![Tests](https://img.shields.io/badge/Tests-pytest-0A9EDC?logo=pytest&logoColor=white)](https://github.com/drakeg/secscan/blob/main/scripts/preflight.sh)
+
+[![Issues](https://img.shields.io/github/issues/drakeg/secscan)](https://github.com/drakeg/secscan/issues) [![Pull requests](https://img.shields.io/github/issues-pr/drakeg/secscan)](https://github.com/drakeg/secscan/pulls)
+<!-- madmallard-badges:end -->
+
 `secscan` is an open-source, container-first security scanner that uses scanner plugins and a Trivy adapter to normalize vulnerability findings into a stable secscan schema, write machine-readable and HTML reports, retain local scan history, and return CI-friendly policy exit codes.
 
 Development is delivered incrementally using Agile sprints. See [`docs/ROADMAP.md`](docs/ROADMAP.md), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/AGILE.md`](docs/AGILE.md), and [`docs/ENGINEERING_STANDARDS.md`](docs/ENGINEERING_STANDARDS.md).
