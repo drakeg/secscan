@@ -1,5 +1,8 @@
 # secscan
 
+[![License](https://img.shields.io/github/license/drakeg/secscan)](https://github.com/drakeg/secscan/blob/main/LICENSE)
+
+
 <!-- madmallard-badges:start -->
 [![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://github.com/drakeg/secscan/blob/main/pyproject.toml) [![FastAPI](https://img.shields.io/badge/FastAPI-framework-009688?logo=fastapi&logoColor=white)](https://github.com/drakeg/secscan/blob/main/pyproject.toml) [![SQLite](https://img.shields.io/badge/SQLite-persistence-003B57?logo=sqlite&logoColor=white)](https://github.com/drakeg/secscan/blob/main/secscan/service.py) [![Docker](https://img.shields.io/badge/Docker-container-2496ED?logo=docker&logoColor=white)](https://github.com/drakeg/secscan/blob/main/Dockerfile) [![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](https://github.com/drakeg/secscan/blob/main/compose.yaml)
 
