@@ -5,7 +5,7 @@
 
 [![CI](https://github.com/drakeg/secscan/actions/workflows/ci.yml/badge.svg)](https://github.com/drakeg/secscan/actions/workflows/ci.yml) [![CodeQL](https://github.com/drakeg/secscan/actions/workflows/codeql.yml/badge.svg)](https://github.com/drakeg/secscan/actions/workflows/codeql.yml) [![Release workflow](https://github.com/drakeg/secscan/actions/workflows/release.yml/badge.svg)](https://github.com/drakeg/secscan/actions/workflows/release.yml) [![Tests](https://img.shields.io/badge/Tests-pytest-0A9EDC?logo=pytest&logoColor=white)](https://github.com/drakeg/secscan/blob/main/scripts/preflight.sh)
 
-[![Issues](https://img.shields.io/github/issues/drakeg/secscan)](https://github.com/drakeg/secscan/issues) [![Pull requests](https://img.shields.io/github/issues-pr/drakeg/secscan)](https://github.com/drakeg/secscan/pulls)
+[![Issues](https://img.shields.io/github/issues/drakeg/secscan)](https://github.com/drakeg/secscan/issues) [![Pull requests](https://img.shields.io/github/issues-pr/drakeg/secscan)](https://github.com/drakeg/secscan/pulls) [![License](https://img.shields.io/github/license/drakeg/secscan)](https://github.com/drakeg/secscan/blob/main/LICENSE)
 <!-- madmallard-badges:end -->
 
 `secscan` is an open-source, container-first security scanner that uses scanner plugins and a Trivy adapter to normalize vulnerability findings into a stable secscan schema, write machine-readable and HTML reports, retain local scan history, and return CI-friendly policy exit codes.

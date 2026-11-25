@@ -37,9 +37,13 @@ def test_missing_dynamic_workflow_and_statistics_badges_are_detected() -> None:
 def test_badges_must_follow_title_and_never_claim_unverified_license_or_release() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     assert problems(readme.replace(START, "Intro prose\n\n" + START))
-    assert any("license" in message for message in problems(
-        readme.replace(END, "[![License](https://img.shields.io/github/license/drakeg/secscan)](fake)\n" + END)
-    ))
+    import re
+    without_license_badge = re.sub(
+        r"\[!\[License\]\(https://img\.shields\.io/github/license/drakeg/secscan\)\]\([^)]*\)",
+        "", readme,
+    )
+    assert without_license_badge != readme
+    assert any("license" in message for message in problems(without_license_badge))
     assert any("release" in message for message in problems(
         readme.replace(END, "[![Release](https://img.shields.io/github/v/release/drakeg/secscan)](fake)\n" + END)
     ))
